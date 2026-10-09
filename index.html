@@ -1366,8 +1366,8 @@ async function openDayLeaves(date) {
   const schoolId = $('overview-school-filter').value || null;
   const r = await api('getDayLeaves', { date, schoolId });
   const t = sumSchools(r.schools);
-  const leaves = r.leaves.length ? `<div class="table-wrap"><table><thead><tr><th>學校</th><th>年級班級</th><th>姓名 / 聯絡人 / 備註</th><th>點名老師</th></tr></thead><tbody>
-    ${r.leaves.map(x => `<tr><td>${esc(x.schoolName)}</td><td><b>${esc(x.grade) || '-'}</b></td><td>${personCellHtml(x)}</td><td>${esc(x.markedBy || '-')}<div class="marked-by">${esc(fmtClock(x.markedAt))}</div></td></tr>`).join('')}
+  const leaves = r.leaves.length ? `<div class="table-wrap"><table><thead><tr><th>學校</th><th>年級班級</th><th>姓名 / 聯絡人</th><th>點名老師</th></tr></thead><tbody>
+    ${r.leaves.map(x => `<tr><td>${esc(x.schoolName)}</td><td><b>${esc(x.grade) || '-'}</b></td><td>${personCellHtml(x, false, true)}</td><td>${esc(x.markedBy || '-')}<div class="marked-by">${esc(fmtClock(x.markedAt))}</div></td></tr>`).join('')}
     </tbody></table></div>` : '<div class="empty">這天沒有請假的學生</div>';
   buildModal(`${date.slice(5).replace('-', '/')}（${weekdayLabel(date)}）請假名單`, `
     <div class="rc-summary">${statsHtml(t, true)}</div>
