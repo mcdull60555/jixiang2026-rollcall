@@ -19,7 +19,7 @@ var RETENTION_DAYS = 60;      // 點名紀錄保留天數 (超過才清除)
 var SESSION_HOURS = 12;       // 登入 token 最長有效時數 (前端另外有閒置 60 分鐘自動登出)
 var TZ = 'Asia/Taipei';
 var SCHEMA_VERSION = 'schema_v5';
-var DEFAULT_CONTACT_TYPES = ['爸爸', '媽媽', '爺爺', '奶奶', '住家', '公司'];
+var DEFAULT_CONTACT_TYPES = ['爸爸', '媽媽', '住家'];
 var VALID_STATUS = ['present', 'selfDrop', 'selfWalk', 'leave', 'fixedOff', ''];
 
 var SHEET_ADMINS = 'Admins';
@@ -626,7 +626,7 @@ function normalizeDays_(arr) {
   var seen = {};
   (Array.isArray(arr) ? arr : []).forEach(function (d) {
     d = parseInt(d, 10);
-    if (d >= 1 && d <= 7) seen[d] = true;
+    if (d >= 1 && d <= 5) seen[d] = true;   // 固定不進班只有星期一到五
   });
   return Object.keys(seen).map(Number).sort();
 }

@@ -161,7 +161,8 @@
   .ct-line{white-space:nowrap;font-size:13.5px;line-height:1.6;}
 
   /* day chips */
-  .chip{position:relative;display:inline-block;margin:0 3px 3px 0;cursor:pointer;}
+  .chip,.field label.chip{position:relative;display:inline-block;margin:0 4px 4px 0;cursor:pointer;}
+  .day-chips{display:flex;flex-wrap:wrap;gap:0;}
   .chip input{position:absolute;opacity:0;width:0;height:0;}
   .chip span{display:inline-block;min-width:34px;text-align:center;padding:5px 8px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:13px;font-weight:600;background:#fff;color:var(--muted);}
   .chip input:checked + span{background:var(--amber-l);border-color:var(--amber);color:#92400e;}
@@ -433,7 +434,7 @@ const CONFIG = {
 };
 
 const DOW = ['一','二','三','四','五','六','日'];
-const DEFAULT_TYPES = ['爸爸','媽媽','爺爺','奶奶','住家','公司'];
+const DEFAULT_TYPES = ['爸爸', '媽媽', '住家'];
 const STATUS = {
   present:  { label: '到班' },
   selfDrop: { label: '自送' },
@@ -446,7 +447,7 @@ const PICK = ['present', 'selfDrop', 'selfWalk', 'leave'];
 const STATE = {
   token: null, role: null, name: null, today: null,
   schools: [], currentSchoolId: null, currentStudents: [],
-  contactTypes: DEFAULT_TYPES.slice(),
+  formTypes: [],   // 本次表單中自訂的聯絡人選項（關閉表單後就不會再出現）
   rollcall: null, rcMode: null, activeTab: 'overview',
   selStudents: new Set(), selTeachers: new Set(), teachers: [],
   pending: 0, pillCount: 0, lastActivity: Date.now(), conn: 'connecting'
@@ -524,6 +525,7 @@ function errMsg(code) {
 // opts.pill=false：不顯示頂端「同步中」小提示；opts.flash=false：不讓連線燈閃「連線中」
 async function api(action, payload, opts) {
   opts = Object.assign({ pill: true, flash: true }, opts || {});
+  const report = code => { if ((opts.pill || opts.reportSync) && isSyncError(code)) showSyncError(code); };
   payload = Object.assign({}, payload || {}, { action });
   if (STATE.token) payload.token = STATE.token;
   const usePill = !!(opts.pill && STATE.token);
@@ -538,14 +540,16 @@ async function api(action, payload, opts) {
     res = await fetch(CONFIG.API_URL, { method: 'POST', body: JSON.stringify(payload), signal: ctrl.signal });
   } catch (e) {
     clearTimeout(timer); setConn('failed'); done(false);
+    report('NETWORK_ERROR');
     throw new Error('NETWORK_ERROR');
   }
   clearTimeout(timer);
-  try { json = await res.json(); } catch (e) { setConn('failed'); done(false); throw new Error('BAD_RESPONSE'); }
+  try { json = await res.json(); } catch (e) { setConn('failed'); done(false); report('BAD_RESPONSE'); throw new Error('BAD_RESPONSE'); }
   setConn('connected');
   if (!json.ok) {
     done(false);
     if (json.error === 'AUTH_EXPIRED' && STATE.token) forceLogout('登入已過期或帳號已被刪除，請重新登入');
+    else report(json.error || 'UNKNOWN_ERROR');
     const err = new Error(json.error || 'UNKNOWN_ERROR');
     err.data = json;
     throw err;
@@ -561,11 +565,11 @@ async function doWrite(action, payload, afterFn, doneText, opts) {
   busyStart('同步中，請稍候…');
   let res = null;
   try {
-    res = await api(action, payload, { pill: false });
+    res = await api(action, payload, { pill: false, reportSync: true });
   } catch (e) {
     STATE.pending--; busyEnd(false);
     if (opts && opts.onError && opts.onError(e)) return null;
-    if (e.message !== 'AUTH_EXPIRED') toast('同步失敗：' + errMsg(e.message), true);
+    if (e.message !== 'AUTH_EXPIRED' && !isSyncError(e.message)) toast('同步失敗：' + errMsg(e.message), true);
     return null;
   }
   let refreshFailed = false;
@@ -598,7 +602,7 @@ function confirmBox(title, html, okText, danger) {
 window.addEventListener('unhandledrejection', e => {
   const m = e.reason && e.reason.message;
   e.preventDefault();
-  if (m === 'AUTH_EXPIRED') return;
+  if (m === 'AUTH_EXPIRED' || isSyncError(m)) return;   // 連線/同步錯誤已用提示框處理
   if (m) toast(errMsg(m), true);
 });
 
@@ -671,7 +675,7 @@ async function doLogin() {
   $('login-btn').disabled = true;
   busyStart('登入中，請稍候…');
   try {
-    const r = await api('login', { username, password }, { pill: false });
+    const r = await api('login', { username, password }, { pill: false, reportSync: true });
     STATE.token = r.token; STATE.role = r.role; STATE.name = r.name; STATE.today = r.today;
     STATE.lastActivity = Date.now();
     $('login-password').value = '';
@@ -738,7 +742,6 @@ async function enterApp() {
 
   if (STATE.role === 'admin') {
     $('admin-tabs').classList.remove('hidden');
-    api('getContactTypes', {}, { pill: false, flash: false }).then(r => { STATE.contactTypes = r.types; }).catch(() => {});
     switchTab('overview');
     loadSchools(true);
   } else {
@@ -765,6 +768,33 @@ function switchTab(tab) {
   if (tab === 'teachers') loadTeachers();
 }
 
+/* ---------------- 連線 / 同步錯誤：跳出提示，要求重新整理或重新登入 ---------------- */
+const SYNC_ERRORS = ['NETWORK_ERROR', 'BAD_RESPONSE', 'BUSY', 'UNKNOWN_ACTION', 'UNKNOWN_ERROR'];
+function isSyncError(code) { return SYNC_ERRORS.includes(code) || !/^[A-Z_]+$/.test(String(code || '')); }
+function showSyncError(code) {
+  if ($('sync-error')) return;   // 已經在顯示就不重複跳
+  $('doneToast').classList.add('hidden');   // 收起可能還在顯示的「同步完成」，避免誤會
+  const reason = code === 'NETWORK_ERROR' ? '無法連線到伺服器（可能是網路中斷或訊號不穩）。'
+    : code === 'BUSY' ? '目前多人同時操作，伺服器忙碌中，這次同步沒有完成。'
+    : '資料同步時發生問題（' + esc(errMsg(code)) + '）。';
+  const bg = document.createElement('div');
+  bg.className = 'prompt-bg';
+  bg.id = 'sync-error';
+  bg.style.zIndex = 10003;
+  bg.innerHTML = `<div class="modal" role="alertdialog" aria-modal="true" aria-labelledby="se-t" style="max-width:440px">
+    <h3 id="se-t">⚠️ 連線或同步發生問題</h3>
+    <div style="font-size:15px;line-height:1.75">${reason}<br>為避免資料不一致，請<b>重新整理頁面</b>${STATE.token ? '或<b>重新登入</b>' : ''}後再操作。
+    ${STATE.pending ? '' : '<br><span style="color:var(--muted);font-size:13px">剛才沒有完成的動作需要重新操作一次。</span>'}</div>
+    <div class="modal-actions">
+      ${STATE.token ? '<button class="btn btn-secondary" id="se-relogin">重新登入</button>' : ''}
+      <button class="btn btn-primary" id="se-reload">重新整理頁面</button></div></div>`;
+  document.body.appendChild(bg);
+  bg.querySelector('#se-reload').onclick = () => { STATE.pending = 0; busyReset(); location.reload(); };
+  const re = bg.querySelector('#se-relogin');
+  if (re) re.onclick = () => { bg.remove(); doLogout(); };
+  bg.querySelector('#se-reload').focus();
+}
+
 /* ---------------- 背景同步 / 心跳 ---------------- */
 async function tick() {
   if (document.hidden || STATE.pending) return;
@@ -780,7 +810,14 @@ async function tick() {
       await api('ping', {}, { pill: false, flash: false });
     }
     if (!STATE.token) loadLoginAccounts();
-  } catch (e) { /* 連線燈號已更新 */ }
+    STATE.tickFails = 0;
+  } catch (e) {
+    // 背景同步連續失敗 2 次（約 1 分鐘）就提示
+    if (isSyncError(e.message)) {
+      STATE.tickFails = (STATE.tickFails || 0) + 1;
+      if (STATE.tickFails >= 2) showSyncError(e.message);
+    }
+  }
 }
 setInterval(tick, CONFIG.TICK_MS);
 
@@ -878,9 +915,9 @@ function openBatchSchoolModal() {
   });
 }
 
-/* ---------------- 聯絡人下拉（可自訂） ---------------- */
+/* ---------------- 聯絡人下拉：固定 爸爸/媽媽/住家；自訂選項只在當下這張表單有效 ---------------- */
 function ctOptionsHtml(selected) {
-  const types = STATE.contactTypes.slice();
+  const types = DEFAULT_TYPES.concat(STATE.formTypes.filter(t => !DEFAULT_TYPES.includes(t)));
   if (selected && !types.includes(selected)) types.push(selected);
   return '<option value="">選擇…</option>' +
     types.map(t => `<option value="${esc(t)}"${t === selected ? ' selected' : ''}>${esc(t)}</option>`).join('') +
@@ -898,10 +935,9 @@ document.addEventListener('change', async e => {
   if (t.value !== '__custom__') { t.dataset.prev = t.value; return; }
   const prev = t.dataset.prev || '';
   t.value = prev;
-  const name = await askText('新增聯絡人選項', '請輸入新的聯絡人稱呼（例如：阿姨、鄰居）');
+  const name = await askText('自訂聯絡人', '請輸入聯絡人稱呼（例如：阿姨、爺爺、公司）');
   if (!name) return;
-  const r = await doWrite('addContactType', { name }, res => { STATE.contactTypes = res.types; });
-  if (!r) return;
+  if (!STATE.formTypes.includes(name)) STATE.formTypes.push(name);   // 只加在目前這張表單
   refreshCtSelects();
   t.value = name; t.dataset.prev = name;
 });
@@ -999,7 +1035,7 @@ function contactsHtml(contacts) {
 }
 
 function daysChips(selected, cls) {
-  return [1, 2, 3, 4, 5, 6, 7].map(d =>
+  return [1, 2, 3, 4, 5].map(d =>   // 只有星期一到星期五
     `<label class="chip"><input type="checkbox" class="${cls}" value="${d}"${selected.includes(d) ? ' checked' : ''}><span>${cls === 'bs-day' ? DOW[d - 1] : '週' + DOW[d - 1]}</span></label>`).join('');
 }
 
@@ -1532,6 +1568,7 @@ function openPwdModal() {
 function buildModal(title, bodyHtml, onConfirm, opts) {
   opts = opts || {};
   document.querySelectorAll('.modal-bg').forEach(m => m.remove());
+  STATE.formTypes = [];   // 開新表單時清掉上一張表單的自訂聯絡人選項
   const bg = document.createElement('div');
   bg.className = 'modal-bg';
   bg.innerHTML = `<div class="modal${opts.wide ? ' wide' : ''}" role="dialog" aria-modal="true" aria-label="${esc(title)}">
