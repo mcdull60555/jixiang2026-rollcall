@@ -18,7 +18,7 @@ var SPREADSHEET_ID = '';      // 試算表 ID 或整段網址 (留空則使用�
 var RETENTION_DAYS = 60;      // 點名紀錄保留天數 (超過才清除)
 var SESSION_HOURS = 12;       // 登入 token 最長有效時數 (前端另外有閒置 60 分鐘自動登出)
 var TZ = 'Asia/Taipei';
-var SCHEMA_VERSION = 'schema_v4';
+var SCHEMA_VERSION = 'schema_v5';
 var DEFAULT_CONTACT_TYPES = ['爸爸', '媽媽', '爺爺', '奶奶', '住家', '公司'];
 var VALID_STATUS = ['present', 'selfDrop', 'selfWalk', 'leave', 'fixedOff', ''];
 
@@ -29,15 +29,18 @@ var SHEET_STUDENTS = 'Students';
 var SHEET_ATTENDANCE = 'Attendance';
 var SHEET_SESSIONS = 'Sessions';
 var SHEET_SETTINGS = 'Settings';
+var SHEET_SUBMISSIONS = 'Submissions';
 
 var HEADERS = {
   Admins: ['id', 'username', 'password', 'name'],
   Teachers: ['id', 'username', 'password', 'name', 'active', 'createdAt'],
-  Schools: ['id', 'name', 'createdAt'],
+  Schools: ['id', 'name', 'createdAt', 'active'],
   Students: ['id', 'schoolId', 'name', 'grade', 'contacts', 'fixedOffDays', 'active', 'createdAt', 'note'],
   Attendance: ['id', 'date', 'schoolId', 'studentId', 'status', 'selfDrop', 'selfWalk', 'teacherId', 'teacherName', 'submittedAt', 'wasFixedOff'],
   Sessions: ['token', 'userId', 'role', 'name', 'username', 'createdAt', 'expiresAt'],
-  Settings: ['key', 'value']
+  Settings: ['key', 'value'],
+  // 每次送出點名的紀錄：同一天同一校可能上午 A 老師、下午 B 老師分批送出
+  Submissions: ['id', 'date', 'schoolId', 'teacherId', 'teacherName', 'submittedAt', 'count']
 };
 
 // ---------- 初始化 ----------
@@ -306,6 +309,7 @@ function route(body) {
     bootstrap: actionBootstrap, changePwd: actionChangePwd,
     getContactTypes: actionGetContactTypes, addContactType: actionAddContactType,
     listSchools: actionListSchools, addSchool: actionAddSchool, addSchoolsBatch: actionAddSchoolsBatch,
+    editSchool: actionEditSchool, deleteSchool: actionDeleteSchool, getDayLeaves: actionGetDayLeaves,
     listStudents: actionListStudents, addStudent: actionAddStudent, addStudentsBatch: actionAddStudentsBatch,
     editStudent: actionEditStudent, deleteStudent: actionDeleteStudent, deleteStudentsBatch: actionDeleteStudentsBatch,
     listTeachers: actionListTeachers, addTeacher: actionAddTeacher,
@@ -314,7 +318,7 @@ function route(body) {
     getOverview: actionGetOverview, getSchoolDayDetail: actionGetSchoolDayDetail
   };
   // 會寫入試算表的動作：一律在全域鎖內執行（多人同時操作也不會互相覆蓋）
-  var WRITES = ['login', 'logout', 'changePwd', 'addContactType', 'addSchool', 'addSchoolsBatch',
+  var WRITES = ['login', 'logout', 'changePwd', 'addContactType', 'addSchool', 'addSchoolsBatch', 'editSchool', 'deleteSchool',
     'addStudent', 'addStudentsBatch', 'editStudent', 'deleteStudent', 'deleteStudentsBatch',
     'addTeacher', 'deleteTeacher', 'deleteTeachersBatch', 'submitAttendance'];
   var fn = ACTIONS[action];
@@ -495,14 +499,17 @@ function actionAddContactType(body) {
 }
 
 // ---------- 學校 ----------
+function activeSchools_() {
+  return sheetToObjects(SHEET_SCHOOLS).filter(function (sc) { return isActive_(sc.active); });
+}
+
 function actionListSchools(body) {
   requireSession(body.token);
-  var schools = sheetToObjects(SHEET_SCHOOLS);
   var counts = {};
   sheetToObjects(SHEET_STUDENTS).forEach(function (st) {
     if (isActive_(st.active)) counts[st.schoolId] = (counts[st.schoolId] || 0) + 1;
   });
-  var out = schools.map(function (sc) {
+  var out = activeSchools_().map(function (sc) {
     return { id: sc.id, name: sc.name, studentCount: counts[sc.id] || 0 };
   });
   out.sort(function (a, b) { return String(a.name).localeCompare(String(b.name), 'zh-Hant'); });
@@ -511,25 +518,54 @@ function actionListSchools(body) {
 
 function actionAddSchool(body) {
   requireSession(body.token, 'admin');
+  if (!String(body.name || '').trim()) return { ok: false, error: 'NAME_REQUIRED' };
   var r = actionAddSchoolsBatch({ token: body.token, names: [body.name] });
-  if (!r.created.length) return { ok: false, error: r.skipped.length ? 'SCHOOL_EXISTS' : 'NAME_REQUIRED' };
+  if (!r.created.length) return { ok: false, error: 'SCHOOL_EXISTS' };
   return { ok: true };
 }
 
 function actionAddSchoolsBatch(body) {
   requireSession(body.token, 'admin');
   var names = (body.names || []).map(function (n) { return String(n || '').trim(); }).filter(Boolean);
+  if (!names.length) return { ok: false, error: 'NAME_REQUIRED' };
   return withLock_(function () {
-    var existing = sheetToObjects(SHEET_SCHOOLS).map(function (s) { return s.name; });
+    var existing = activeSchools_().map(function (s) { return s.name; });
     var created = [], skipped = [], rows = [];
     names.forEach(function (name) {
       if (existing.indexOf(name) !== -1 || created.indexOf(name) !== -1) { skipped.push(name); return; }
-      rows.push({ id: genId('S'), name: name, createdAt: new Date().toISOString() });
+      rows.push({ id: genId('S'), name: name, createdAt: new Date().toISOString(), active: true });
       created.push(name);
     });
     appendObjects(SHEET_SCHOOLS, rows);
     return { ok: true, created: created, skipped: skipped };
   });
+}
+
+// 修改校名：不可空白、不可與其他學校同名
+function actionEditSchool(body) {
+  requireSession(body.token, 'admin');
+  var name = String(body.name || '').trim();
+  if (!name) return { ok: false, error: 'NAME_REQUIRED' };
+  var all = sheetToObjects(SHEET_SCHOOLS);
+  var target = all.filter(function (sc) { return sc.id === body.schoolId && isActive_(sc.active); })[0];
+  if (!target) return { ok: false, error: 'SCHOOL_NOT_FOUND' };
+  var dup = all.some(function (sc) { return sc.id !== target.id && isActive_(sc.active) && sc.name === name; });
+  if (dup) return { ok: false, error: 'SCHOOL_EXISTS' };
+  target.name = name;
+  updateObjectByRow(SHEET_SCHOOLS, target._row, target);
+  return { ok: true };
+}
+
+// 刪除學校：標記刪除（歷史點名紀錄仍可查看校名），該校學生一併標記刪除
+function actionDeleteSchool(body) {
+  requireSession(body.token, 'admin');
+  var target = sheetToObjects(SHEET_SCHOOLS).filter(function (sc) { return sc.id === body.schoolId && isActive_(sc.active); })[0];
+  if (!target) return { ok: false, error: 'SCHOOL_NOT_FOUND' };
+  target.active = false;
+  updateObjectByRow(SHEET_SCHOOLS, target._row, target);
+  var ids = activeStudentsOf_(target.id).map(function (st) { return st.id; });
+  var r = ids.length ? actionDeleteStudentsBatch({ token: body.token, studentIds: ids }) : { deleted: 0 };
+  return { ok: true, deletedStudents: r.deleted };
 }
 
 // ---------- 學生 ----------
@@ -733,6 +769,38 @@ function activeStudentsOf_(schoolId) {
   });
 }
 
+// 送出點名的老師清單：同一位老師多次送出只列一次（取最後一次時間），不同老師依時間先後全部列出
+// 回傳 { 'date|schoolId': [{ name, at }] }
+function submittersIndex_(cutoff, attendanceRows) {
+  var idx = {};
+  var add = function (key, tid, name, at) {
+    if (!name) return;
+    var m = idx[key] = idx[key] || {};
+    var k = tid || name;
+    if (!m[k] || at > m[k].at) m[k] = { name: name, at: at };
+  };
+  var logged = {};
+  sheetToObjects(SHEET_SUBMISSIONS).forEach(function (l) {
+    var d = String(l.date);
+    if (cutoff && d < cutoff) return;
+    var key = d + '|' + l.schoolId;
+    logged[key] = true;
+    add(key, l.teacherId, l.teacherName, String(l.submittedAt));
+  });
+  // 舊資料沒有送出紀錄時，從點名資料推算
+  (attendanceRows || []).forEach(function (a) {
+    var key = String(a.date) + '|' + a.schoolId;
+    if (logged[key] || (cutoff && String(a.date) < cutoff)) return;
+    add(key, a.teacherId, a.teacherName, String(a.submittedAt));
+  });
+  var out = {};
+  Object.keys(idx).forEach(function (key) {
+    out[key] = Object.keys(idx[key]).map(function (k) { return idx[key][k]; })
+      .sort(function (a, b) { return a.at.localeCompare(b.at); });
+  });
+  return out;
+}
+
 function actionGetRollCall(body) {
   requireSession(body.token);
   var date = today_();
@@ -749,19 +817,20 @@ function actionGetRollCall(body) {
     var isFixedOff = so.fixedOffDays.indexOf(wd) !== -1;
     var existing = attMap[st.id];
     var primary = so.contacts.filter(function (c) { return c.primary; })[0] || null;
+    var status = existing ? effectiveStatus_(existing) : (isFixedOff ? 'fixedOff' : '');
     return {
       id: so.id, name: so.name, grade: so.grade, isFixedOff: isFixedOff, primaryContact: primary,
-      contacts: so.contacts, note: so.note,
-      status: existing ? effectiveStatus_(existing) : (isFixedOff ? 'fixedOff' : '')
+      contacts: so.contacts, note: so.note, status: status,
+      markedBy: existing && status ? existing.teacherName : '', markedAt: existing && status ? String(existing.submittedAt) : ''
     };
   });
   sortStudents(out);
 
-  var latest = null;
-  attendance.forEach(function (a) { if (!latest || String(a.submittedAt) > String(latest.submittedAt)) latest = a; });
+  var submitters = submittersIndex_(date, attendance)[date + '|' + schoolId] || [];
+  var last = submitters[submitters.length - 1] || null;
   return {
-    ok: true, date: date, students: out, submitted: attendance.length > 0,
-    submittedAt: latest ? latest.submittedAt : null, submittedBy: latest ? latest.teacherName : null
+    ok: true, date: date, students: out, submitted: submitters.length > 0, submitters: submitters,
+    submittedAt: last ? last.at : null, submittedBy: last ? last.name : null
   };
 }
 
@@ -790,21 +859,25 @@ function actionSubmitAttendance(body) {
     var headers = values[0];
     var idx = {};
     headers.forEach(function (h, i) { idx[h] = i; });
-    var rowOf = {}, latest = '', latestBy = '';
+    var rowOf = {}, todays = [];
     for (var i = 1; i < values.length; i++) {
       var d = values[i][idx.date];
       if (d instanceof Date) d = fromDateCell_(d, 'date');
       if (String(d) === date && values[i][idx.schoolId] === schoolId) {
         rowOf[values[i][idx.studentId]] = i;
         var at = values[i][idx.submittedAt];
-        at = at instanceof Date ? at.toISOString() : String(at || '');
-        if (at > latest) { latest = at; latestBy = values[i][idx.teacherName]; }
+        todays.push({ date: date, schoolId: schoolId, teacherId: values[i][idx.teacherId], teacherName: values[i][idx.teacherName],
+          submittedAt: at instanceof Date ? at.toISOString() : String(at || '') });
       }
     }
     // 載入後若已有別人送出（或更新）過，先提醒，不直接覆蓋
+    var subs = submittersIndex_(date, todays)[date + '|' + schoolId] || [];
+    var last = subs[subs.length - 1];
+    var latest = last ? last.at : '';
     if (!body.force && latest !== String(body.baseSubmittedAt || '')) {
-      return { ok: false, error: 'CONFLICT', submittedAt: latest, submittedBy: latestBy };
+      return { ok: false, error: 'CONFLICT', submittedAt: latest, submittedBy: last ? last.name : '' };
     }
+    // 只更新「狀態有變動」的學生：每位學生保留真正幫他點名的老師與時間
     var changed = false, fresh = [], n = 0;
     Object.keys(latestOf).map(function (k) { return latestOf[k]; }).forEach(function (r) {
       if (!valid[r.studentId]) return;
@@ -815,9 +888,11 @@ function actionSubmitAttendance(body) {
         teacherId: s.userId, teacherName: s.name, submittedAt: now,
         wasFixedOff: !!fixedToday[r.studentId]   // 今天本來是固定不進班（之後若改為到班，明細會標示）
       };
-      n++;
       if (rowOf[r.studentId] !== undefined) {
         var row = values[rowOf[r.studentId]];
+        var old = {};
+        headers.forEach(function (h, c) { old[h] = row[c]; });
+        if (effectiveStatus_(old) === status) return;
         rec.id = row[idx.id];
         headers.forEach(function (h, c) { row[c] = toCell_(rec[h]); });
         changed = true;
@@ -825,12 +900,14 @@ function actionSubmitAttendance(body) {
         rec.id = genId('R');
         fresh.push(rec);
       }
+      n++;
     });
     if (changed) {
       var body2 = values.slice(1).map(function (row) { return plainRow_(headers, row); });
       sheet.getRange(2, 1, body2.length, headers.length).setNumberFormat('@').setValues(body2);
     }
     appendObjects(SHEET_ATTENDANCE, fresh);
+    appendObject(SHEET_SUBMISSIONS, { id: genId('L'), date: date, schoolId: schoolId, teacherId: s.userId, teacherName: s.name, submittedAt: now, count: n });
     return { ok: true, submittedAt: now, count: n };
   });
   if (!result.ok) return result;
@@ -844,32 +921,30 @@ function actionSubmitAttendance(body) {
   return result;
 }
 
-function actionGetOverview(body) {
-  requireSession(body.token, 'admin');
-  var schoolFilter = body.schoolId || null;
-  var cutoff = dateStrDaysAgo_(Number(body.days) || RETENTION_DAYS);
+// 每日每校統計（總覽、過去 40 天小卡、單日請假名單共用）
+function overviewData_(schoolFilter, cutoff) {
   var today = today_();
-
-  var schoolMap = {};
-  sheetToObjects(SHEET_SCHOOLS).forEach(function (sc) { schoolMap[sc.id] = sc.name; });
+  var schoolMap = {}, activeIds = [];
+  sheetToObjects(SHEET_SCHOOLS).forEach(function (sc) {
+    schoolMap[sc.id] = sc.name;
+    if (isActive_(sc.active)) activeIds.push(sc.id);
+  });
   var totals = {};
   sheetToObjects(SHEET_STUDENTS).forEach(function (st) {
     if (isActive_(st.active)) totals[st.schoolId] = (totals[st.schoolId] || 0) + 1;
   });
+  var attendance = sheetToObjects(SHEET_ATTENDANCE);
+  var subIdx = submittersIndex_(cutoff, attendance);
 
   var byDate = {};
-  sheetToObjects(SHEET_ATTENDANCE).forEach(function (a) {
+  attendance.forEach(function (a) {
     var d = String(a.date);
     if (d < cutoff) return;
     if (schoolFilter && a.schoolId !== schoolFilter) return;
     byDate[d] = byDate[d] || {};
-    var b = byDate[d][a.schoolId] = byDate[d][a.schoolId] || {
-      present: 0, selfDrop: 0, selfWalk: 0, leave: 0, fixedOff: 0, marked: 0,
-      submittedAt: String(a.submittedAt), submittedBy: a.teacherName
-    };
+    var b = byDate[d][a.schoolId] = byDate[d][a.schoolId] || { present: 0, selfDrop: 0, selfWalk: 0, leave: 0, fixedOff: 0, marked: 0 };
     var st = effectiveStatus_(a);
     if (st) { b[st] = (b[st] || 0) + 1; b.marked++; }
-    if (String(a.submittedAt) > b.submittedAt) { b.submittedAt = String(a.submittedAt); b.submittedBy = a.teacherName; }
   });
   byDate[today] = byDate[today] || {};
 
@@ -877,72 +952,115 @@ function actionGetOverview(body) {
   var result = dates.map(function (date) {
     var ids = Object.keys(byDate[date]);
     if (date === today) {
-      Object.keys(schoolMap).forEach(function (sid) {
+      activeIds.forEach(function (sid) {
         if (ids.indexOf(sid) === -1 && (!schoolFilter || schoolFilter === sid)) ids.push(sid);
       });
     }
     var schools = ids.map(function (sid) {
       var b = byDate[date][sid];
       var total = totals[sid] || 0;
+      var subs = subIdx[date + '|' + sid] || [];
+      var last = subs[subs.length - 1] || null;
       var item = {
         schoolId: sid, schoolName: schoolMap[sid] || '(已移除的學校)', total: total, submitted: !!b,
         present: 0, selfDrop: 0, selfWalk: 0, leave: 0, fixedOff: 0, attended: 0,
-        unmarked: total, submittedAt: null, submittedBy: null
+        unmarked: total, submitters: subs, submittedAt: last ? last.at : null, submittedBy: last ? last.name : null
       };
       if (b) {
         item.present = b.present; item.selfDrop = b.selfDrop; item.selfWalk = b.selfWalk;
         item.leave = b.leave; item.fixedOff = b.fixedOff;
         item.attended = b.present + b.selfDrop + b.selfWalk;
         item.unmarked = Math.max(0, total - b.marked);
-        item.submittedAt = b.submittedAt; item.submittedBy = b.submittedBy;
       }
       return item;
     });
     schools.sort(function (a, b) { return String(a.schoolName).localeCompare(String(b.schoolName), 'zh-Hant'); });
     return { date: date, schools: schools };
   });
-  return { ok: true, today: today, dates: result };
+  return { today: today, dates: result, attendance: attendance, schoolMap: schoolMap };
+}
+
+function actionGetOverview(body) {
+  requireSession(body.token, 'admin');
+  var d = overviewData_(body.schoolId || null, dateStrDaysAgo_(Number(body.days) || RETENTION_DAYS));
+  return { ok: true, today: d.today, dates: d.dates };
+}
+
+// 某一天的請假名單（全部學校或單一學校）＋ 當天各校摘要
+function actionGetDayLeaves(body) {
+  requireSession(body.token, 'admin');
+  var date = String(body.date || '');
+  var schoolFilter = body.schoolId || null;
+  var d = overviewData_(schoolFilter, date);
+  var day = d.dates.filter(function (x) { return x.date === date; })[0] || { date: date, schools: [] };
+  var stMap = {};
+  sheetToObjects(SHEET_STUDENTS).forEach(function (st) { stMap[st.id] = st; });
+  var leaves = d.attendance.filter(function (a) {
+    return String(a.date) === date && (!schoolFilter || a.schoolId === schoolFilter) && effectiveStatus_(a) === 'leave';
+  }).map(function (a) {
+    var st = stMap[a.studentId];
+    var so = st ? studentOut_(st) : { name: '(已刪除的學生)', grade: '', contacts: [], note: '' };
+    return {
+      schoolId: a.schoolId, schoolName: d.schoolMap[a.schoolId] || '(已移除的學校)',
+      id: a.studentId, name: so.name, grade: String(so.grade), contacts: so.contacts, note: so.note,
+      markedBy: a.teacherName, markedAt: String(a.submittedAt)
+    };
+  });
+  leaves.sort(function (a, b) {
+    return String(a.schoolName).localeCompare(String(b.schoolName), 'zh-Hant') ||
+      (gradeNum_(a.grade) - gradeNum_(b.grade)) || (classNum_(a.grade) - classNum_(b.grade)) ||
+      String(a.name).localeCompare(String(b.name), 'zh-Hant');
+  });
+  return { ok: true, date: date, schools: day.schools.filter(function (s) { return s.submitted; }), leaves: leaves };
 }
 
 function actionGetSchoolDayDetail(body) {
   requireSession(body.token, 'admin');
-  var attMap = {};
+  var attMap = {}, rows = [];
   sheetToObjects(SHEET_ATTENDANCE).forEach(function (a) {
-    if (a.schoolId === body.schoolId && String(a.date) === String(body.date)) attMap[a.studentId] = a;
+    if (a.schoolId === body.schoolId && String(a.date) === String(body.date)) { attMap[a.studentId] = a; rows.push(a); }
   });
   var wd = weekdayOf(String(body.date));
   var out = activeStudentsOf_(body.schoolId).map(function (st) {
     var a = attMap[st.id];
     var so = studentOut_(st);
+    var status = a ? effectiveStatus_(a) : '';
     // 有記錄就用當天記錄；舊資料沒有這個欄位時，以學生目前的固定不進班設定推算
     var fixed = (a && String(a.wasFixedOff) !== '') ? isTrue_(a.wasFixedOff) : so.fixedOffDays.indexOf(wd) !== -1;
     return {
-      id: st.id, name: st.name, grade: String(st.grade), status: a ? effectiveStatus_(a) : '',
-      wasFixedOff: fixed, contacts: so.contacts, note: so.note
+      id: st.id, name: st.name, grade: String(st.grade), status: status,
+      wasFixedOff: fixed, contacts: so.contacts, note: so.note,
+      markedBy: a && status ? a.teacherName : '', markedAt: a && status ? String(a.submittedAt) : ''
     };
   });
   sortStudents(out);
-  return { ok: true, students: out };
+  var submitters = submittersIndex_(String(body.date), rows)[String(body.date) + '|' + body.schoolId] || [];
+  return { ok: true, students: out, submitters: submitters };
 }
 
-// ---------- 定期清理 (點名紀錄超過 60 天才清除；順便清掉過期登入) ----------
+// ---------- 定期清理 (點名紀錄與送出紀錄超過 60 天才清除；順便清掉過期登入) ----------
+function pruneByDate_(sheetName, cutoff) {
+  var sheet = sheet_(sheetName);
+  var rows = sheet.getDataRange().getValues();
+  if (rows.length <= 1) return;
+  var dateCol = rows[0].indexOf('date');
+  var keep = [];
+  for (var i = 1; i < rows.length; i++) {
+    var d = rows[i][dateCol];
+    if (d instanceof Date) d = fromDateCell_(d, 'date');
+    if (String(d) >= cutoff) keep.push(plainRow_(rows[0], rows[i]));
+  }
+  if (keep.length < rows.length - 1) {
+    sheet.getRange(2, 1, rows.length - 1, rows[0].length).clearContent();
+    if (keep.length) sheet.getRange(2, 1, keep.length, rows[0].length).setNumberFormat('@').setValues(keep);
+  }
+}
+
 function cleanupOldRecords() {
   withLock_(function () {
-    var sheet = sheet_(SHEET_ATTENDANCE);
-    var rows = sheet.getDataRange().getValues();
-    if (rows.length <= 1) return;
-    var dateCol = rows[0].indexOf('date');
     var cutoff = dateStrDaysAgo_(RETENTION_DAYS);
-    var keep = [];
-    for (var i = 1; i < rows.length; i++) {
-      var d = rows[i][dateCol];
-      if (d instanceof Date) d = fromDateCell_(d, 'date');
-      if (String(d) >= cutoff) keep.push(plainRow_(rows[0], rows[i]));
-    }
-    if (keep.length < rows.length - 1) {
-      sheet.getRange(2, 1, rows.length - 1, rows[0].length).clearContent();
-      if (keep.length) sheet.getRange(2, 1, keep.length, rows[0].length).setNumberFormat('@').setValues(keep);
-    }
+    pruneByDate_(SHEET_ATTENDANCE, cutoff);
+    pruneByDate_(SHEET_SUBMISSIONS, cutoff);
   });
   cleanupExpiredSessions_();
 }

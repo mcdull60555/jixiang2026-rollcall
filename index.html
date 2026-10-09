@@ -200,6 +200,21 @@
   .fixed-tag{display:inline-block;margin-left:6px;font-size:11.5px;background:var(--slate-l);color:#475569;padding:1px 8px;border-radius:99px;font-weight:700;}
   .primary-ct{font-size:12px;color:var(--muted);margin-top:2px;}
   .primary-ct a{color:var(--sky);text-decoration:none;font-weight:600;}
+  .hist-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:10px;}
+  .hday{border:1.5px solid var(--border);border-radius:12px;background:#fff;padding:10px 8px;text-align:center;cursor:pointer;color:var(--text);}
+  .hday:hover:not(:disabled){border-color:var(--violet);box-shadow:var(--shadow);transform:translateY(-1px);}
+  .hday:focus-visible{outline:2px solid var(--violet);outline-offset:2px;}
+  .hday .hd-date{font-size:18px;font-weight:800;line-height:1.2;}
+  .hday .hd-wd{font-size:12.5px;color:var(--muted);font-weight:700;margin-bottom:6px;}
+  .hday.weekend .hd-wd{color:var(--rose);}
+  .hday .hd-leave{font-size:12.5px;font-weight:800;border-radius:7px;padding:2px 8px;background:#f1f5f9;color:var(--muted);display:inline-block;}
+  .hday .hd-leave.has{background:var(--amber-l);color:#92400e;}
+  .hday .hd-sub{font-size:11.5px;color:var(--muted);margin-top:4px;}
+  .hday:disabled{background:#f8fafc;cursor:default;opacity:.65;}
+  .marked-by{font-size:11.5px;color:var(--muted);margin-top:3px;}
+  .school-actions{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 10px;}
+  .modal h4{margin:16px 0 8px;font-size:15px;}
+  .back-link{margin-bottom:10px;}
   .banner-ok{background:var(--emerald-l);color:#065f46;padding:10px 14px;border-radius:10px;font-size:13.5px;margin-bottom:12px;font-weight:600;}
   .banner-edit{background:var(--amber-l);color:#92400e;padding:10px 14px;border-radius:10px;font-size:13.5px;margin-bottom:12px;font-weight:600;}
   .req{color:var(--rose);font-weight:800;}
@@ -312,13 +327,18 @@
   <section class="section" id="sec-overview">
     <div id="today-summary"></div>
     <div class="card accent-indigo">
-      <h2><span class="dot-sm"></span>每日點名總覽</h2>
-      <p class="hint">依日期由上而下遞減；每日內先依學校排序，點學校可看各年級明細</p>
+      <h2><span class="dot-sm"></span>今日點名總覽</h2>
+      <p class="hint">今天各校點名狀況（依學校排序），點學校可看點名明細</p>
       <div class="filter-row">
         <label for="overview-school-filter" class="field-label-text" style="margin:0;">篩選學校</label>
         <select id="overview-school-filter" onchange="loadOverview()"><option value="">全部學校</option></select>
       </div>
       <div id="overview-container"><div class="empty">載入中…</div></div>
+    </div>
+    <div class="card accent-violet">
+      <h2><span class="dot-sm"></span>過去 40 天點名紀錄</h2>
+      <p class="hint">由新到舊（由左而右、由上而下）；點日期看當天請假名單，再點學校看點名明細</p>
+      <div class="hist-grid" id="history-grid"></div>
     </div>
   </section>
 
@@ -338,6 +358,10 @@
     </div>
     <div class="card accent-teal hidden" id="students-card">
       <h2 id="students-card-title"><span class="dot-sm"></span>學生名單</h2>
+      <div class="school-actions">
+        <button class="btn btn-secondary btn-sm" id="school-edit-btn" onclick="openEditSchool()">✏️ 修改校名</button>
+        <button class="btn btn-danger btn-sm" id="school-del-btn" onclick="deleteSchool()">🗑️ 刪除學校</button>
+      </div>
       <p class="hint">姓名、年級班級（例如 306）、聯絡人與聯絡方式、固定不進班星期</p>
       <div class="bulk-bar">
         <span id="bulk-st-count">已選 0 位學生</span>
@@ -491,7 +515,7 @@ function errMsg(code) {
     USERNAME_TAKEN: '此帳號已被使用', WRONG_OLD_PASSWORD: '原密碼不正確', PASSWORD_REQUIRED: '請輸入新密碼',
     NAME_REQUIRED: '請輸入名稱', NAME_TOO_LONG: '名稱太長（最多 12 字）', SCHOOL_EXISTS: '已有同名學校',
     STUDENT_NOT_FOUND: '找不到該學生', TEACHER_NOT_FOUND: '找不到該老師', UNKNOWN_ACTION: '後端版本過舊，請重新部署 Code.gs',
-    BUSY: '目前多人同時操作中，請稍後再試一次', GRADE_REQUIRED: '請填寫年級班級', CONTACT_REQUIRED: '請至少填寫一組聯絡人與聯絡方式', INVALID_ROWS: '有學生資料不完整（姓名、年級班級、聯絡人與聯絡方式為必填）', USERNAME_REQUIRED: '請填寫登入帳號', CONFLICT: '這間學校的點名剛被其他老師更新', INCOMPLETE: '還有學生尚未點名'
+    BUSY: '目前多人同時操作中，請稍後再試一次', SCHOOL_NOT_FOUND: '找不到這間學校（可能已被刪除）', GRADE_REQUIRED: '請填寫年級班級', CONTACT_REQUIRED: '請至少填寫一組聯絡人與聯絡方式', INVALID_ROWS: '有學生資料不完整（姓名、年級班級、聯絡人與聯絡方式為必填）', USERNAME_REQUIRED: '請填寫登入帳號', CONFLICT: '這間學校的點名剛被其他老師更新', INCOMPLETE: '還有學生尚未點名'
   };
   return map[code] || ('發生錯誤（' + code + '）');
 }
@@ -769,6 +793,11 @@ async function loadSchools(silent) {
   f.innerHTML = '<option value="">全部學校</option>' + r.schools.map(s => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('');
   f.value = r.schools.some(s => s.id === keep) ? keep : '';
   if (STATE.currentSchoolId && r.schools.some(s => s.id === STATE.currentSchoolId)) await loadStudents(true);
+  else if (STATE.currentSchoolId) {   // 學校已被（其他管理員）刪除
+    STATE.currentSchoolId = null; STATE.selStudents.clear();
+    $('students-card').classList.add('hidden');
+    renderSchoolList();
+  }
 }
 
 function renderSchoolList() {
@@ -790,6 +819,41 @@ function selectSchool(id) {
   $('students-card-title').innerHTML = '<span class="dot-sm"></span>' + esc(school ? school.name : '') + ' 學生名單';
   renderSchoolList();
   loadStudents();
+}
+
+function openEditSchool() {
+  const school = STATE.schools.find(s => s.id === STATE.currentSchoolId);
+  if (!school) return;
+  const modal = buildModal('修改校名', `
+    <div class="field"><label for="m-school-name">學校名稱 <span class="req">*</span></label><input id="m-school-name" value="${esc(school.name)}"></div>
+  `, async () => {
+    const el = $('m-school-name');
+    const name = el.value.trim();
+    el.classList.toggle('invalid', !name);
+    if (!name) { toast('學校名稱不能空白', true); return false; }
+    if (name === school.name) return true;
+    const r = await doWrite('editSchool', { schoolId: school.id, name }, async () => {
+      await loadSchools(true);
+      $('students-card-title').innerHTML = '<span class="dot-sm"></span>' + esc(name) + ' 學生名單';
+    });
+    return !!r;
+  });
+  modal.querySelector('#m-school-name').focus();
+}
+
+async function deleteSchool() {
+  const school = STATE.schools.find(s => s.id === STATE.currentSchoolId);
+  if (!school) return;
+  const ok = await confirmBox('刪除學校',
+    `確定要刪除「<b>${esc(school.name)}</b>」嗎？<br>該校 <b>${school.studentCount}</b> 位學生也會一併刪除，老師端將看不到這間學校。<br><span style="color:var(--muted);font-size:13px">過去的點名紀錄仍會保留，可在點名總覽查看。</span>`, '刪除學校', true);
+  if (!ok) return;
+  const r = await doWrite('deleteSchool', { schoolId: school.id }, async () => {
+    STATE.currentSchoolId = null;
+    STATE.selStudents.clear();
+    $('students-card').classList.add('hidden');
+    await loadSchools(true);
+  }, res => `同步成功（已刪除學校${res.deletedStudents ? `及 ${res.deletedStudents} 位學生` : ''}）`);
+  return r;
 }
 
 async function addSchool() {
@@ -949,9 +1013,15 @@ function contactGroupHtml(idx, c, radioName, removable) {
     ${removable ? '<button type="button" class="icon-btn" aria-label="移除這組聯絡人" onclick="removeContactGroup(this)">✕</button>' : ''}
   </div>`;
 }
-function removeContactGroup(btn) {
+async function removeContactGroup(btn) {
   const wrap = btn.closest('#m-st-contacts');
-  btn.closest('.cg').remove();
+  const g = btn.closest('.cg');
+  const rel = g.querySelector('.cg-rel').value, phone = g.querySelector('.cg-phone').value.trim();
+  if ((rel && rel !== '__custom__') || phone) {
+    const ok = await confirmBox('刪除聯絡人', `確定要刪除這組聯絡人${rel ? '「' + esc(rel) + (phone ? ' ' + esc(phone) : '') + '」' : ''}嗎？`, '刪除', true);
+    if (!ok) return;
+  }
+  g.remove();
   [...wrap.children].forEach((g, i) => {   // 重新編號，避免移除中間一組後編號重複
     g.dataset.idx = i + 1;
     g.querySelector('input[type=radio]').value = i + 1;
@@ -1041,7 +1111,16 @@ function bsRowHtml() {
     ${groups}
     <td class="days">${daysChips([], 'bs-day')}</td>
     <td><input class="bs-note cell-input" aria-label="備註" placeholder="例如：中午接" style="min-width:150px"></td>
-    <td><button type="button" class="icon-btn" aria-label="刪除此列" onclick="this.closest('tr').remove();bsRenumber()">✕</button></td></tr>`;
+    <td><button type="button" class="icon-btn" aria-label="刪除此列" onclick="bsRemoveRow(this)">✕</button></td></tr>`;
+}
+// 刪除批次表格中的一列：有填資料就先確認
+async function bsRemoveRow(btn) {
+  const tr = btn.closest('tr');
+  const name = tr.querySelector('.bs-name').value.trim();
+  const hasData = [...tr.querySelectorAll('input.cell-input, select')].some(el => el.value && el.value !== '__custom__') || tr.querySelector('.bs-day:checked');
+  if (hasData && !(await confirmBox('刪除這一列', `確定要刪除第 ${esc(tr.querySelector('.idx').textContent)} 列${name ? '「' + esc(name) + '」' : ''}嗎？<br><span style="color:var(--muted);font-size:13px">這一列已填的資料會清除。</span>`, '刪除', true))) return;
+  tr.remove();
+  bsRenumber();
 }
 function bsRenumber() { document.querySelectorAll('#bs-body tr').forEach((tr, i) => { tr.querySelector('.idx').textContent = i + 1; }); }
 function bsAddRows(n) { $('bs-body').insertAdjacentHTML('beforeend', Array.from({ length: n }, bsRowHtml).join('')); bsRenumber(); }
@@ -1194,21 +1273,71 @@ async function loadOverview(silent) {
     $('today-summary').innerHTML = '';
   }
 
-  const days = r.dates.filter(d => d.schools.length);
-  if (!days.length) { container.innerHTML = '<div class="empty">目前沒有點名紀錄</div>'; return; }
-  container.innerHTML = days.map(d => {
-    const t = sumSchools(d.schools);
-    return `<div class="day-group">
-      <div class="day-head"><h3>${esc(d.date)}（${weekdayLabel(d.date)}）${d.date === r.today ? '<span class="today-badge">今天</span>' : ''}</h3>
-      <span class="day-total">合計 到班 ${t.present}・自送 ${t.selfDrop}・自走 ${t.selfWalk}・請假 ${t.leave}・固定不進班 ${t.fixedOff}・未點名 ${t.unmarked}</span></div>
-      ${d.schools.map(s => s.submitted ? `
-        <div class="day-school" tabindex="0" role="button" onclick="openDayDetail('${esc(s.schoolId)}','${esc(d.date)}')" onkeydown="if(event.key==='Enter')this.click()">
-          <div><div class="name">${esc(s.schoolName)}</div><div class="meta">送出：${esc(s.submittedBy || '-')}　${esc(fmtTime(s.submittedAt))}</div></div>
-          <div class="stats">${statsHtml(s, true)}</div></div>` : `
-        <div class="day-school pending"><div><div class="name">${esc(s.schoolName)}</div><div class="meta">尚未點名・總人數 ${s.total}</div></div>
-          <span class="pill st-unmarked">尚未點名</span></div>`).join('')}
-    </div>`;
-  }).join('');
+  // 今日各校
+  const td = todayEntry || { date: r.today, schools: [] };
+  container.innerHTML = td.schools.length ? `<div class="day-group">
+      <div class="day-head"><h3>${esc(td.date)}（${weekdayLabel(td.date)}）<span class="today-badge">今天</span></h3></div>
+      ${td.schools.map(s => schoolDayCardHtml(s, td.date)).join('')}</div>` : '<div class="empty">目前沒有學校</div>';
+
+  // 過去 40 天：日期小卡，由新到舊（由左而右、由上而下）
+  const byDate = {};
+  r.dates.forEach(d => { byDate[d.date] = d; });
+  const cards = [];
+  for (let i = 1; i <= 40; i++) {
+    const date = addDays(r.today, -i);
+    const d = byDate[date];
+    const has = d && d.schools.some(s => s.submitted);
+    const wd = weekdayLabel(date);
+    const weekend = wd === '週六' || wd === '週日';
+    if (has) {
+      const t = sumSchools(d.schools);
+      cards.push(`<button type="button" class="hday${weekend ? ' weekend' : ''}" data-date="${date}" onclick="openDayLeaves('${date}')" aria-label="${date} ${wd}，請假 ${t.leave} 人">
+        <div class="hd-date">${date.slice(5).replace('-', '/')}</div><div class="hd-wd">${wd}</div>
+        <div class="hd-leave${t.leave ? ' has' : ''}">請假 ${t.leave}</div><div class="hd-sub">${t.submitted} 校已點名</div></button>`);
+    } else {
+      cards.push(`<button type="button" class="hday${weekend ? ' weekend' : ''}" data-date="${date}" disabled>
+        <div class="hd-date">${date.slice(5).replace('-', '/')}</div><div class="hd-wd">${wd}</div><div class="hd-sub">無點名紀錄</div></button>`);
+    }
+  }
+  $('history-grid').innerHTML = cards.join('');
+}
+
+function addDays(dateStr, n) {
+  const d = new Date(dateStr + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+function fmtClock(iso) {
+  const d = new Date(iso);
+  return isNaN(d) ? '' : d.toLocaleTimeString('zh-TW', { hour12: false, hour: '2-digit', minute: '2-digit' });
+}
+// 送出點名的老師：同一位只列一次，不同老師依時間先後全部列出（例如上午 A 老師、下午 B 老師）
+function submittersText(list) {
+  return (list || []).map(x => `${esc(x.name)}（${esc(fmtClock(x.at))}）`).join('、') || '-';
+}
+function schoolDayCardHtml(s, date, fromLeaves) {
+  if (!s.submitted) {
+    return `<div class="day-school pending"><div><div class="name">${esc(s.schoolName)}</div><div class="meta">尚未點名・總人數 ${s.total}</div></div>
+      <span class="pill st-unmarked">尚未點名</span></div>`;
+  }
+  return `<div class="day-school" tabindex="0" role="button" data-school="${esc(s.schoolId)}" onclick="openDayDetail('${esc(s.schoolId)}','${esc(date)}',${fromLeaves ? 'true' : 'false'})" onkeydown="if(event.key==='Enter')this.click()">
+    <div><div class="name">${esc(s.schoolName)}</div><div class="meta">送出：${submittersText(s.submitters)}</div></div>
+    <div class="stats">${statsHtml(s, true)}</div></div>`;
+}
+
+// 點日期小卡：當天請假名單 → 再點學校看點名明細
+async function openDayLeaves(date) {
+  const schoolId = $('overview-school-filter').value || null;
+  const r = await api('getDayLeaves', { date, schoolId });
+  const t = sumSchools(r.schools);
+  const leaves = r.leaves.length ? `<div class="table-wrap"><table><thead><tr><th>學校</th><th>年級班級</th><th>姓名 / 聯絡人 / 備註</th><th>點名老師</th></tr></thead><tbody>
+    ${r.leaves.map(x => `<tr><td>${esc(x.schoolName)}</td><td><b>${esc(x.grade) || '-'}</b></td><td>${personCellHtml(x)}</td><td>${esc(x.markedBy || '-')}<div class="marked-by">${esc(fmtClock(x.markedAt))}</div></td></tr>`).join('')}
+    </tbody></table></div>` : '<div class="empty">這天沒有請假的學生</div>';
+  buildModal(`${date.slice(5).replace('-', '/')}（${weekdayLabel(date)}）請假名單`, `
+    <div class="rc-summary">${statsHtml(t, true)}</div>
+    <h4>請假名單（${r.leaves.length} 人）</h4>${leaves}
+    <h4>各校點名明細</h4>${r.schools.map(s => schoolDayCardHtml(s, date, true)).join('') || '<div class="empty">這天沒有點名紀錄</div>'}`,
+    null, { hideConfirm: true, wide: true });
 }
 
 /* 點名明細排序：未點名 → 請假 → 自走 → 自送 → 固定不進班 → 到班(最下面)；同狀態內依年級班級 */
@@ -1247,16 +1376,19 @@ function statusTableHtml(students) {
       cur = k;
       html += `<tr class="grp ${statusClass(k)}"><td colspan="3">${statusLabel(k)}・${sorted.filter(x => (x.status || '') === k).length} 人</td></tr>`;
     }
-    html += `<tr><td><b>${esc(st.grade) || '-'}</b></td><td>${personCellHtml(st)}</td><td>${statusPillHtml(k, st.wasFixedOff || st.isFixedOff)}</td></tr>`;
+    html += `<tr><td><b>${esc(st.grade) || '-'}</b></td><td>${personCellHtml(st)}</td><td>${statusPillHtml(k, st.wasFixedOff || st.isFixedOff)}` +
+      (st.markedBy ? `<div class="marked-by">${esc(st.markedBy)} ${esc(fmtClock(st.markedAt))}</div>` : '') + '</td></tr>';
   });
   return `<div class="table-wrap"><table><thead><tr><th>年級班級</th><th>姓名 / 聯絡人 / 備註</th><th>狀態</th></tr></thead><tbody>
     ${html || '<tr><td colspan="3" class="empty">無資料</td></tr>'}</tbody></table></div>`;
 }
 
-async function openDayDetail(schoolId, date) {
+async function openDayDetail(schoolId, date, fromLeaves) {
   const school = STATE.schools.find(s => s.id === schoolId);
   const r = await api('getSchoolDayDetail', { schoolId, date });
-  buildModal(`${school ? school.name : ''}　${date} 點名明細`,
+  buildModal(`${school ? school.name : ''}　${date}（${weekdayLabel(date)}）點名明細`,
+    (fromLeaves ? `<button type="button" class="btn btn-secondary btn-sm back-link" id="back-to-leaves" onclick="openDayLeaves('${esc(date)}')">← 回到請假名單</button>` : '') +
+    `<div class="banner-ok">送出點名：${submittersText(r.submitters)}</div>` +
     `<div class="rc-summary">${statsHtml(countStatuses(r.students), true)}</div>${statusTableHtml(r.students)}`, null, { hideConfirm: true, wide: true });
 }
 
@@ -1275,7 +1407,7 @@ async function loadRollCall(silent, opts) {
   if (!silent) container.innerHTML = '<div class="empty">載入中…</div>';
   const r = await api('getRollCall', { schoolId }, { pill: !silent, flash: !silent });
   if ($('rollcall-school-select').value !== schoolId) return;
-  STATE.rollcall = { schoolId, students: r.students, submitted: r.submitted, submittedAt: r.submittedAt || '', submittedBy: r.submittedBy || '' };
+  STATE.rollcall = { schoolId, students: r.students, submitted: r.submitted, submittedAt: r.submittedAt || '', submittedBy: r.submittedBy || '', submitters: r.submitters || [] };
   if (!r.students.length) {
     $('rollcall-banner').innerHTML = '';
     container.innerHTML = '<div class="empty">此校尚無學生資料</div>';
@@ -1290,7 +1422,7 @@ function renderRcView() {
   const rc = STATE.rollcall;
   STATE.rcMode = 'view';
   const c = countStatuses(rc.students);
-  $('rollcall-banner').innerHTML = `<div class="banner-ok">✔ 今日已由 ${esc(rc.submittedBy)} 送出點名（${esc(fmtTime(rc.submittedAt))}）` +
+  $('rollcall-banner').innerHTML = `<div class="banner-ok">✔ 今日已送出點名：${submittersText(rc.submitters)}` +
     (c.unmarked ? `　<span class="pill st-unmarked">尚有 ${c.unmarked} 位未點名</span>` : '') + '</div>';
   $('rollcall-container').innerHTML = `<h3 style="margin:4px 0 8px;font-size:16px">已送出的點名明細</h3>
     <div class="rc-summary">${statsHtml(c, true)}</div>${statusTableHtml(rc.students)}`;
@@ -1316,7 +1448,7 @@ function renderRcEdit() {
   const rc = STATE.rollcall;
   STATE.rcMode = 'edit';
   $('rollcall-banner').innerHTML = rc.submitted
-    ? `<div class="banner-edit">✎ 正在修改 ${esc(rc.submittedBy)} 於 ${esc(fmtTime(rc.submittedAt))} 送出的點名單，改完請按「送出點名」</div>` : '';
+    ? `<div class="banner-edit">✎ 正在修改今日點名單（已送出：${submittersText(rc.submitters)}），改完請按「送出點名」</div>` : '';
   const todo = rc.students.filter(st => !st.status);
   const done = sortedByStatus(rc.students.filter(st => st.status));
   let body = '';
