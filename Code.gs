@@ -7,7 +7,7 @@
  * 2. 把這個檔案全部內容貼到 Apps Script 編輯器（先刪掉原本的程式碼）。
  * 3. 執行一次 setup()（第一次會跳出授權視窗，點允許）。
  *    它會自動建立/補齊所有分頁與欄位，建立管理員帳號 admin / 1234，並建立每日清理排程。
- *    之後每次更新程式碼，也建議再執行一次 setup()。
+ *    之後更新程式碼時，只有在說明需要時才要再執行 setup()（它會整理所有分頁格式，比較花時間）。
  * 4. 「部署 > 新增部署作業」→ 類型「網頁應用程式」→ 執行身分「我」、存取權限「任何人」。
  *    取得 /exec 網址後貼到 index.html 最上面的 CONFIG.API_URL。
  *    （修改程式碼後要到「部署 > 管理部署作業 > 編輯 > 版本：新版本」重新部署，網址不變）
@@ -15,7 +15,7 @@
 
 // ---------- 基本設定 ----------
 var SPREADSHEET_ID = '1Xk5mxGTzRDmsLlbag6dkHn6420n6ZLUP59z6QefTjKo';      // 試算表 ID 或整段網址 (留空則使用目前綁定的試算表)
-var RETENTION_DAYS = 60;      // 點名紀錄保留天數 (超過才清除)
+var RETENTION_DAYS = 40;      // 點名紀錄保留天數：超過 40 天的舊資料於每天凌晨 3 點自動清除
 var SESSION_HOURS = 12;       // 登入 token 最長有效時數 (前端另外有閒置 60 分鐘自動登出)
 var TZ = 'Asia/Taipei';
 var SCHEMA_VERSION = 'schema_v5';
@@ -59,14 +59,18 @@ function createDailyCleanupTrigger() {
   ScriptApp.newTrigger('cleanupOldRecords').timeBased().everyDays(1).atHour(3).create();
 }
 
-// 建立缺少的分頁、補齊缺少的欄位、把所有欄位設成純文字(避免日期/數字被自動轉換)、建立預設管理員
+// 建立缺少的分頁、補齊缺少的欄位、建立預設管理員。
+// force=true（執行 setup() 時）才會把整張分頁設成純文字格式；平常只做快速檢查，避免拖慢使用者
 function ensureSchema_(force) {
   var cache = CacheService.getScriptCache();
   if (!force && cache.get(SCHEMA_VERSION)) return;
   var ss = ss_();
+  var existing = {};
+  ss.getSheets().forEach(function (sh) { existing[sh.getName()] = sh; });
   Object.keys(HEADERS).forEach(function (name) {
-    var sheet = ss.getSheetByName(name);
-    if (!sheet) sheet = ss.insertSheet(name);
+    var sheet = existing[name];
+    var isNew = !sheet;
+    if (isNew) sheet = ss.insertSheet(name);
     var lastCol = sheet.getLastColumn();
     var have = lastCol > 0 ? sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(String) : [];
     var added = false;
@@ -74,8 +78,10 @@ function ensureSchema_(force) {
       if (have.indexOf(h) === -1) { have.push(h); added = true; }
     });
     if (added) sheet.getRange(1, 1, 1, have.length).setNumberFormat('@').setValues([have]);
-    sheet.setFrozenRows(1);
-    sheet.getRange(1, 1, sheet.getMaxRows(), have.length).setNumberFormat('@');
+    if (isNew || force) {
+      sheet.setFrozenRows(1);
+      sheet.getRange(1, 1, sheet.getMaxRows(), have.length).setNumberFormat('@');
+    }
   });
   if (sheet_(SHEET_ADMINS).getLastRow() < 2) {
     appendObject(SHEET_ADMINS, { id: genId('A'), username: 'admin', password: hashPwd('1234'), name: '管理員' });
@@ -163,7 +169,16 @@ function fromDateCell_(v, header) {
   return v.toISOString();
 }
 
+// 同一次請求內讀過的分頁先記住，不重複讀整張表（有寫入時自動作廢）
+var _memo = {};
+function touch_(name) { delete _memo[name]; }
 function sheetToObjects(name) {
+  if (_memo[name]) return _memo[name].map(function (o) { return Object.assign({}, o); });
+  var out = readSheetObjects_(name);
+  _memo[name] = out;
+  return out.map(function (o) { return Object.assign({}, o); });
+}
+function readSheetObjects_(name) {
   var rows = sheet_(name).getDataRange().getValues();
   if (rows.length < 1) return [];
   var headers = rows[0];
@@ -194,6 +209,7 @@ function appendObject(name, obj) { appendObjects(name, [obj]); }
 
 function appendObjects(name, objs) {
   if (!objs.length) return;
+  touch_(name);
   var sheet = sheet_(name);
   var headers = headersOf_(sheet);
   var data = objs.map(function (o) {
@@ -203,6 +219,7 @@ function appendObjects(name, objs) {
 }
 
 function updateObjectByRow(name, rowIndex, obj) {
+  touch_(name);
   var sheet = sheet_(name);
   var headers = headersOf_(sheet);
   var row = headers.map(function (h) { return toCell_(obj[h]); });
@@ -230,19 +247,35 @@ function createSession(user, role) {
   if (sheet.getLastRow() > 300) cleanupExpiredSessions_();
   var token = Utilities.getUuid();
   var now = new Date();
-  appendObject(SHEET_SESSIONS, {
+  var sess = {
     token: token, userId: user.id, role: role, name: user.name, username: user.username,
     createdAt: now.toISOString(), expiresAt: new Date(now.getTime() + SESSION_HOURS * 3600 * 1000).toISOString()
-  });
+  };
+  appendObject(SHEET_SESSIONS, sess);
+  cacheSession_(sess);
   return token;
+}
+
+// 登入身分放進快取：每個動作不必再讀整張「登入紀錄」表，速度快很多
+function cacheSession_(s) {
+  CacheService.getScriptCache().put('sess_' + s.token, JSON.stringify({
+    token: s.token, userId: s.userId, role: s.role, name: s.name, username: s.username, expiresAt: s.expiresAt
+  }), 21600);
 }
 
 function getSession(token) {
   if (!token) return null;
+  var cache = CacheService.getScriptCache();
+  var hit = cache.get('sess_' + token);
+  if (hit) {
+    var c = JSON.parse(hit);
+    return new Date(c.expiresAt).getTime() < Date.now() ? null : c;
+  }
   var sessions = sheetToObjects(SHEET_SESSIONS);
   for (var i = sessions.length - 1; i >= 0; i--) {
     if (sessions[i].token === token) {
       if (new Date(sessions[i].expiresAt).getTime() < Date.now()) return null;
+      cacheSession_(sessions[i]);
       return sessions[i];
     }
   }
@@ -253,11 +286,14 @@ function requireSession(token, role) {
   var s = getSession(token);
   if (!s) throw new Error('AUTH_EXPIRED');
   if (role && s.role !== role) throw new Error('FORBIDDEN');
-  // 帳號被刪除後，已登入的裝置也立即失效
+  // 帳號被刪除後，已登入的裝置也立即失效（刪除帳號時會一併清掉這個快取）
+  var cache = CacheService.getScriptCache();
+  if (cache.get('user_' + s.userId)) return s;
   var users = sheetToObjects(s.role === 'admin' ? SHEET_ADMINS : SHEET_TEACHERS);
   var u = users.filter(function (x) { return x.id === s.userId; })[0];
   if (!u || (s.role === 'teacher' && !isActive_(u.active))) throw new Error('AUTH_EXPIRED');
   s.name = u.name;
+  cache.put('user_' + s.userId, '1', 600);
   return s;
 }
 
@@ -272,6 +308,7 @@ function cleanupExpiredSessions_() {
       if (new Date(rows[i][expCol]).getTime() >= Date.now()) keep.push(plainRow_(rows[0], rows[i]));
     }
     if (keep.length < rows.length) {
+      touch_(SHEET_SESSIONS);
       sheet.getRange(2, 1, rows.length - 1, rows[0].length).clearContent();
       if (keep.length > 1) sheet.getRange(2, 1, keep.length - 1, rows[0].length).setNumberFormat('@').setValues(keep.slice(1));
     }
@@ -297,6 +334,7 @@ function doPost(e) {
 }
 
 function route(body) {
+  _memo = {};
   var action = body.action;
   if (action === 'ping') {
     ss_();
@@ -349,6 +387,7 @@ function actionLogin(body) {
 
 function actionLogout(body) {
   if (!body.token) return { ok: true };
+  CacheService.getScriptCache().remove('sess_' + body.token);
   withLock_(function () {
     var sheet = sheet_(SHEET_SESSIONS);
     var rows = sheetToObjects(SHEET_SESSIONS);
@@ -443,6 +482,7 @@ function actionAddTeacher(body) {
 }
 
 function deleteRows_(sheetName, rowObjs) {
+  touch_(sheetName);
   var sheet = sheet_(sheetName);
   rowObjs.map(function (o) { return o._row; }).sort(function (a, b) { return b - a; })
     .forEach(function (r) { sheet.deleteRow(r); });
@@ -455,6 +495,7 @@ function actionDeleteTeachersBatch(body) {
   (body.teacherIds || []).forEach(function (id) { ids[id] = true; });
   var targets = sheetToObjects(SHEET_TEACHERS).filter(function (t) { return ids[t.id]; });
   deleteRows_(SHEET_TEACHERS, targets);
+  CacheService.getScriptCache().removeAll(targets.map(function (t) { return 'user_' + t.id; }));
   return { ok: true, deleted: targets.length };
 }
 
@@ -743,7 +784,7 @@ function actionDeleteStudentsBatch(body) {
     if (ids[values[i][idCol]] && isActive_(v)) { v = 'false'; n++; }
     col.push([toCell_(v)]);
   }
-  if (n) sheet.getRange(2, actCol + 1, col.length, 1).setNumberFormat('@').setValues(col);
+  if (n) { touch_(SHEET_STUDENTS); sheet.getRange(2, actCol + 1, col.length, 1).setNumberFormat('@').setValues(col); }
   return { ok: true, deleted: n };
 }
 
@@ -903,6 +944,7 @@ function actionSubmitAttendance(body) {
       n++;
     });
     if (changed) {
+      touch_(SHEET_ATTENDANCE);
       var body2 = values.slice(1).map(function (row) { return plainRow_(headers, row); });
       sheet.getRange(2, 1, body2.length, headers.length).setNumberFormat('@').setValues(body2);
     }
@@ -910,14 +952,7 @@ function actionSubmitAttendance(body) {
     appendObject(SHEET_SUBMISSIONS, { id: genId('L'), date: date, schoolId: schoolId, teacherId: s.userId, teacherName: s.name, submittedAt: now, count: n });
     return { ok: true, submittedAt: now, count: n };
   });
-  if (!result.ok) return result;
-
-  // 超過 60 天的清理：每天最多順便做一次（另有每日排程）
-  var cache = CacheService.getScriptCache();
-  if (!cache.get('cleaned_' + date)) {
-    try { cleanupOldRecords(); } catch (e) { /* 清理失敗不影響點名 */ }
-    cache.put('cleaned_' + date, '1', 21600);
-  }
+  // 舊資料清理只交給每天凌晨 3 點的排程，不讓老師送出時等待
   return result;
 }
 
@@ -1038,7 +1073,7 @@ function actionGetSchoolDayDetail(body) {
   return { ok: true, students: out, submitters: submitters };
 }
 
-// ---------- 定期清理 (點名紀錄與送出紀錄超過 60 天才清除；順便清掉過期登入) ----------
+// ---------- 定期清理 (點名紀錄與送出紀錄超過 40 天才清除；順便清掉過期登入) ----------
 function pruneByDate_(sheetName, cutoff) {
   var sheet = sheet_(sheetName);
   var rows = sheet.getDataRange().getValues();
@@ -1051,6 +1086,7 @@ function pruneByDate_(sheetName, cutoff) {
     if (String(d) >= cutoff) keep.push(plainRow_(rows[0], rows[i]));
   }
   if (keep.length < rows.length - 1) {
+    touch_(sheetName);
     sheet.getRange(2, 1, rows.length - 1, rows[0].length).clearContent();
     if (keep.length) sheet.getRange(2, 1, keep.length, rows[0].length).setNumberFormat('@').setValues(keep);
   }

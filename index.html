@@ -151,7 +151,7 @@
   .st-unmarked{--c:var(--rose);--cl:var(--rose-l);}
   .st-total{--c:var(--text);--cl:#e2e8f0;}
   .pill[class*="st-"]{background:var(--cl);color:var(--c);}
-  .pill-primary{background:var(--amber-l);color:#92400e;font-size:11px;padding:1px 7px;border-radius:99px;font-weight:700;margin-left:4px;}
+  .pill-primary{background:var(--amber-l);color:#92400e;font-size:11px;padding:1px 7px;border-radius:99px;font-weight:700;margin-right:5px;}
 
   .school-list{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;}
   .school-chip{padding:8px 16px;border-radius:99px;border:1.5px solid var(--border);background:#fff;font-weight:700;font-size:14px;color:var(--text);}
@@ -169,7 +169,8 @@
   .chip input:focus-visible + span{outline:2px solid var(--accent);outline-offset:1px;}
 
   /* contacts */
-  .cg{display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap;}
+  .cg{display:grid;grid-template-columns:120px minmax(0,1fr) auto auto;gap:8px;align-items:center;margin-bottom:8px;}
+  .cg select,.cg input.ph{width:100%!important;min-width:0!important;}
   .cg select{flex:0 0 120px;} .cg input.ph{flex:1;min-width:140px;}
   .cg .pr{display:flex;align-items:center;gap:4px;font-size:13px;color:var(--muted);white-space:nowrap;}
   .cg input,.cg select{padding:9px 10px;border:1px solid #cbd5e1;border-radius:9px;background:#fff;width:auto;}
@@ -266,6 +267,103 @@
   #doneToast{position:fixed;left:50%;top:33%;transform:translateX(-50%);z-index:10001;background:var(--emerald);color:#fff;border-radius:16px;box-shadow:0 20px 50px rgba(0,0,0,.3);padding:16px 30px;font-weight:800;font-size:17px;display:flex;align-items:center;gap:8px;}
   #toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1e293b;color:#fff;padding:12px 22px;border-radius:10px;font-size:14px;box-shadow:0 4px 18px rgba(0,0,0,.25);z-index:10002;max-width:92vw;}
   #toast.err{background:var(--rose);}
+
+  /* ================= 平板（≤ 900px） ================= */
+  @media (max-width:900px){
+    main.content{padding:16px 12px 48px;}
+    #topbar{padding:10px 14px;}
+    .hist-grid{grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:8px;}
+    .day-school .stats .stat{min-width:52px;}
+    .modal.wide{max-width:96vw;}
+  }
+
+  /* ================= 手機（≤ 640px） ================= */
+  @media (max-width:640px){
+    body{font-size:15px;}
+    #topbar{padding:8px 12px;gap:8px;}
+    .logo-box{width:36px;height:36px;border-radius:9px;}
+    .logo-box svg{width:22px;height:22px;}
+    .brand{gap:9px;}
+    .brand h1{font-size:16px;gap:6px;}
+    .badge-cloud{font-size:9.5px;padding:1px 5px;}
+    .header-right{width:100%;gap:6px;}
+    .whoami{padding:4px 10px;font-size:12.5px;margin-right:auto;}
+    .btn-h{padding:6px 10px;font-size:12.5px;}
+    nav.tabs{padding:6px 8px;gap:4px;overflow-x:auto;flex-wrap:nowrap;}
+    nav.tabs button{padding:8px 12px;font-size:13.5px;white-space:nowrap;flex:1;}
+    main.content{padding:12px 10px 40px;}
+    .card{padding:14px 12px;border-radius:12px;margin-bottom:12px;}
+    .card h2{font-size:16px;}
+    .card .hint{font-size:12.5px;margin-bottom:10px;}
+    .row{gap:8px;}
+    .row .field{min-width:100%;}
+    .row > .btn{flex:1;}
+    .login-card{padding:24px 18px;}
+
+    /* 統計小方塊：一列 4 個 */
+    .rc-summary,.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;}
+    .stat,.stats .stat{min-width:0;padding:6px 2px;font-size:11px;}
+    .stat b,.stats .stat b{font-size:17px;}
+    .today-card{padding:12px;}
+    .today-card h3{font-size:14px;line-height:1.5;}
+    .day-school{padding:10px 10px 10px 12px;}
+    .day-school > div:first-child{width:100%;}
+    .day-school .stats{width:100%;}
+
+    /* 過去 40 天小卡：一列 5 張、精簡顯示 */
+    .hist-grid{grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;}
+    .hday{padding:7px 2px;border-radius:10px;}
+    .hday .hd-date{font-size:14px;}
+    .hday .hd-wd{font-size:11px;margin-bottom:3px;}
+    .hday .hd-leave{font-size:10.5px;padding:1px 4px;}
+    .hday .hd-sub{display:none;}
+
+    /* 點名 / 明細表格 → 卡片：一位學生一張 */
+    .card-table thead{display:none;}
+    .card-table,.card-table tbody{display:block;}
+    .card-table tr:not(.grp):not(.sec){display:grid;grid-template-columns:48px minmax(0,1fr);gap:6px 10px;padding:12px 4px;border-bottom:1px solid var(--border);}
+    .card-table tr:not(.grp):not(.sec) td{display:block;border:none;padding:0;}
+    .card-table tr:not(.grp):not(.sec) td:nth-child(1){padding-top:1px;font-size:15px;}
+    .card-table tr:not(.grp):not(.sec) td:nth-child(3){grid-column:1 / -1;display:flex;flex-wrap:wrap;align-items:center;gap:6px;}
+    .card-table td:nth-child(3) .marked-by,.card-table td:nth-child(3) .note-box{margin-top:0;}
+    .card-table tr.grp,.card-table tr.sec{display:block;}
+    .card-table tr.grp td,.card-table tr.sec td{display:block;border-radius:8px;}
+    .card-table .p-name{font-size:16px;}
+    .rc-table .st-group{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;width:100%;}
+    .rc-table .st-btn{min-width:0;padding:11px 0;font-size:15px;}
+    .rc-table td:nth-child(3) .note-box{width:100%;}
+
+    /* 學生名單 → 卡片 */
+    .stu-table thead tr{display:flex;align-items:center;}
+    .stu-table thead th{display:none;}
+    .stu-table thead th.sel{display:flex;align-items:center;gap:6px;border:none;width:auto;padding:4px 6px;}
+    .stu-table thead th.sel::after{content:"全選";font-size:13px;color:var(--muted);}
+    .stu-table,.stu-table tbody{display:block;}
+    .stu-table tbody tr{display:grid;grid-template-columns:30px 48px minmax(0,1fr) auto;gap:4px 8px;align-items:center;padding:10px 2px;border-bottom:1px solid var(--border);}
+    .stu-table tbody td{display:block;border:none;padding:0;}
+    .stu-table td.c-name{font-weight:700;font-size:16px;}
+    .stu-table td.c-act{grid-column:4;grid-row:1;}
+    .stu-table td.c-sel,.stu-table td.sel{grid-row:1;}
+    .stu-table td.c-contacts,.stu-table td.c-days,.stu-table td.c-note{grid-column:2 / -1;}
+    .stu-table td.c-days::before,.stu-table td.c-note::before{content:attr(data-label) "：";color:var(--muted);font-size:12.5px;font-weight:600;}
+    .stu-table td.is-empty{display:none;}
+    .stu-table td.empty{grid-column:1 / -1;}
+    .stu-table .ct-line{white-space:normal;}
+    .note-cell{max-width:none;}
+
+    /* 表單 / 視窗 */
+    .modal-bg,.prompt-bg{padding:8px;align-items:flex-end;}
+    .modal{padding:18px 14px;border-radius:16px;max-height:92vh;}
+    .modal h3{font-size:17px;}
+    .modal-actions .btn{flex:1;}
+    .cg{grid-template-columns:96px minmax(0,1fr) auto auto;gap:6px;}
+    .chip span{min-width:0;padding:6px 9px;}
+    .batch-opts{gap:10px;font-size:13px;}
+    .school-actions .btn{flex:1;}
+    .bulk-bar .btn{margin-left:auto;}
+    #toast{bottom:16px;font-size:13.5px;}
+    #doneToast{font-size:15px;padding:12px 20px;max-width:90vw;}
+  }
 </style>
 </head>
 <body>
@@ -369,7 +467,7 @@
         <button class="btn btn-danger btn-sm" id="bulk-st-del" onclick="deleteSelectedStudents()" disabled>刪除所選學生</button>
       </div>
       <div class="table-wrap">
-        <table>
+        <table class="stu-table">
           <thead><tr><th class="sel"><input type="checkbox" class="sel-box" id="sel-all-st" aria-label="全選學生"></th><th>年級班級</th><th>姓名</th><th>聯絡人 / 聯絡方式</th><th>固定不進班</th><th>備註</th><th><span style="position:absolute;left:-9999px">操作</span></th></tr></thead>
           <tbody id="students-tbody"></tbody>
         </table>
@@ -975,12 +1073,12 @@ async function loadStudents(silent) {
   tbody.innerHTML = r.students.map(st => `
     <tr>
       <td class="sel"><input type="checkbox" class="sel-box sel-st" value="${esc(st.id)}"${STATE.selStudents.has(st.id) ? ' checked' : ''} aria-label="選取 ${esc(st.name)}"></td>
-      <td><b>${esc(st.grade) || '-'}</b></td>
-      <td>${esc(st.name)}</td>
-      <td>${contactsHtml(st.contacts)}</td>
-      <td>${st.fixedOffDays.length ? st.fixedOffDays.map(d => `<span class="pill st-fixedOff" style="margin-right:3px">週${DOW[d - 1]}</span>`).join('') : '-'}</td>
-      <td class="note-cell">${st.note ? esc(st.note) : '-'}</td>
-      <td style="white-space:nowrap">
+      <td class="c-grade"><b>${esc(st.grade) || '-'}</b></td>
+      <td class="c-name">${esc(st.name)}</td>
+      <td class="c-contacts">${contactsHtml(st.contacts)}</td>
+      <td class="c-days${st.fixedOffDays.length ? '' : ' is-empty'}" data-label="固定不進班">${st.fixedOffDays.length ? st.fixedOffDays.map(d => `<span class="pill st-fixedOff" style="margin-right:3px">週${DOW[d - 1]}</span>`).join('') : '-'}</td>
+      <td class="note-cell c-note${st.note ? '' : ' is-empty'}" data-label="備註">${st.note ? esc(st.note) : '-'}</td>
+      <td class="c-act" style="white-space:nowrap">
         <button class="icon-btn" title="編輯" aria-label="編輯 ${esc(st.name)}" onclick="openStudentModal('${esc(st.id)}')">✏️</button>
         <button class="icon-btn" title="刪除" aria-label="刪除 ${esc(st.name)}" onclick="deleteStudent('${esc(st.id)}')">🗑️</button>
       </td>
@@ -1031,7 +1129,7 @@ function deleteSelectedStudents() { if (STATE.selStudents.size) deleteStudentsBy
 
 function contactsHtml(contacts) {
   if (!contacts || !contacts.length) return '-';
-  return contacts.map(c => `<div class="ct-line">${esc(c.rel || '聯絡人')}　${esc(c.phone)}${c.primary ? '<span class="pill-primary">主要</span>' : ''}</div>`).join('');
+  return contacts.map(c => `<div class="ct-line">${c.primary ? '<span class="pill-primary">主要</span>' : ''}${esc(c.rel || '聯絡人')}　${esc(c.phone)}</div>`).join('');
 }
 
 function daysChips(selected, cls) {
@@ -1401,7 +1499,7 @@ function noteHtml(st) { return st.note ? `<div class="note-box">📝 ${esc(st.no
 // noNote=true：備註不放在姓名欄（改放在狀態後面）
 function personCellHtml(st, fixedTag, noNote) {
   const cs = st.contacts || [];
-  const contacts = cs.map(c => `<div>${esc(c.rel || '聯絡人')} ${c.phone ? `<a href="tel:${esc(c.phone)}">${esc(c.phone)}</a>` : ''}${c.primary && cs.length > 1 ? '<span class="pill-primary">主要</span>' : ''}</div>`).join('');
+  const contacts = cs.map(c => `<div>${c.primary && cs.length > 1 ? '<span class="pill-primary">主要</span>' : ''}${esc(c.rel || '聯絡人')} ${c.phone ? `<a href="tel:${esc(c.phone)}">${esc(c.phone)}</a>` : ''}</div>`).join('');
   return `<div class="p-name">${esc(st.name)}${fixedTag ? '<span class="fixed-tag">今日固定不進班</span>' : ''}</div>` +
     (!noNote && st.note ? `<div class="note-box">📝 ${esc(st.note)}</div>` : '') +
     (contacts ? `<div class="primary-ct">${contacts}</div>` : '');
@@ -1418,7 +1516,7 @@ function statusTableHtml(students) {
     html += `<tr><td><b>${esc(st.grade) || '-'}</b></td><td>${personCellHtml(st, false, true)}</td><td>${statusPillHtml(k, st.wasFixedOff || st.isFixedOff)}` +
       (st.markedBy ? `<div class="marked-by">${esc(st.markedBy)} ${esc(fmtClock(st.markedAt))}</div>` : '') + noteHtml(st) + '</td></tr>';
   });
-  return `<div class="table-wrap"><table><thead><tr><th>年級班級</th><th>姓名 / 聯絡人</th><th>狀態 / 備註</th></tr></thead><tbody>
+  return `<div class="table-wrap"><table class="card-table"><thead><tr><th>年級班級</th><th>姓名 / 聯絡人</th><th>狀態 / 備註</th></tr></thead><tbody>
     ${html || '<tr><td colspan="3" class="empty">無資料</td></tr>'}</tbody></table></div>`;
 }
 
@@ -1494,7 +1592,7 @@ function renderRcEdit() {
   if (todo.length) body += `<tr class="sec sec-todo"><td colspan="3">未點名（請點選出席狀態）</td></tr>` + todo.map(rcRowHtml).join('');
   if (done.length) body += `<tr class="sec sec-done"><td colspan="3">已點名（如需更改可直接點選）</td></tr>` + done.map(rcRowHtml).join('');
   $('rollcall-container').innerHTML = `<div class="rc-summary" id="rc-summary"></div>
-    <div class="table-wrap"><table><thead><tr><th>年級班級</th><th>姓名 / 聯絡人</th><th>出席狀態 / 備註</th></tr></thead><tbody>${body}</tbody></table></div>`;
+    <div class="table-wrap"><table class="card-table rc-table"><thead><tr><th>年級班級</th><th>姓名 / 聯絡人</th><th>出席狀態 / 備註</th></tr></thead><tbody>${body}</tbody></table></div>`;
   const wrap = $('rollcall-submit-wrap');
   wrap.innerHTML = '<button class="btn btn-primary" id="rollcall-submit-btn" onclick="submitAttendance()">送出點名</button>' +
     (rc.submitted ? '<button class="btn btn-secondary" id="rollcall-cancel-btn" onclick="loadRollCall(false)">取消修改</button>' : '');
