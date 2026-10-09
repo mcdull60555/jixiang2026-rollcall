@@ -2,21 +2,28 @@
  * 學生點名系統 - 後端 (Google Apps Script)
  * ============================================
  * 部署方式：
- * 1. 建立一個新的 Google 試算表 (Google Sheet)。
+ * 1. 建立一個新的 Google 試算表 (Google Sheet)，並複製網址列裡的試算表 ID
+ *    （網址長得像 https://docs.google.com/spreadsheets/d/【這一長串就是ID】/edit），
+ *    貼到下面的 SPREADSHEET_ID。
  * 2. 在試算表選單「擴充功能 > Apps Script」，把編輯器裡原本的程式碼全部刪除，
- *    貼上這個檔案全部內容。
- * 3. 執行一次 setup() 函式（上方選單選 setup，再按執行），
+ *    貼上這個檔案全部內容(含你剛填好的 SPREADSHEET_ID)。
+ *    （若你是另外在 script.google.com 開獨立專案寫的，也完全沒問題，
+ *      因為程式改用 SPREADSHEET_ID 指定試算表，不依賴「目前綁定哪個檔案」）
+ * 3. 執行一次 setup() 函式（上方選單選 setup，再按執行；第一次會跳出權限授權視窗，點允許），
  *    它會自動建立所有需要的工作表分頁，並建立管理員帳號。
  *    管理員帳號密碼：帳號 admin / 密碼 1234 (可登入後在系統裡自行修改)
  * 4. 點「部署 > 新增部署作業」，類型選「網頁應用程式」：
  *    - 執行身分：我 (your account)
  *    - 存取權限：任何人
  *    部署後會得到一個 /exec 結尾的網址，把它貼到 index.html 最上面的 API_URL。
+ *    （之後若修改這份程式碼，要讓網址生效，須到「部署 > 管理部署作業」，
+ *      點編輯(鉛筆)圖示、版本選「新版本」、再按部署，/exec 網址不會變）
  * 5. (建議) 選單執行 createDailyCleanupTrigger() 一次，
  *    之後系統會每天自動清除超過 60 天的點名紀錄。
  */
 
 // ---------- 基本設定 ----------
+var SPREADSHEET_ID = '';      // 貼上你的 Google 試算表 ID (留空則嘗試用目前綁定的試算表)
 var RETENTION_DAYS = 60;      // 點名紀錄保留天數
 var SESSION_HOURS = 12;       // 登入 token 有效時數
 
@@ -68,8 +75,25 @@ function createDailyCleanupTrigger() {
 }
 
 // ---------- 工具函式 ----------
-function ss_() { return SpreadsheetApp.getActiveSpreadsheet(); }
-function sheet_(name) { return ss_().getSheetByName(name); }
+function ss_() {
+  var ss;
+  if (SPREADSHEET_ID) {
+    ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  } else {
+    ss = SpreadsheetApp.getActiveSpreadsheet();
+  }
+  if (!ss) {
+    throw new Error('找不到試算表：請在程式碼最上方的 SPREADSHEET_ID 填入你的 Google 試算表 ID');
+  }
+  return ss;
+}
+function sheet_(name) {
+  var sheet = ss_().getSheetByName(name);
+  if (!sheet) {
+    throw new Error('找不到工作表「' + name + '」：請先執行一次 setup() 函式建立所有分頁');
+  }
+  return sheet;
+}
 
 function genId(prefix) {
   return (prefix || 'X') + Utilities.getUuid().replace(/-/g, '').substring(0, 10);
