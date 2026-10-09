@@ -23,7 +23,7 @@
  */
 
 // ---------- 基本設定 ----------
-var SPREADSHEET_ID = '';      // 貼上你的 Google 試算表 ID (留空則嘗試用目前綁定的試算表)
+var SPREADSHEET_ID = '';      // 貼上你的 Google 試算表 ID 或整個網址都可以 (留空則嘗試用目前綁定的試算表)
 var RETENTION_DAYS = 60;      // 點名紀錄保留天數
 var SESSION_HOURS = 12;       // 登入 token 有效時數
 
@@ -75,10 +75,24 @@ function createDailyCleanupTrigger() {
 }
 
 // ---------- 工具函式 ----------
+function extractSpreadsheetId_(raw) {
+  var s = String(raw || '').trim();
+  // 如果貼的是整個網址，自動擷取 /d/ 和下一個 / 之間的那一段
+  var m = s.match(/\/d\/([a-zA-Z0-9_-]+)/);
+  if (m) return m[1];
+  // 否則假設使用者已經直接貼了純 ID，去掉可能誤貼的前後斜線或 edit 字樣
+  return s.replace(/^\/+|\/+$/g, '').replace(/\/edit.*$/, '');
+}
+
 function ss_() {
   var ss;
   if (SPREADSHEET_ID) {
-    ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    var id = extractSpreadsheetId_(SPREADSHEET_ID);
+    try {
+      ss = SpreadsheetApp.openById(id);
+    } catch (e) {
+      throw new Error('無法開啟試算表，請確認 SPREADSHEET_ID 是否正確（只需要網址中 /d/ 和 /edit 之間那一段）：' + e.message);
+    }
   } else {
     ss = SpreadsheetApp.getActiveSpreadsheet();
   }
