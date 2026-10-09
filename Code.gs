@@ -14,7 +14,7 @@
  */
 
 // ---------- 基本設定 ----------
-var SPREADSHEET_ID = '';      // 試算表 ID 或整段網址 (留空則使用目前綁定的試算表)
+var SPREADSHEET_ID = '1Xk5mxGTzRDmsLlbag6dkHn6420n6ZLUP59z6QefTjKo';      // 試算表 ID 或整段網址 (留空則使用目前綁定的試算表)
 var RETENTION_DAYS = 60;      // 點名紀錄保留天數 (超過才清除)
 var SESSION_HOURS = 12;       // 登入 token 最長有效時數 (前端另外有閒置 60 分鐘自動登出)
 var TZ = 'Asia/Taipei';
