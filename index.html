@@ -27,7 +27,7 @@
   .login-box h1{font-size:22px;margin:0 0 4px;text-align:center;}
   .login-box p.sub{text-align:center;color:var(--muted);margin:0 0 28px;font-size:14px;}
   .field{margin-bottom:16px;}
-  .field label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px;}
+  .field label, .field .field-label-text{display:block;font-size:13px;color:var(--muted);margin-bottom:6px;}
   .field input, .field select{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:#fff;color:var(--text);}
   .field input:focus, .field select:focus{outline:2px solid var(--primary);outline-offset:-1px;border-color:var(--primary);}
   .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:10px 18px;border-radius:8px;border:none;font-weight:600;transition:all .15s;}
@@ -131,11 +131,11 @@
     <h1>學生點名系統</h1>
     <p class="sub">請登入以繼續</p>
     <div class="field">
-      <label>帳號</label>
+      <label for="login-username">帳號</label>
       <input type="text" id="login-username" autocomplete="username">
     </div>
     <div class="field">
-      <label>密碼</label>
+      <label for="login-password">密碼</label>
       <input type="password" id="login-password" autocomplete="current-password">
     </div>
     <button class="btn btn-primary btn-block" id="login-btn" onclick="doLogin()">登入</button>
@@ -169,6 +169,7 @@
         <h2>每日點名總覽</h2>
         <p class="hint">依日期由上而下遞減排序；每日內先依學校排序，點進去可看各年級明細</p>
         <div class="filter-row">
+          <label for="overview-school-filter" class="field-label-text" style="margin-bottom:0;">篩選學校</label>
           <select id="overview-school-filter" onchange="loadOverview()">
             <option value="">全部學校</option>
           </select>
@@ -185,7 +186,7 @@
         <div class="school-list" id="school-list"></div>
         <div class="row">
           <div class="field">
-            <label>新增學校名稱</label>
+            <label for="new-school-name">新增學校名稱</label>
             <input type="text" id="new-school-name" placeholder="例如：中山國小">
           </div>
           <button class="btn btn-primary" onclick="addSchool()">新增學校</button>
@@ -232,7 +233,7 @@
         <h2 id="rollcall-date-title"></h2>
         <div class="row" style="margin-bottom:6px;">
           <div class="field">
-            <label>選擇學校</label>
+            <label for="rollcall-school-select">選擇學校</label>
             <select id="rollcall-school-select" onchange="loadRollCall()">
               <option value="">請選擇學校…</option>
             </select>
@@ -471,12 +472,12 @@ function openStudentModal(student) {
   const isEdit = !!student;
   const offDays = (student && student.fixedOffDays) || [];
   const modal = buildModal(isEdit ? '編輯學生' : '新增學生', `
-    <div class="field"><label>姓名</label><input id="m-st-name" value="${isEdit ? esc(student.name) : ''}"></div>
-    <div class="field"><label>年級</label><input id="m-st-grade" value="${isEdit ? esc(student.grade) : ''}" placeholder="例如 3"></div>
-    <div class="field"><label>聯絡人</label><input id="m-st-contactname" value="${isEdit ? esc(student.contactName) : ''}"></div>
-    <div class="field"><label>聯絡電話</label><input id="m-st-contactphone" value="${isEdit ? esc(student.contactPhone) : ''}"></div>
-    <div class="field"><label>固定不到班星期</label>
-      <div class="dow-picker">
+    <div class="field"><label for="m-st-name">姓名</label><input id="m-st-name" value="${isEdit ? esc(student.name) : ''}"></div>
+    <div class="field"><label for="m-st-grade">年級</label><input id="m-st-grade" value="${isEdit ? esc(student.grade) : ''}" placeholder="例如 3"></div>
+    <div class="field"><label for="m-st-contactname">聯絡人</label><input id="m-st-contactname" value="${isEdit ? esc(student.contactName) : ''}"></div>
+    <div class="field"><label for="m-st-contactphone">聯絡電話</label><input id="m-st-contactphone" value="${isEdit ? esc(student.contactPhone) : ''}"></div>
+    <div class="field"><span id="m-st-offdays-label" class="field-label-text">固定不到班星期</span>
+      <div class="dow-picker" role="group" aria-labelledby="m-st-offdays-label">
         ${[1,2,3,4,5,6,7].map(d => `<label><input type="checkbox" value="${d}" ${offDays.includes(d) ? 'checked' : ''}>週${DOW_LABELS[d-1]}</label>`).join('')}
       </div>
     </div>
@@ -534,9 +535,9 @@ async function loadTeachers() {
 
 function openTeacherModal() {
   buildModal('新增老師帳號', `
-    <div class="field"><label>姓名</label><input id="m-tc-name"></div>
-    <div class="field"><label>登入帳號</label><input id="m-tc-username"></div>
-    <div class="field"><label>登入密碼</label><input id="m-tc-password" placeholder="預設 0000"></div>
+    <div class="field"><label for="m-tc-name">姓名</label><input id="m-tc-name"></div>
+    <div class="field"><label for="m-tc-username">登入帳號</label><input id="m-tc-username"></div>
+    <div class="field"><label for="m-tc-password">登入密碼</label><input id="m-tc-password" placeholder="預設 0000"></div>
   `, async () => {
     const name = document.getElementById('m-tc-name').value.trim();
     const username = document.getElementById('m-tc-username').value.trim();
@@ -721,8 +722,8 @@ async function submitAttendance() {
 /* ---------------- Password change ---------------- */
 function openPwdModal() {
   buildModal('修改密碼', `
-    <div class="field"><label>目前密碼</label><input type="password" id="m-pwd-old"></div>
-    <div class="field"><label>新密碼</label><input type="password" id="m-pwd-new"></div>
+    <div class="field"><label for="m-pwd-old">目前密碼</label><input type="password" id="m-pwd-old"></div>
+    <div class="field"><label for="m-pwd-new">新密碼</label><input type="password" id="m-pwd-new"></div>
   `, async () => {
     const oldPassword = document.getElementById('m-pwd-old').value;
     const newPassword = document.getElementById('m-pwd-new').value;
