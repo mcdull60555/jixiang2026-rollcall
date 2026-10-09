@@ -7,7 +7,7 @@
  * 2. 把這個檔案全部內容貼到 Apps Script 編輯器（先刪掉原本的程式碼）。
  * 3. 執行一次 setup()（第一次會跳出授權視窗，點允許）。
  *    它會自動建立/補齊所有分頁與欄位，建立管理員帳號 admin / 1234，並建立每日清理排程。
- *    之後更新程式碼時，只有在說明需要時才要再執行 setup()（它會整理所有分頁格式，比較花時間）。
+ *    之後更新程式碼時，只有在說明需要時才要再執行 setup()；分頁格式整理會在每天凌晨 3 點自動進行。
  * 4. 「部署 > 新增部署作業」→ 類型「網頁應用程式」→ 執行身分「我」、存取權限「任何人」。
  *    取得 /exec 網址後貼到 index.html 最上面的 CONFIG.API_URL。
  *    （修改程式碼後要到「部署 > 管理部署作業 > 編輯 > 版本：新版本」重新部署，網址不變）
@@ -60,7 +60,7 @@ function createDailyCleanupTrigger() {
 }
 
 // 建立缺少的分頁、補齊缺少的欄位、建立預設管理員。
-// force=true（執行 setup() 時）才會把整張分頁設成純文字格式；平常只做快速檢查，避免拖慢使用者
+// force=true（執行 setup() 或每天凌晨 3 點排程）才會把整張分頁設成純文字格式；平常只做快速檢查，避免拖慢使用者
 function ensureSchema_(force) {
   var cache = CacheService.getScriptCache();
   if (!force && cache.get(SCHEMA_VERSION)) return;
@@ -1093,6 +1093,8 @@ function pruneByDate_(sheetName, cutoff) {
 }
 
 function cleanupOldRecords() {
+  // 每天凌晨 3 點：順便整理所有分頁格式（設成純文字，避免日期、數字被試算表自動轉換），不影響白天使用速度
+  try { ensureSchema_(true); } catch (e) { /* 格式整理失敗不影響清理 */ }
   withLock_(function () {
     var cutoff = dateStrDaysAgo_(RETENTION_DAYS);
     pruneByDate_(SHEET_ATTENDANCE, cutoff);
