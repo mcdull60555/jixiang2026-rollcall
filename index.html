@@ -8,6 +8,8 @@
   :root{
     --bg:#f4f6f9; --card:#ffffff; --border:#e2e6ec; --text:#1f2733; --muted:#6b7684;
     --primary:#2f6fed; --primary-dark:#1f4fc0; --primary-light:#eaf1ff;
+    --teal:#0c9488; --teal-dark:#077b71; --teal-light:#e2f7f5;
+    --purple:#7c4fe0; --purple-dark:#6334c7; --purple-light:#f1ecfd;
     --green:#1f9d55; --green-light:#e7f8ee;
     --amber:#c98a08; --amber-light:#fdf3dd;
     --red:#d64545; --red-light:#fdeaea;
@@ -15,6 +17,8 @@
     --radius:12px;
     --shadow:0 1px 3px rgba(20,30,50,0.06), 0 1px 2px rgba(20,30,50,0.08);
   }
+  body.role-admin{ --role-accent:var(--purple); --role-accent-dark:var(--purple-dark); --role-accent-light:var(--purple-light); }
+  body.role-teacher{ --role-accent:var(--primary); --role-accent-dark:var(--primary-dark); --role-accent-light:var(--primary-light); }
   *{box-sizing:border-box;}
   body{margin:0;font-family:"PingFang TC","Noto Sans TC","Microsoft JhengHei",system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);}
   .hidden{display:none !important;}
@@ -28,8 +32,9 @@
   .login-box p.sub{text-align:center;color:var(--muted);margin:0 0 28px;font-size:14px;}
   .field{margin-bottom:16px;}
   .field label, .field .field-label-text{display:block;font-size:13px;color:var(--muted);margin-bottom:6px;}
-  .field input, .field select{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:#fff;color:var(--text);}
-  .field input:focus, .field select:focus{outline:2px solid var(--primary);outline-offset:-1px;border-color:var(--primary);}
+  .field input, .field select, .field textarea{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:#fff;color:var(--text);font-family:inherit;}
+  .field input:focus, .field select:focus, .field textarea:focus{outline:2px solid var(--primary);outline-offset:-1px;border-color:var(--primary);}
+  .contact-row input{width:auto;}
   .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:10px 18px;border-radius:8px;border:none;font-weight:600;transition:all .15s;}
   .btn-primary{background:var(--primary);color:#fff;}
   .btn-primary:hover{background:var(--primary-dark);}
@@ -45,22 +50,30 @@
   /* ---------- Shell ---------- */
   #app-shell{display:none;min-height:100vh;}
   #app-shell.active{display:block;}
-  header.topbar{background:var(--card);border-bottom:1px solid var(--border);padding:0 24px;display:flex;align-items:center;justify-content:space-between;height:60px;position:sticky;top:0;z-index:50;}
+  header.topbar{background:var(--card);border-bottom:1px solid var(--border);border-top:4px solid var(--role-accent, var(--primary));padding:0 24px;display:flex;align-items:center;justify-content:space-between;height:60px;position:sticky;top:0;z-index:50;}
   .topbar-left{display:flex;align-items:center;gap:24px;}
   .brand{font-weight:700;font-size:17px;display:flex;align-items:center;gap:8px;}
-  .brand .dot{width:9px;height:9px;border-radius:50%;background:var(--primary);}
+  .brand .dot{width:9px;height:9px;border-radius:50%;background:var(--role-accent, var(--primary));}
   nav.tabs{display:flex;gap:4px;}
   nav.tabs button{background:none;border:none;padding:10px 14px;border-radius:8px;color:var(--muted);font-weight:600;font-size:14px;}
-  nav.tabs button.active{background:var(--primary-light);color:var(--primary);}
+  nav.tabs button.active{background:var(--role-accent-light, var(--primary-light));color:var(--role-accent-dark, var(--primary));}
+  nav.tabs button[data-tab="overview"].active{background:var(--primary-light);color:var(--primary-dark);}
+  nav.tabs button[data-tab="schools"].active{background:var(--teal-light);color:var(--teal-dark);}
+  nav.tabs button[data-tab="teachers"].active{background:var(--purple-light);color:var(--purple-dark);}
   nav.tabs button:hover:not(.active){background:var(--grey-light);}
   .topbar-right{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:14px;}
   .topbar-right b{color:var(--text);}
+  .role-badge{display:inline-flex;align-items:center;padding:2px 10px;border-radius:99px;font-size:12px;font-weight:700;background:var(--role-accent-light, var(--primary-light));color:var(--role-accent-dark, var(--primary));}
 
   main.content{max-width:1080px;margin:0 auto;padding:28px 20px 60px;}
   .section{display:none;}
   .section.active{display:block;}
-  .card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);padding:22px;margin-bottom:20px;}
-  .card h2{margin:0 0 4px;font-size:17px;}
+  .card{background:var(--card);border:1px solid var(--border);border-top:3px solid var(--card-accent, transparent);border-radius:var(--radius);box-shadow:var(--shadow);padding:22px;margin-bottom:20px;}
+  .card.accent-blue{--card-accent:var(--primary);}
+  .card.accent-teal{--card-accent:var(--teal);}
+  .card.accent-purple{--card-accent:var(--purple);}
+  .card h2{margin:0 0 4px;font-size:17px;display:flex;align-items:center;gap:8px;}
+  .card h2 .dot-sm{width:8px;height:8px;border-radius:50%;background:var(--card-accent, var(--primary));display:inline-block;}
   .card .hint{color:var(--muted);font-size:13px;margin:0 0 16px;}
   .row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;}
   .row .field{flex:1;min-width:140px;margin-bottom:0;}
@@ -132,7 +145,7 @@
     <p class="sub">請登入以繼續</p>
     <div class="field">
       <label for="login-username">帳號</label>
-      <input type="text" id="login-username" autocomplete="username">
+      <select id="login-username"><option value="">載入中…</option></select>
     </div>
     <div class="field">
       <label for="login-password">密碼</label>
@@ -165,8 +178,8 @@
 
     <!-- ===== ADMIN: 總覽 ===== -->
     <section class="section" id="sec-overview">
-      <div class="card">
-        <h2>每日點名總覽</h2>
+      <div class="card accent-blue">
+        <h2><span class="dot-sm"></span>每日點名總覽</h2>
         <p class="hint">依日期由上而下遞減排序；每日內先依學校排序，點進去可看各年級明細</p>
         <div class="filter-row">
           <label for="overview-school-filter" class="field-label-text" style="margin-bottom:0;">篩選學校</label>
@@ -180,8 +193,8 @@
 
     <!-- ===== ADMIN: 學校與學生 ===== -->
     <section class="section" id="sec-schools">
-      <div class="card">
-        <h2>學校</h2>
+      <div class="card accent-teal">
+        <h2><span class="dot-sm"></span>學校</h2>
         <p class="hint">新增學校分頁，點選學校以管理該校學生</p>
         <div class="school-list" id="school-list"></div>
         <div class="row">
@@ -190,30 +203,32 @@
             <input type="text" id="new-school-name" placeholder="例如：中山國小">
           </div>
           <button class="btn btn-primary" onclick="addSchool()">新增學校</button>
+          <button class="btn btn-secondary" onclick="openBatchSchoolModal()">批次新增學校</button>
         </div>
       </div>
 
-      <div class="card" id="students-card" style="display:none;">
-        <h2 id="students-card-title">學生名單</h2>
+      <div class="card accent-teal" id="students-card" style="display:none;">
+        <h2 id="students-card-title"><span class="dot-sm"></span>學生名單</h2>
         <p class="hint">管理此校學生姓名、年級、聯絡人資訊與固定不到班星期</p>
         <div class="table-wrap">
           <table>
             <thead><tr>
-              <th>姓名</th><th>年級</th><th>聯絡人</th><th>聯絡電話</th><th>固定不到班</th><th></th>
+              <th>姓名</th><th>年級</th><th>聯絡人</th><th>固定不到班</th><th></th>
             </tr></thead>
             <tbody id="students-tbody"></tbody>
           </table>
         </div>
-        <div style="margin-top:14px;">
+        <div style="margin-top:14px;display:flex;gap:10px;">
           <button class="btn btn-primary btn-sm" onclick="openStudentModal()">+ 新增學生</button>
+          <button class="btn btn-secondary btn-sm" onclick="openBatchStudentModal()">批次新增學生</button>
         </div>
       </div>
     </section>
 
     <!-- ===== ADMIN: 老師帳號 ===== -->
     <section class="section" id="sec-teachers">
-      <div class="card">
-        <h2>老師帳號管理</h2>
+      <div class="card accent-purple">
+        <h2><span class="dot-sm"></span>老師帳號管理</h2>
         <p class="hint">建立老師登入帳號，老師登入後可自行選擇學校進行點名</p>
         <div class="table-wrap">
           <table>
@@ -229,7 +244,7 @@
 
     <!-- ===== TEACHER: 點名 ===== -->
     <section class="section" id="sec-rollcall">
-      <div class="card">
+      <div class="card accent-blue">
         <h2 id="rollcall-date-title"></h2>
         <div class="row" style="margin-bottom:6px;">
           <div class="field">
@@ -353,11 +368,38 @@ function doLogout() {
   document.getElementById('app-shell').classList.remove('active');
   document.getElementById('view-login').style.display = 'flex';
   document.getElementById('login-password').value = '';
+  loadLoginAccounts();
+}
+
+/* ---------------- Login accounts dropdown ---------------- */
+async function loadLoginAccounts() {
+  const sel = document.getElementById('login-username');
+  try {
+    const r = await api('listLoginAccounts');
+    const admins = r.accounts.filter(a => a.role === 'admin');
+    const teachers = r.accounts.filter(a => a.role === 'teacher');
+    let html = '<option value="">請選擇帳號…</option>';
+    html += '<optgroup label="管理員">' +
+      admins.map(a => `<option value="${esc(a.username)}">${esc(a.name)}（${esc(a.username)}）</option>`).join('') +
+      '</optgroup>';
+    if (teachers.length) {
+      html += '<optgroup label="老師">' +
+        teachers.map(a => `<option value="${esc(a.username)}">${esc(a.name)}（${esc(a.username)}）</option>`).join('') +
+        '</optgroup>';
+    }
+    sel.innerHTML = html;
+  } catch (e) {
+    sel.innerHTML = '<option value="">無法載入帳號清單，請重新整理頁面</option>';
+  }
 }
 
 /* ---------------- Boot ---------------- */
 async function boot() {
-  if (!STATE.token) { document.getElementById('view-login').style.display = 'flex'; return; }
+  if (!STATE.token) {
+    document.getElementById('view-login').style.display = 'flex';
+    loadLoginAccounts();
+    return;
+  }
   try {
     const r = await api('bootstrap');
     STATE.role = r.role; STATE.name = r.name; STATE.today = r.today;
@@ -366,7 +408,10 @@ async function boot() {
   }
   document.getElementById('view-login').style.display = 'none';
   document.getElementById('app-shell').classList.add('active');
-  document.getElementById('whoami').innerHTML = (STATE.role === 'admin' ? '管理員' : '老師') + '　<b>' + STATE.name + '</b>';
+  document.body.classList.remove('role-admin', 'role-teacher');
+  document.body.classList.add(STATE.role === 'admin' ? 'role-admin' : 'role-teacher');
+  document.getElementById('whoami').innerHTML =
+    '<span class="role-badge">' + (STATE.role === 'admin' ? '管理員' : '老師') + '</span>　<b>' + esc(STATE.name) + '</b>';
 
   if (STATE.role === 'admin') {
     document.getElementById('admin-tabs').classList.remove('hidden');
@@ -439,7 +484,7 @@ function selectSchool(id) {
   STATE.currentSchoolId = id;
   const school = STATE.schools.find(s => s.id === id);
   document.getElementById('students-card').style.display = 'block';
-  document.getElementById('students-card-title').textContent = (school ? school.name : '') + ' 學生名單';
+  document.getElementById('students-card-title').innerHTML = '<span class="dot-sm"></span>' + esc(school ? school.name : '') + ' 學生名單';
   renderSchoolList();
   loadStudents();
 }
@@ -451,15 +496,14 @@ async function loadStudents() {
   STATE.currentStudents = r.students;
   const tbody = document.getElementById('students-tbody');
   if (!r.students.length) {
-    tbody.innerHTML = '<tr><td colspan="6" class="empty">尚無學生</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" class="empty">尚無學生</td></tr>';
     return;
   }
   tbody.innerHTML = r.students.map(st => `
     <tr>
       <td>${esc(st.name)}</td>
       <td>${esc(st.grade)}</td>
-      <td>${esc(st.contactName || '-')}</td>
-      <td>${esc(st.contactPhone || '-')}</td>
+      <td>${contactsSummary(st.contacts)}</td>
       <td>${st.fixedOffDays.length ? st.fixedOffDays.map(d => '週' + DOW_LABELS[d-1]).join('、') : '-'}</td>
       <td style="white-space:nowrap;">
         <button class="icon-btn" title="編輯" onclick='openStudentModal(${JSON.stringify(st).replace(/'/g, "&#39;")})'>✏️</button>
@@ -468,14 +512,35 @@ async function loadStudents() {
     </tr>`).join('');
 }
 
+function contactsSummary(contacts) {
+  if (!contacts || !contacts.length) return '-';
+  return contacts.map(c => esc([c.name, c.phone].filter(Boolean).join(' ')) ).filter(Boolean).join('<br>') || '-';
+}
+
+function contactRowHtml(c) {
+  c = c || { name: '', phone: '' };
+  return `
+    <div class="contact-row" style="display:flex;gap:8px;margin-bottom:8px;align-items:center;">
+      <input class="m-st-contact-name" placeholder="聯絡人姓名" value="${esc(c.name)}" style="flex:1;">
+      <input class="m-st-contact-phone" placeholder="聯絡電話" value="${esc(c.phone)}" style="flex:1;">
+      <button type="button" class="icon-btn" title="移除" onclick="this.closest('.contact-row').remove()">✕</button>
+    </div>`;
+}
+
 function openStudentModal(student) {
   const isEdit = !!student;
   const offDays = (student && student.fixedOffDays) || [];
+  const initialContacts = (isEdit && student.contacts && student.contacts.length) ? student.contacts : [{ name: '', phone: '' }];
   const modal = buildModal(isEdit ? '編輯學生' : '新增學生', `
     <div class="field"><label for="m-st-name">姓名</label><input id="m-st-name" value="${isEdit ? esc(student.name) : ''}"></div>
     <div class="field"><label for="m-st-grade">年級</label><input id="m-st-grade" value="${isEdit ? esc(student.grade) : ''}" placeholder="例如 3"></div>
-    <div class="field"><label for="m-st-contactname">聯絡人</label><input id="m-st-contactname" value="${isEdit ? esc(student.contactName) : ''}"></div>
-    <div class="field"><label for="m-st-contactphone">聯絡電話</label><input id="m-st-contactphone" value="${isEdit ? esc(student.contactPhone) : ''}"></div>
+    <div class="field">
+      <span id="m-st-contacts-label" class="field-label-text">聯絡人與聯絡電話</span>
+      <div id="m-st-contacts-wrap" role="group" aria-labelledby="m-st-contacts-label">
+        ${initialContacts.map(contactRowHtml).join('')}
+      </div>
+      <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('m-st-contacts-wrap').insertAdjacentHTML('beforeend', contactRowHtml())">+ 新增一組聯絡人</button>
+    </div>
     <div class="field"><span id="m-st-offdays-label" class="field-label-text">固定不到班星期</span>
       <div class="dow-picker" role="group" aria-labelledby="m-st-offdays-label">
         ${[1,2,3,4,5,6,7].map(d => `<label><input type="checkbox" value="${d}" ${offDays.includes(d) ? 'checked' : ''}>週${DOW_LABELS[d-1]}</label>`).join('')}
@@ -486,12 +551,11 @@ function openStudentModal(student) {
     const grade = document.getElementById('m-st-grade').value.trim();
     if (!name) { toast('請輸入姓名', true); return false; }
     const fixedOffDays = Array.from(modal.querySelectorAll('.dow-picker input:checked')).map(el => Number(el.value));
-    const payload = {
-      name, grade,
-      contactName: document.getElementById('m-st-contactname').value.trim(),
-      contactPhone: document.getElementById('m-st-contactphone').value.trim(),
-      fixedOffDays
-    };
+    const contacts = Array.from(modal.querySelectorAll('#m-st-contacts-wrap .contact-row')).map(row => ({
+      name: row.querySelector('.m-st-contact-name').value.trim(),
+      phone: row.querySelector('.m-st-contact-phone').value.trim()
+    }));
+    const payload = { name, grade, contacts, fixedOffDays };
     try {
       if (isEdit) {
         await api('editStudent', Object.assign({ studentId: student.id }, payload));
@@ -499,6 +563,43 @@ function openStudentModal(student) {
         await api('addStudent', Object.assign({ schoolId: STATE.currentSchoolId }, payload));
       }
       toast(isEdit ? '已更新學生資料' : '已新增學生');
+      await loadStudents();
+      await loadSchools();
+      return true;
+    } catch (e) { toast(errMsg(e.message), true); return false; }
+  });
+}
+
+function openBatchSchoolModal() {
+  buildModal('批次新增學校', `
+    <p class="hint" style="margin-top:-6px;">一行一間學校名稱</p>
+    <div class="field"><textarea id="m-batch-schools" rows="8" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;" placeholder="中山國小&#10;博愛國小&#10;大同國小"></textarea></div>
+  `, async () => {
+    const lines = document.getElementById('m-batch-schools').value.split('\n').map(s => s.trim()).filter(Boolean);
+    if (!lines.length) { toast('請至少輸入一間學校', true); return false; }
+    try {
+      const r = await api('addSchoolsBatch', { names: lines });
+      toast(`已新增 ${r.created.length} 間學校` + (r.skipped.length ? `，略過 ${r.skipped.length} 間重複` : ''));
+      await loadSchools();
+      return true;
+    } catch (e) { toast(errMsg(e.message), true); return false; }
+  });
+}
+
+function openBatchStudentModal() {
+  buildModal('批次新增學生', `
+    <p class="hint" style="margin-top:-6px;">一行一位學生，格式：姓名,年級（逗號分隔；年級可省略）</p>
+    <div class="field"><textarea id="m-batch-students" rows="8" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;" placeholder="王小明,3&#10;陳小美,2&#10;林小華"></textarea></div>
+  `, async () => {
+    const lines = document.getElementById('m-batch-students').value.split('\n').map(s => s.trim()).filter(Boolean);
+    if (!lines.length) { toast('請至少輸入一位學生', true); return false; }
+    const students = lines.map(line => {
+      const parts = line.split(',').map(s => s.trim());
+      return { name: parts[0], grade: parts[1] || '' };
+    }).filter(s => s.name);
+    try {
+      const r = await api('addStudentsBatch', { schoolId: STATE.currentSchoolId, students });
+      toast(`已新增 ${r.created} 位學生`);
       await loadStudents();
       await loadSchools();
       return true;

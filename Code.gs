@@ -38,14 +38,14 @@ var HEADERS = {
   Admins: ['id', 'username', 'password', 'name'],
   Teachers: ['id', 'username', 'password', 'name', 'active', 'createdAt'],
   Schools: ['id', 'name', 'createdAt'],
-  Students: ['id', 'schoolId', 'name', 'grade', 'contactName', 'contactPhone', 'fixedOffDays', 'active', 'createdAt'],
+  Students: ['id', 'schoolId', 'name', 'grade', 'contacts', 'fixedOffDays', 'active', 'createdAt'],
   Attendance: ['id', 'date', 'schoolId', 'studentId', 'status', 'selfDrop', 'selfWalk', 'teacherId', 'teacherName', 'submittedAt'],
   Sessions: ['token', 'userId', 'role', 'name', 'username', 'createdAt', 'expiresAt']
 };
 
 // ---------- 初始化 ----------
 function setup() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = SPREADSHEET_ID ? SpreadsheetApp.openById(extractSpreadsheetId_(SPREADSHEET_ID)) : SpreadsheetApp.getActiveSpreadsheet();
   Object.keys(HEADERS).forEach(function (name) {
     var sheet = ss.getSheetByName(name);
     if (!sheet) sheet = ss.insertSheet(name);
@@ -213,14 +213,18 @@ function doPost(e) {
 }
 
 function route(body) {
+  try { ensureSchemaMigrations(); } catch (e) { /* 試算表尚未 setup()，略過遷移 */ }
   var action = body.action;
   switch (action) {
     case 'login': return actionLogin(body);
+    case 'listLoginAccounts': return actionListLoginAccounts(body);
     case 'bootstrap': return actionBootstrap(body);
     case 'listSchools': return actionListSchools(body);
     case 'addSchool': return actionAddSchool(body);
+    case 'addSchoolsBatch': return actionAddSchoolsBatch(body);
     case 'listStudents': return actionListStudents(body);
     case 'addStudent': return actionAddStudent(body);
+    case 'addStudentsBatch': return actionAddStudentsBatch(body);
     case 'editStudent': return actionEditStudent(body);
     case 'deleteStudent': return actionDeleteStudent(body);
     case 'listTeachers': return actionListTeachers(body);
@@ -233,6 +237,49 @@ function route(body) {
     case 'getSchoolDayDetail': return actionGetSchoolDayDetail(body);
     default: return { ok: false, error: 'UNKNOWN_ACTION' };
   }
+}
+
+// ---------- Schema 自動遷移 (舊試算表補欄位用) ----------
+function ensureSchemaMigrations() {
+  var sheet = sheet_(SHEET_STUDENTS);
+  var lastCol = sheet.getLastColumn();
+  var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  if (headers.indexOf('contacts') === -1) {
+    sheet.getRange(1, lastCol + 1).setValue('contacts');
+  }
+}
+
+// ---------- Contacts 輔助函式 ----------
+function normalizeContacts(raw) {
+  var arr = Array.isArray(raw) ? raw : [];
+  return arr.map(function (c) {
+    return { name: String((c && c.name) || '').trim(), phone: String((c && c.phone) || '').trim() };
+  }).filter(function (c) { return c.name || c.phone; });
+}
+
+function parseContacts(studentRow) {
+  var contacts = [];
+  if (studentRow.contacts) {
+    try { contacts = JSON.parse(studentRow.contacts); } catch (e) { contacts = []; }
+  }
+  if ((!contacts || !contacts.length) && (studentRow.contactName || studentRow.contactPhone)) {
+    contacts = [{ name: studentRow.contactName || '', phone: studentRow.contactPhone || '' }];
+  }
+  return contacts || [];
+}
+
+// ---------- 公開（免登入）帳號清單，供登入下拉選單使用 ----------
+function actionListLoginAccounts(body) {
+  var admins = sheetToObjects(SHEET_ADMINS).map(function (a) {
+    return { username: a.username, name: a.name, role: 'admin' };
+  });
+  var teachers = sheetToObjects(SHEET_TEACHERS).filter(function (t) {
+    return String(t.active) !== 'false';
+  }).map(function (t) {
+    return { username: t.username, name: t.name, role: 'teacher' };
+  });
+  teachers.sort(function (a, b) { return String(a.name).localeCompare(String(b.name), 'zh-Hant'); });
+  return { ok: true, accounts: admins.concat(teachers) };
 }
 
 // ---------- Actions ----------
@@ -286,6 +333,19 @@ function actionAddSchool(body) {
   return { ok: true, id: id };
 }
 
+function actionAddSchoolsBatch(body) {
+  requireSession(body.token, 'admin');
+  var names = (body.names || []).map(function (n) { return String(n).trim(); }).filter(Boolean);
+  var existingNames = sheetToObjects(SHEET_SCHOOLS).map(function (s) { return s.name; });
+  var created = [], skipped = [];
+  names.forEach(function (name) {
+    if (existingNames.indexOf(name) !== -1 || created.indexOf(name) !== -1) { skipped.push(name); return; }
+    appendObject(SHEET_SCHOOLS, { id: genId('S'), name: name, createdAt: new Date().toISOString() });
+    created.push(name);
+  });
+  return { ok: true, created: created, skipped: skipped };
+}
+
 function sortStudents(list) {
   list.sort(function (a, b) {
     var ga = Number(a.grade) || 0, gb = Number(b.grade) || 0;
@@ -303,8 +363,8 @@ function actionListStudents(body) {
   });
   var out = students.map(function (x) {
     return {
-      id: x.id, name: x.name, grade: x.grade, contactName: x.contactName,
-      contactPhone: x.contactPhone,
+      id: x.id, name: x.name, grade: x.grade,
+      contacts: parseContacts(x),
       fixedOffDays: x.fixedOffDays ? String(x.fixedOffDays).split(',').filter(String).map(Number) : []
     };
   });
@@ -317,11 +377,30 @@ function actionAddStudent(body) {
   var id = genId('T');
   appendObject(SHEET_STUDENTS, {
     id: id, schoolId: body.schoolId, name: body.name, grade: body.grade,
-    contactName: body.contactName || '', contactPhone: body.contactPhone || '',
+    contacts: JSON.stringify(normalizeContacts(body.contacts)),
     fixedOffDays: (body.fixedOffDays || []).join(','), active: true,
     createdAt: new Date().toISOString()
   });
   return { ok: true, id: id };
+}
+
+function actionAddStudentsBatch(body) {
+  requireSession(body.token, 'admin');
+  var schoolId = body.schoolId;
+  var list = body.students || [];
+  var created = 0;
+  list.forEach(function (st) {
+    var name = String(st.name || '').trim();
+    if (!name) return;
+    appendObject(SHEET_STUDENTS, {
+      id: genId('T'), schoolId: schoolId, name: name, grade: st.grade || '',
+      contacts: JSON.stringify(normalizeContacts(st.contacts)),
+      fixedOffDays: (st.fixedOffDays || []).join(','), active: true,
+      createdAt: new Date().toISOString()
+    });
+    created++;
+  });
+  return { ok: true, created: created };
 }
 
 function actionEditStudent(body) {
@@ -332,8 +411,7 @@ function actionEditStudent(body) {
       var updated = students[i];
       if (body.name !== undefined) updated.name = body.name;
       if (body.grade !== undefined) updated.grade = body.grade;
-      if (body.contactName !== undefined) updated.contactName = body.contactName;
-      if (body.contactPhone !== undefined) updated.contactPhone = body.contactPhone;
+      if (body.contacts !== undefined) updated.contacts = JSON.stringify(normalizeContacts(body.contacts));
       if (body.fixedOffDays !== undefined) updated.fixedOffDays = (body.fixedOffDays || []).join(',');
       updateObjectByRow(SHEET_STUDENTS, students[i]._row, updated);
       return { ok: true };
