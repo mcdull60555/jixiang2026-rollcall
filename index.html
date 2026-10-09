@@ -220,7 +220,7 @@
   .banner-edit{background:var(--amber-l);color:#92400e;padding:10px 14px;border-radius:10px;font-size:13.5px;margin-bottom:12px;font-weight:600;}
   .req{color:var(--rose);font-weight:800;}
   input.invalid,select.invalid,textarea.invalid{border-color:var(--rose)!important;background:#fff1f2!important;}
-  .note-box{margin-top:4px;background:#fffbeb;border:1px solid #fde68a;color:#92400e;border-radius:7px;padding:3px 8px;font-size:12.5px;display:inline-block;}
+  .note-box{margin-top:6px;background:#fffbeb;border:1px solid #fde68a;color:#92400e;border-radius:7px;padding:3px 8px;font-size:12.5px;display:inline-block;}
   .note-cell{font-size:13px;color:#92400e;max-width:220px;}
   .p-name{font-weight:600;}
   tr.sec td{font-weight:800;font-size:13px;padding:7px 10px;}
@@ -1396,11 +1396,14 @@ function statusPillHtml(status, wasFixedOff) {
     (wasFixedOff && status && status !== 'fixedOff' ? '<span class="fixed-tag">固定不進班</span>' : '');
 }
 // 姓名欄：姓名 + 備註 + 全部聯絡人（送出後也看得到）
-function personCellHtml(st, fixedTag) {
+// 備註框（放在狀態後面）
+function noteHtml(st) { return st.note ? `<div class="note-box">📝 ${esc(st.note)}</div>` : ''; }
+// noNote=true：備註不放在姓名欄（改放在狀態後面）
+function personCellHtml(st, fixedTag, noNote) {
   const cs = st.contacts || [];
   const contacts = cs.map(c => `<div>${esc(c.rel || '聯絡人')} ${c.phone ? `<a href="tel:${esc(c.phone)}">${esc(c.phone)}</a>` : ''}${c.primary && cs.length > 1 ? '<span class="pill-primary">主要</span>' : ''}</div>`).join('');
   return `<div class="p-name">${esc(st.name)}${fixedTag ? '<span class="fixed-tag">今日固定不進班</span>' : ''}</div>` +
-    (st.note ? `<div class="note-box">📝 ${esc(st.note)}</div>` : '') +
+    (!noNote && st.note ? `<div class="note-box">📝 ${esc(st.note)}</div>` : '') +
     (contacts ? `<div class="primary-ct">${contacts}</div>` : '');
 }
 function statusTableHtml(students) {
@@ -1412,10 +1415,10 @@ function statusTableHtml(students) {
       cur = k;
       html += `<tr class="grp ${statusClass(k)}"><td colspan="3">${statusLabel(k)}・${sorted.filter(x => (x.status || '') === k).length} 人</td></tr>`;
     }
-    html += `<tr><td><b>${esc(st.grade) || '-'}</b></td><td>${personCellHtml(st)}</td><td>${statusPillHtml(k, st.wasFixedOff || st.isFixedOff)}` +
-      (st.markedBy ? `<div class="marked-by">${esc(st.markedBy)} ${esc(fmtClock(st.markedAt))}</div>` : '') + '</td></tr>';
+    html += `<tr><td><b>${esc(st.grade) || '-'}</b></td><td>${personCellHtml(st, false, true)}</td><td>${statusPillHtml(k, st.wasFixedOff || st.isFixedOff)}` +
+      (st.markedBy ? `<div class="marked-by">${esc(st.markedBy)} ${esc(fmtClock(st.markedAt))}</div>` : '') + noteHtml(st) + '</td></tr>';
   });
-  return `<div class="table-wrap"><table><thead><tr><th>年級班級</th><th>姓名 / 聯絡人 / 備註</th><th>狀態</th></tr></thead><tbody>
+  return `<div class="table-wrap"><table><thead><tr><th>年級班級</th><th>姓名 / 聯絡人</th><th>狀態 / 備註</th></tr></thead><tbody>
     ${html || '<tr><td colspan="3" class="empty">無資料</td></tr>'}</tbody></table></div>`;
 }
 
@@ -1472,10 +1475,10 @@ function rcRowHtml(st) {
   return `
       <tr class="rc-row${st.isFixedOff ? ' fixed' : ''}" data-sid="${esc(st.id)}" data-name="${esc(st.name)}" data-fixed="${st.isFixedOff ? 1 : 0}" data-status="${esc(s)}">
         <td><b>${esc(st.grade) || '-'}</b></td>
-        <td>${personCellHtml(st, st.isFixedOff)}</td>
+        <td>${personCellHtml(st, st.isFixedOff, true)}</td>
         <td><div class="st-group" role="group" aria-label="${esc(st.name)} 出席狀態">
           ${PICK.map(k => `<button type="button" class="st-btn st-${k}${s === k ? ' on' : ''}" data-st="${k}" aria-pressed="${s === k}">${STATUS[k].label}</button>`).join('')}
-        </div></td>
+        </div>${noteHtml(st)}</td>
       </tr>`;
 }
 
@@ -1491,7 +1494,7 @@ function renderRcEdit() {
   if (todo.length) body += `<tr class="sec sec-todo"><td colspan="3">未點名（請點選出席狀態）</td></tr>` + todo.map(rcRowHtml).join('');
   if (done.length) body += `<tr class="sec sec-done"><td colspan="3">已點名（如需更改可直接點選）</td></tr>` + done.map(rcRowHtml).join('');
   $('rollcall-container').innerHTML = `<div class="rc-summary" id="rc-summary"></div>
-    <div class="table-wrap"><table><thead><tr><th>年級班級</th><th>姓名 / 聯絡人 / 備註</th><th>出席狀態</th></tr></thead><tbody>${body}</tbody></table></div>`;
+    <div class="table-wrap"><table><thead><tr><th>年級班級</th><th>姓名 / 聯絡人</th><th>出席狀態 / 備註</th></tr></thead><tbody>${body}</tbody></table></div>`;
   const wrap = $('rollcall-submit-wrap');
   wrap.innerHTML = '<button class="btn btn-primary" id="rollcall-submit-btn" onclick="submitAttendance()">送出點名</button>' +
     (rc.submitted ? '<button class="btn btn-secondary" id="rollcall-cancel-btn" onclick="loadRollCall(false)">取消修改</button>' : '');
