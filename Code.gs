@@ -132,10 +132,15 @@ function toCell_(v) {
   return v;
 }
 
+// 全域寫入鎖：多位管理員/老師同時操作時，所有寫入依序執行，避免互相覆蓋。
+// 可重入（同一次執行內巢狀呼叫不會卡死）
+var _lockDepth = 0;
 function withLock_(fn) {
+  if (_lockDepth > 0) return fn();
   var lock = LockService.getScriptLock();
-  lock.waitLock(20000);
-  try { return fn(); } finally { lock.releaseLock(); }
+  try { lock.waitLock(25000); } catch (e) { throw new Error('BUSY'); }
+  _lockDepth++;
+  try { return fn(); } finally { _lockDepth--; lock.releaseLock(); }
 }
 
 function today_() { return Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd'); }
@@ -245,6 +250,11 @@ function requireSession(token, role) {
   var s = getSession(token);
   if (!s) throw new Error('AUTH_EXPIRED');
   if (role && s.role !== role) throw new Error('FORBIDDEN');
+  // 帳號被刪除後，已登入的裝置也立即失效
+  var users = sheetToObjects(s.role === 'admin' ? SHEET_ADMINS : SHEET_TEACHERS);
+  var u = users.filter(function (x) { return x.id === s.userId; })[0];
+  if (!u || (s.role === 'teacher' && !isActive_(u.active))) throw new Error('AUTH_EXPIRED');
+  s.name = u.name;
   return s;
 }
 
@@ -291,31 +301,26 @@ function route(body) {
     return { ok: true, time: new Date().toISOString() };
   }
   try { ensureSchema_(false); } catch (e) { /* 交給後面的動作丟出明確錯誤 */ }
-  switch (action) {
-    case 'login': return actionLogin(body);
-    case 'logout': return actionLogout(body);
-    case 'listLoginAccounts': return actionListLoginAccounts(body);
-    case 'bootstrap': return actionBootstrap(body);
-    case 'getContactTypes': return actionGetContactTypes(body);
-    case 'addContactType': return actionAddContactType(body);
-    case 'listSchools': return actionListSchools(body);
-    case 'addSchool': return actionAddSchool(body);
-    case 'addSchoolsBatch': return actionAddSchoolsBatch(body);
-    case 'listStudents': return actionListStudents(body);
-    case 'addStudent': return actionAddStudent(body);
-    case 'addStudentsBatch': return actionAddStudentsBatch(body);
-    case 'editStudent': return actionEditStudent(body);
-    case 'deleteStudent': return actionDeleteStudent(body);
-    case 'listTeachers': return actionListTeachers(body);
-    case 'addTeacher': return actionAddTeacher(body);
-    case 'deleteTeacher': return actionDeleteTeacher(body);
-    case 'changePwd': return actionChangePwd(body);
-    case 'getRollCall': return actionGetRollCall(body);
-    case 'submitAttendance': return actionSubmitAttendance(body);
-    case 'getOverview': return actionGetOverview(body);
-    case 'getSchoolDayDetail': return actionGetSchoolDayDetail(body);
-    default: return { ok: false, error: 'UNKNOWN_ACTION' };
-  }
+  var ACTIONS = {
+    login: actionLogin, logout: actionLogout, listLoginAccounts: actionListLoginAccounts,
+    bootstrap: actionBootstrap, changePwd: actionChangePwd,
+    getContactTypes: actionGetContactTypes, addContactType: actionAddContactType,
+    listSchools: actionListSchools, addSchool: actionAddSchool, addSchoolsBatch: actionAddSchoolsBatch,
+    listStudents: actionListStudents, addStudent: actionAddStudent, addStudentsBatch: actionAddStudentsBatch,
+    editStudent: actionEditStudent, deleteStudent: actionDeleteStudent, deleteStudentsBatch: actionDeleteStudentsBatch,
+    listTeachers: actionListTeachers, addTeacher: actionAddTeacher,
+    deleteTeacher: actionDeleteTeacher, deleteTeachersBatch: actionDeleteTeachersBatch,
+    getRollCall: actionGetRollCall, submitAttendance: actionSubmitAttendance,
+    getOverview: actionGetOverview, getSchoolDayDetail: actionGetSchoolDayDetail
+  };
+  // 會寫入試算表的動作：一律在全域鎖內執行（多人同時操作也不會互相覆蓋）
+  var WRITES = ['login', 'logout', 'changePwd', 'addContactType', 'addSchool', 'addSchoolsBatch',
+    'addStudent', 'addStudentsBatch', 'editStudent', 'deleteStudent', 'deleteStudentsBatch',
+    'addTeacher', 'deleteTeacher', 'deleteTeachersBatch', 'submitAttendance'];
+  var fn = ACTIONS[action];
+  if (!fn) return { ok: false, error: 'UNKNOWN_ACTION' };
+  if (WRITES.indexOf(action) !== -1) return withLock_(function () { return fn(body); });
+  return fn(body);
 }
 
 // ---------- 登入 / 帳號 ----------
@@ -331,8 +336,7 @@ function actionLogin(body) {
   var teachers = sheetToObjects(SHEET_TEACHERS);
   for (var j = 0; j < teachers.length; j++) {
     var t = teachers[j];
-    if (t.username === username && t.password === hashed) {
-      if (!isActive_(t.active)) return { ok: false, error: 'ACCOUNT_DISABLED' };
+    if (isActive_(t.active) && t.username === username && t.password === hashed) {
       return { ok: true, token: createSession(t, 'teacher'), role: 'teacher', name: t.name, today: today_() };
     }
   }
@@ -384,39 +388,46 @@ function actionChangePwd(body) {
 }
 
 // ---------- 老師帳號 ----------
-function nextTeacherUsername_(teachers) {
-  var max = 0;
-  teachers.forEach(function (t) {
+// 取最小的未使用編號：Teacher02 被刪除後，下一位新老師會重新使用 Teacher02
+function nextTeacherUsername_(activeTeachers) {
+  var used = {};
+  activeTeachers.forEach(function (t) {
     var m = String(t.username).match(/^Teacher(\d+)$/i);
-    if (m) max = Math.max(max, parseInt(m[1], 10));
+    if (m) used[parseInt(m[1], 10)] = true;
   });
-  var n = max + 1;
+  var n = 1;
+  while (used[n]) n++;
   return 'Teacher' + (n < 10 ? '0' + n : String(n));
+}
+
+function activeTeachers_() {
+  return sheetToObjects(SHEET_TEACHERS).filter(function (t) { return isActive_(t.active); });
 }
 
 function actionListTeachers(body) {
   requireSession(body.token, 'admin');
-  var teachers = sheetToObjects(SHEET_TEACHERS);
+  var teachers = activeTeachers_();
+  teachers.sort(function (a, b) { return String(a.username).localeCompare(String(b.username)); });
   return {
     ok: true,
     nextUsername: nextTeacherUsername_(teachers),
-    teachers: teachers.map(function (t) {
-      return { id: t.id, username: t.username, name: t.name, active: isActive_(t.active) };
-    })
+    teachers: teachers.map(function (t) { return { id: t.id, username: t.username, name: t.name, active: true }; })
   };
 }
 
 function actionAddTeacher(body) {
   requireSession(body.token, 'admin');
   return withLock_(function () {
-    var teachers = sheetToObjects(SHEET_TEACHERS);
+    var all = sheetToObjects(SHEET_TEACHERS);
+    var active = all.filter(function (t) { return isActive_(t.active); });
     var name = String(body.name || '').trim();
     if (!name) return { ok: false, error: 'NAME_REQUIRED' };
-    var username = String(body.username || '').trim() || nextTeacherUsername_(teachers);
-    var taken = teachers.concat(sheetToObjects(SHEET_ADMINS)).some(function (u) {
-      return String(u.username).toLowerCase() === username.toLowerCase();
-    });
+    var username = String(body.username || '').trim() || nextTeacherUsername_(active);
+    var lower = username.toLowerCase();
+    var taken = active.concat(sheetToObjects(SHEET_ADMINS)).some(function (u) { return String(u.username).toLowerCase() === lower; });
     if (taken) return { ok: false, error: 'USERNAME_TAKEN' };
+    // 舊版「停用」留下的同名帳號列，先移除以便重新使用編號
+    deleteRows_(SHEET_TEACHERS, all.filter(function (t) { return !isActive_(t.active) && String(t.username).toLowerCase() === lower; }));
     var id = genId('TC');
     appendObject(SHEET_TEACHERS, {
       id: id, username: username, password: hashPwd(body.password || '0000'),
@@ -426,17 +437,25 @@ function actionAddTeacher(body) {
   });
 }
 
-function actionDeleteTeacher(body) {
+function deleteRows_(sheetName, rowObjs) {
+  var sheet = sheet_(sheetName);
+  rowObjs.map(function (o) { return o._row; }).sort(function (a, b) { return b - a; })
+    .forEach(function (r) { sheet.deleteRow(r); });
+}
+
+// 真正刪除老師帳號（點名紀錄裡的老師姓名仍保留），編號釋出可再使用
+function actionDeleteTeachersBatch(body) {
   requireSession(body.token, 'admin');
-  var teachers = sheetToObjects(SHEET_TEACHERS);
-  for (var i = 0; i < teachers.length; i++) {
-    if (teachers[i].id === body.teacherId) {
-      teachers[i].active = false;
-      updateObjectByRow(SHEET_TEACHERS, teachers[i]._row, teachers[i]);
-      return { ok: true };
-    }
-  }
-  return { ok: false, error: 'TEACHER_NOT_FOUND' };
+  var ids = {};
+  (body.teacherIds || []).forEach(function (id) { ids[id] = true; });
+  var targets = sheetToObjects(SHEET_TEACHERS).filter(function (t) { return ids[t.id]; });
+  deleteRows_(SHEET_TEACHERS, targets);
+  return { ok: true, deleted: targets.length };
+}
+
+function actionDeleteTeacher(body) {
+  var r = actionDeleteTeachersBatch({ token: body.token, teacherIds: [body.teacherId] });
+  return r.deleted ? { ok: true } : { ok: false, error: 'TEACHER_NOT_FOUND' };
 }
 
 // ---------- 聯絡人類型 (預設 + 自訂) ----------
@@ -652,17 +671,27 @@ function actionEditStudent(body) {
   return { ok: false, error: 'STUDENT_NOT_FOUND' };
 }
 
-function actionDeleteStudent(body) {
+// 刪除學生：標記為已刪除（保留歷史點名紀錄可對照），一次寫回整欄
+function actionDeleteStudentsBatch(body) {
   requireSession(body.token, 'admin');
-  var students = sheetToObjects(SHEET_STUDENTS);
-  for (var i = 0; i < students.length; i++) {
-    if (students[i].id === body.studentId) {
-      students[i].active = false;
-      updateObjectByRow(SHEET_STUDENTS, students[i]._row, students[i]);
-      return { ok: true };
-    }
+  var ids = {};
+  (body.studentIds || []).forEach(function (id) { ids[id] = true; });
+  var sheet = sheet_(SHEET_STUDENTS);
+  var values = sheet.getDataRange().getValues();
+  var idCol = values[0].indexOf('id'), actCol = values[0].indexOf('active');
+  var col = [], n = 0;
+  for (var i = 1; i < values.length; i++) {
+    var v = values[i][actCol];
+    if (ids[values[i][idCol]] && isActive_(v)) { v = 'false'; n++; }
+    col.push([toCell_(v)]);
   }
-  return { ok: false, error: 'STUDENT_NOT_FOUND' };
+  if (n) sheet.getRange(2, actCol + 1, col.length, 1).setNumberFormat('@').setValues(col);
+  return { ok: true, deleted: n };
+}
+
+function actionDeleteStudent(body) {
+  var r = actionDeleteStudentsBatch({ token: body.token, studentIds: [body.studentId] });
+  return r.deleted ? { ok: true } : { ok: false, error: 'STUDENT_NOT_FOUND' };
 }
 
 // ---------- 點名 ----------
@@ -718,28 +747,46 @@ function actionSubmitAttendance(body) {
   var date = today_();
   var schoolId = body.schoolId;
   var now = new Date().toISOString();
-  var valid = {};
-  activeStudentsOf_(schoolId).forEach(function (st) { valid[st.id] = true; });
 
-  var count = withLock_(function () {
+  // 整段在全域鎖內：兩位老師同時送出同一校時，第二位會看到「已被他人更新」而不是默默覆蓋
+  var result = withLock_(function () {
+    var students = activeStudentsOf_(schoolId);
+    // 同一位學生若重複出現，以最後一筆為準
+    var latestOf = {};
+    (body.records || []).forEach(function (r) { if (r) latestOf[r.studentId] = r; });
+    // 每一位學生都必須點名（固定不進班也是一種狀態）
+    var missing = students.filter(function (st) {
+      var r = latestOf[st.id];
+      return !r || !r.status || VALID_STATUS.indexOf(r.status) === -1;
+    });
+    if (missing.length) return { ok: false, error: 'INCOMPLETE', missing: missing.length };
+    var valid = {};
+    students.forEach(function (st) { valid[st.id] = true; });
+
     var sheet = sheet_(SHEET_ATTENDANCE);
     var values = sheet.getDataRange().getValues();
     var headers = values[0];
     var idx = {};
     headers.forEach(function (h, i) { idx[h] = i; });
-    var rowOf = {};
+    var rowOf = {}, latest = '', latestBy = '';
     for (var i = 1; i < values.length; i++) {
       var d = values[i][idx.date];
       if (d instanceof Date) d = fromDateCell_(d, 'date');
-      if (String(d) === date && values[i][idx.schoolId] === schoolId) rowOf[values[i][idx.studentId]] = i;
+      if (String(d) === date && values[i][idx.schoolId] === schoolId) {
+        rowOf[values[i][idx.studentId]] = i;
+        var at = values[i][idx.submittedAt];
+        at = at instanceof Date ? at.toISOString() : String(at || '');
+        if (at > latest) { latest = at; latestBy = values[i][idx.teacherName]; }
+      }
+    }
+    // 載入後若已有別人送出（或更新）過，先提醒，不直接覆蓋
+    if (!body.force && latest !== String(body.baseSubmittedAt || '')) {
+      return { ok: false, error: 'CONFLICT', submittedAt: latest, submittedBy: latestBy };
     }
     var changed = false, fresh = [], n = 0;
-    // 同一位學生若重複出現，以最後一筆為準
-    var latestOf = {};
-    (body.records || []).forEach(function (r) { if (r) latestOf[r.studentId] = r; });
     Object.keys(latestOf).map(function (k) { return latestOf[k]; }).forEach(function (r) {
       if (!valid[r.studentId]) return;
-      var status = VALID_STATUS.indexOf(r.status) === -1 ? '' : r.status;
+      var status = r.status;
       var rec = {
         date: date, schoolId: schoolId, studentId: r.studentId, status: status,
         selfDrop: status === 'selfDrop', selfWalk: status === 'selfWalk',
@@ -761,11 +808,17 @@ function actionSubmitAttendance(body) {
       sheet.getRange(2, 1, body2.length, headers.length).setNumberFormat('@').setValues(body2);
     }
     appendObjects(SHEET_ATTENDANCE, fresh);
-    return n;
+    return { ok: true, submittedAt: now, count: n };
   });
+  if (!result.ok) return result;
 
-  try { cleanupOldRecords(); } catch (e) { /* 清理失敗不影響點名 */ }
-  return { ok: true, submittedAt: now, count: count };
+  // 超過 60 天的清理：每天最多順便做一次（另有每日排程）
+  var cache = CacheService.getScriptCache();
+  if (!cache.get('cleaned_' + date)) {
+    try { cleanupOldRecords(); } catch (e) { /* 清理失敗不影響點名 */ }
+    cache.put('cleaned_' + date, '1', 21600);
+  }
+  return result;
 }
 
 function actionGetOverview(body) {

@@ -4,6 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>基翔點名-雲端系統</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHJlY3QgeD0iMC41IiB5PSIwLjUiIHdpZHRoPSIyMyIgaGVpZ2h0PSIyMyIgcng9IjUiIGZpbGw9IiNmZmYiIHN0cm9rZT0iI2QxZDVkYiIgc3Ryb2tlLXdpZHRoPSIxIi8+PHBhdGggdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMy43NSA0LjMpIHNjYWxlKDAuNykiIGQ9Ik03IDE4YTUgNSAwIDAgMS0uNy05Ljk1QTYgNiAwIDAgMSAxNy45IDkuMiA0LjUgNC41IDAgMCAxIDE3LjUgMThIN3oiIGZpbGw9IiMxNmEzNGEiLz48L3N2Zz4=">
+<link rel="icon" type="image/png" sizes="32x32" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAACXBIWXMAALiMAAC4jAHM9rsvAAACXklEQVRYhcWXT2sTQRjG92S/gQgiePIi/sNPoOClgogHD8VLD2pF6cEv4EG9VPDUk4eCGv9hoIKxBhRpbAmiYLLTnak7s3U3u8VaicmW1JZmN/PKu5qQmmrsZnfzwnPceX4778zu+yhKW3HOB4qUjxAm3hImKioVEIVwLcJErqDpFzVN26FsVUXKj6jMsAkTvuUsyfJ3F9yVWiTCtXBNQoWvMmEVNP1wpzkVa4a56NU9D+Kqet0Dw3Q89GpBcM4HVCZKaC6lhLgLPRCCUGEG7fjdcz/ON99qJ7AdRDMuKISJGewPJFyWs9RQqZhWCBXVcsVN2j84mHg7lKLGZXWlljgAeqK3gve0XwDoHQpAgoQP3+bhzvwzGKdpmLLzsO5vJAPwqWrBiRejsPP+4CbtfzoEWeddvAC6W4J9T852mLdrQs/EBzCYvfpPc9Seh6fBWV2OFmDKzsNw7kZX86bG1FQ0AL5swKXZW/9t3NTRyWF4XpoNDmtPAOM0vW3zdo3mb0PjL/+XrgASJBxIn+sJADVp5sIBLK9VejZHDb25Fg7A3ViNBOB45ko4AKxjmcs9A4zMjEFogFeL72FX6mRoc3wWP9mhAbAeL7yGvY/ObNt894NTcI+/hEg+ROV1F1IiCzcLd+H6x4muwutr177G9zeMoloAxX4PJKTfIxlhIocDYn+GUmNawbiEIzKOykkVeqmYkjRxXsFwgHEJw0LCweRzKyfOzemHfkUzx4tzJ9qi2Q9CFg5uyocBBBMWtgP7E3k4tb80gjREhdlh3izcEoxLmFiijue4Jvb8z3j+E8/8zCpoD72sAAAAAElFTkSuQmCC">
+<link rel="apple-touch-icon" sizes="180x180" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAAC0CAYAAAA9zQYyAAAACXBIWXMAALiMAAC4jAHM9rsvAAAHv0lEQVR4nO3d6W8VVRiA8ftXKG644yfXuESNiajB5OICRUUTFxRBEVETY9hcPqigLJK4oWii2GvL0hYqUGqhQKElUKpFtgKFtghlk1IodIe+5oxihEBoy70957zn+SXv93LnmbnD3JkzMQEUidn+A4BkImioQtBQhaChCkFDFYKGKgQNVQgaqhA0VCFoqELQUIWgoQpBQxWChioEDVUIGqoQNFQhaKhC0FCFoKEKQUMVgoYqBA1VCBqqEDRUIWioQtBQhaChCkFDFYKGKgQNVQgaqhA0VCFoqELQUIWgoQpBQxWChioEDVUIGqoQNFQhaKhC0FCFoKEKQUMVgoYqBA1VCBqqEDRUIWioQtBQhaChCkGnQENbo5Qf2iaL/lwtMypy5fNNc+XT9ekyoXymfLFprvy0fbHk714j24/8Ka0n2lLxJwSLoJPgUPMRmVu1TF4rniz35A6XXon+clF6vFNzSeIReWDh6zK2dLos2FUsje3NyfiTgkXQ3dTU3iKzdy6VgQVjuhTw+aZ3xgB5YcWHUrBnrZzs6Eju1g4AQXdRXcvR6PShz+zBSYv4XHP7vBdlRsV8aTnRmpqtrxBBd5KJatrGWXJ15qCUh3zm3JL9vCQq8zlidwJBd0LR3nK5Y95LPR7ymdM//22pqK/pzJ8cLII+z1F5/Lpv5OL05J0jX+hcnvF4dOWkQzi/PhuCPod9TXXycN5b1gM+17xY9BFXRM6CoM9i0+EquSnrWevRnm/65b0lfzXXn+2fECyCPoP5QaQnrmAka+6a/7LsbTxkpx4HEfT/bDy8U66b9aT1SLs69+YO50j9L4L+157Gg3Jz9nPW4+zu9Mt7U5q5Xk3Qp65mPLholPUoL3RGFE+W0HGEFpHRa7+yHmOyZub2PAlZ8EH/unuN9QiTOVdlpklVQ62EKhb6DUa35QyxHmGyZ2DBGAlV0EF/XD7TenypmoW7SiREwQZtfpAwX8+2w0vV3Dl/qLR3nJDQBBv0B2XfW48u1ZNdvVxCE2TQx9qa5JpZPX8baE9P34UjJTRBBm2e6bMdW09N2V8VEpJggj7RcVK21tdIVtWy6Kdi26H11Lyz9ksJieqgj7c3yZydhTJs5US5frZ/92gkY26YMzjamUOhMugdR/dER6ZrZz1hPSgXpiyg046YthuM3lw9TS5NPGo9IpdmyoYMCYWKoM3jSOY/eiFcuejOPFP4voQipuEHEvNTr+1oXJ4bs56VUHgd9Pq6yugRf9vB+DBZVcui6+/aeRv06gMb+U9fF6O+7OfHolWZCmvL1K7x4WXQpQe3yJWZA60f9Xye+xeOjBaT1Cbm4yU5c23VdhBa5sml41XdP+1V0GZlznt/ecV6BNqmd8YASa9cLBp4FfSokqnWN77mGb/uG+/Prb0JesmeUusbPIQZtvITr++jjvnyVLZZUMX2xg5lRpZM8XbtPC+C/rZinvWNHNpM+iMhPnI+aPMOEn486fmgeyX6y9LadeIb54M2t3/aPlqFOmbByvrWY+IT54NOWzLW+oYNeUav/Up8EnN9jeZkvpCHiXf5MzC34prXz/nC6aAzdhQQoQM74qiSqeILp4N+ZdWn1jcmE49uatrfVCc+cDporj27s0NN35IjPnA2aLPWsXnLqu0NycSjz8C8b8YHzgZtlhwgJnd2qF6J/lLf2iCuczbokv0brG9EJn7aZ5C/e424ztmgzeqZBOXWTjXVg6fHnQ16wa5i6xuQiZ/2Gby6apK4ztmgzdcbQbm1Uw1aMk5c52zQq/att74Bmfhpn4F5sZLrYi4/O0hQbu1UfT1Yntfp69AuvTSeictDHKEvzN25wwjJoZ3p6cL3xHXOHqEN8yiQ7Y3IxP/7DN5Y/Zm4zumgE5X5BOXQTvXl5ixxndNBH2yu534Oh2b53t/EdU4HbQwoGG19QzLx6BZSs9CP65wPOqd6BUE5sFOlLRkrPnA+6LaT7dH6xrY3aOiTqMwXHzgftPHd1l+sb9CQ5+rMQXKk9bj4wIugzVGap1fsBf1+2XfiCy+CNljbzk7MV2WmRU/f+8KboA3zhivbX7+hzRQP7oH2NuiGtkbWh+7BmO9bMCJaKNMnXgVt7GyolT6zn7J+5NI+V2QMkA11O8Q33gVtrDtYwTsJUxz0z5W/io+8DPrUW7B40WZqYp7k6VK6XgdtbD5cJbfmvGD961nTTFz/k/jM66CNA02HZXDhu9ZD0LAo44/bFonvvA/aMK9PML8mcgoS71bMt+UMid79qIGKoP9/tDbXqllCLN6pkM3nNK50uhxt8+Nn7eCCPqXm2D4ZU/p1dA+C7a9yV5f1Glo0QSrqa0QblUGf0tTeIvOqi+Sloo95+2z6P6cWH/3+g1Q37BWtVAd95nm2OSJlVy+PLku9XjI1Cv2JpeNUz4jiyTKjIje6IhSCYIJGGAgaqhA0VCFoqELQUIWgoQpBQxWChioEDVUIGqoQNFQhaKhC0FCFoKEKQUMVgoYqBA1VCBqqEDRUIWioQtBQhaChCkFDFYKGKgQNVQgaqhA0VCFoqELQUIWgoQpBQxWChioEDVUIGqoQNFQhaKhC0FCFoKEKQUMVgoYqBA1VCBqqEDRUIWioQtBQhaChCkFDFYKGKgQNVQgaqhA0VCFoqELQEE3+BpuvVhwdm/7bAAAAAElFTkSuQmCC">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#4f46e5">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="基翔點名">
 <style>
   :root{
     --bg:#f1f5f9; --card:#fff; --border:#e2e8f0; --text:#1e293b; --muted:#64748b;
@@ -34,7 +42,7 @@
   body.role-teacher #topbar{background:linear-gradient(90deg,#0284c7,#4f46e5);}
   .brand{display:flex;align-items:center;gap:12px;}
   .logo-box{background:#fff;border-radius:10px;width:42px;height:42px;display:flex;align-items:center;justify-content:center;box-shadow:inset 0 1px 3px rgba(0,0,0,.12);}
-  .logo-box svg{width:26px;height:26px;color:var(--indigo);}
+  .logo-box svg{width:26px;height:26px;color:#16a34a;}
   .brand h1{font-size:18px;margin:0;line-height:1.2;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
   .badge-cloud{background:rgba(16,185,129,.85);font-size:10.5px;padding:2px 7px;border-radius:5px;font-weight:500;}
   .conn{display:inline-flex;align-items:center;gap:6px;padding:2px 9px;border-radius:99px;font-size:11px;font-weight:600;margin-top:3px;border:1px solid transparent;transition:all .25s;}
@@ -176,6 +184,16 @@
   .primary-ct{font-size:12px;color:var(--muted);margin-top:2px;}
   .primary-ct a{color:var(--sky);text-decoration:none;font-weight:600;}
   .banner-ok{background:var(--emerald-l);color:#065f46;padding:10px 14px;border-radius:10px;font-size:13.5px;margin-bottom:12px;font-weight:600;}
+  .banner-edit{background:var(--amber-l);color:#92400e;padding:10px 14px;border-radius:10px;font-size:13.5px;margin-bottom:12px;font-weight:600;}
+  .rc-row.need td{background:#fff1f2;}
+  .rc-row.need .st-group{outline:2px solid var(--rose);outline-offset:3px;border-radius:9px;}
+  .btn-edit{background:var(--amber);color:#fff;} .btn-edit:hover{background:#b45309;}
+  .btn-danger{background:var(--rose);color:#fff;} .btn-danger:hover{background:#be123c;}
+  .bulk-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 10px;padding:8px 12px;background:#f8fafc;border:1px solid var(--border);border-radius:10px;font-size:13.5px;font-weight:600;color:var(--muted);}
+  th.sel,td.sel{width:38px;text-align:center;padding-left:6px;padding-right:6px;}
+  input.sel-box{width:18px;height:18px;cursor:pointer;accent-color:var(--rose);vertical-align:middle;}
+  tr.selected td{background:#fff1f2;}
+  tr.grp td{background:var(--cl);color:var(--c);font-weight:800;font-size:13px;padding:6px 10px;}
 
   /* overview */
   .today-card{background:linear-gradient(135deg,#eef2ff,#f5f3ff);border:1px solid #c7d2fe;border-radius:14px;padding:16px;margin-bottom:18px;}
@@ -291,9 +309,13 @@
     <div class="card accent-teal hidden" id="students-card">
       <h2 id="students-card-title"><span class="dot-sm"></span>學生名單</h2>
       <p class="hint">姓名、年級班級（例如 306）、聯絡人與聯絡方式、固定不進班星期</p>
+      <div class="bulk-bar">
+        <span id="bulk-st-count">已選 0 位學生</span>
+        <button class="btn btn-danger btn-sm" id="bulk-st-del" onclick="deleteSelectedStudents()" disabled>刪除所選學生</button>
+      </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>年級班級</th><th>姓名</th><th>聯絡人 / 聯絡方式</th><th>固定不進班</th><th><span class="sr-only" style="position:absolute;left:-9999px">操作</span></th></tr></thead>
+          <thead><tr><th class="sel"><input type="checkbox" class="sel-box" id="sel-all-st" aria-label="全選學生"></th><th>年級班級</th><th>姓名</th><th>聯絡人 / 聯絡方式</th><th>固定不進班</th><th><span style="position:absolute;left:-9999px">操作</span></th></tr></thead>
           <tbody id="students-tbody"></tbody>
         </table>
       </div>
@@ -307,10 +329,14 @@
   <section class="section" id="sec-teachers">
     <div class="card accent-violet">
       <h2><span class="dot-sm"></span>老師帳號管理</h2>
-      <p class="hint">建立老師登入帳號；帳號預設依序為 Teacher01、Teacher02…</p>
+      <p class="hint">建立老師登入帳號；帳號預設依序為 Teacher01、Teacher02…，刪除的帳號編號會再給新老師使用</p>
+      <div class="bulk-bar">
+        <span id="bulk-tc-count">已選 0 個帳號</span>
+        <button class="btn btn-danger btn-sm" id="bulk-tc-del" onclick="deleteSelectedTeachers()" disabled>刪除所選帳號</button>
+      </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>姓名</th><th>帳號</th><th>狀態</th><th></th></tr></thead>
+          <thead><tr><th class="sel"><input type="checkbox" class="sel-box" id="sel-all-tc" aria-label="全選老師帳號"></th><th>姓名</th><th>帳號</th><th><span style="position:absolute;left:-9999px">操作</span></th></tr></thead>
           <tbody id="teachers-tbody"></tbody>
         </table>
       </div>
@@ -331,9 +357,7 @@
       </div>
       <div id="rollcall-banner"></div>
       <div id="rollcall-container"><div class="empty">請先選擇學校</div></div>
-      <div id="rollcall-submit-wrap" class="hidden" style="margin-top:16px;">
-        <button class="btn btn-primary" id="rollcall-submit-btn" onclick="submitAttendance()">送出點名</button>
-      </div>
+      <div id="rollcall-submit-wrap" class="hidden" style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;"></div>
     </div>
   </section>
 
@@ -369,7 +393,8 @@ const STATE = {
   token: null, role: null, name: null, today: null,
   schools: [], currentSchoolId: null, currentStudents: [],
   contactTypes: DEFAULT_TYPES.slice(),
-  rollcall: null, activeTab: 'overview',
+  rollcall: null, rcMode: null, activeTab: 'overview',
+  selStudents: new Set(), selTeachers: new Set(), teachers: [],
   pending: 0, pillCount: 0, lastActivity: Date.now(), conn: 'connecting'
 };
 
@@ -429,7 +454,8 @@ function errMsg(code) {
     AUTH_EXPIRED: '登入已過期，請重新登入', FORBIDDEN: '沒有權限執行此動作',
     USERNAME_TAKEN: '此帳號已被使用', WRONG_OLD_PASSWORD: '原密碼不正確', PASSWORD_REQUIRED: '請輸入新密碼',
     NAME_REQUIRED: '請輸入名稱', NAME_TOO_LONG: '名稱太長（最多 12 字）', SCHOOL_EXISTS: '已有同名學校',
-    STUDENT_NOT_FOUND: '找不到該學生', TEACHER_NOT_FOUND: '找不到該老師', UNKNOWN_ACTION: '後端版本過舊，請重新部署 Code.gs'
+    STUDENT_NOT_FOUND: '找不到該學生', TEACHER_NOT_FOUND: '找不到該老師', UNKNOWN_ACTION: '後端版本過舊，請重新部署 Code.gs',
+    BUSY: '目前多人同時操作中，請稍後再試一次', CONFLICT: '這間學校的點名剛被其他老師更新', INCOMPLETE: '還有學生尚未點名'
   };
   return map[code] || ('發生錯誤（' + code + '）');
 }
@@ -458,15 +484,18 @@ async function api(action, payload, opts) {
   setConn('connected');
   if (!json.ok) {
     done(false);
-    if (json.error === 'AUTH_EXPIRED' && STATE.token) forceLogout('登入已過期，請重新登入');
-    throw new Error(json.error || 'UNKNOWN_ERROR');
+    if (json.error === 'AUTH_EXPIRED' && STATE.token) forceLogout('登入已過期或帳號已被刪除，請重新登入');
+    const err = new Error(json.error || 'UNKNOWN_ERROR');
+    err.data = json;
+    throw err;
   }
   done(true);
   return json;
 }
 
 // 寫入動作：擋住畫面顯示「同步中」→ 完成後顯示「同步成功」
-async function doWrite(action, payload, afterFn, doneText) {
+// opts.onError(e)：回傳 true 表示已自行處理此錯誤（例如點名衝突）
+async function doWrite(action, payload, afterFn, doneText, opts) {
   STATE.pending++;
   showBusy('同步中，請稍候…');
   let res = null;
@@ -474,6 +503,7 @@ async function doWrite(action, payload, afterFn, doneText) {
     res = await api(action, payload, { pill: false });
   } catch (e) {
     STATE.pending--; hideBusy();
+    if (opts && opts.onError && opts.onError(e)) return null;
     if (e.message !== 'AUTH_EXPIRED') toast('同步失敗：' + errMsg(e.message), true);
     return null;
   }
@@ -483,6 +513,25 @@ async function doWrite(action, payload, afterFn, doneText) {
   showDone(typeof doneText === 'function' ? doneText(res) : (doneText || '同步成功'));
   if (refreshFailed) toast('資料已儲存，但重新載入清單失敗，請稍後再試', true);
   return res;
+}
+
+// 確認視窗（取代瀏覽器內建 confirm，手機上也好按）；html 參數需已跳脫
+function confirmBox(title, html, okText, danger) {
+  return new Promise(resolve => {
+    const bg = document.createElement('div');
+    bg.className = 'prompt-bg';
+    bg.innerHTML = `<div class="modal" role="alertdialog" aria-modal="true" aria-labelledby="cf-t" style="max-width:440px">
+      <h3 id="cf-t">${esc(title)}</h3><div style="font-size:15px;line-height:1.75">${html}</div>
+      <div class="modal-actions"><button class="btn btn-secondary" id="cf-no">取消</button>
+      <button class="btn ${danger ? 'btn-danger' : 'btn-primary'}" id="cf-yes">${esc(okText || '確定')}</button></div></div>`;
+    document.body.appendChild(bg);
+    const key = ev => { if (ev.key === 'Escape') close(false); };
+    const close = v => { bg.remove(); document.removeEventListener('keydown', key, true); resolve(v); };
+    document.addEventListener('keydown', key, true);
+    bg.querySelector('#cf-no').onclick = () => close(false);
+    bg.querySelector('#cf-yes').onclick = () => close(true);
+    bg.querySelector('#cf-yes').focus();
+  });
 }
 
 window.addEventListener('unhandledrejection', e => {
@@ -538,7 +587,8 @@ async function doLogin() {
 
 function clearSession() {
   STATE.token = null; STATE.role = null; STATE.name = null;
-  STATE.currentSchoolId = null; STATE.currentStudents = []; STATE.rollcall = null; STATE.pillCount = 0;
+  STATE.currentSchoolId = null; STATE.currentStudents = []; STATE.rollcall = null; STATE.rcMode = null; STATE.pillCount = 0;
+  STATE.selStudents.clear(); STATE.selTeachers.clear();
   document.body.classList.remove('role-admin', 'role-teacher');
   document.querySelectorAll('.modal-bg,.prompt-bg').forEach(m => m.remove());
   ['header-right', 'admin-tabs', 'app-main'].forEach(id => $(id).classList.add('hidden'));
@@ -611,10 +661,13 @@ function switchTab(tab) {
 async function tick() {
   if (document.hidden || STATE.pending) return;
   try {
-    if (STATE.token && STATE.role === 'admin' && !document.querySelector('.modal-bg')) {
+    const modalOpen = document.querySelector('.modal-bg,.prompt-bg');
+    if (STATE.token && STATE.role === 'admin' && !modalOpen) {
       if (STATE.activeTab === 'overview') await loadOverview(true);
       else if (STATE.activeTab === 'schools') await loadSchools(true);
       else if (STATE.activeTab === 'teachers') await loadTeachers(true);
+    } else if (STATE.token && STATE.role === 'teacher' && STATE.rcMode === 'view' && !modalOpen) {
+      await loadRollCall(true);   // 檢視模式下，其他老師的更新會自動同步過來（修改中不會被打斷）
     } else {
       await api('ping', {}, { pill: false, flash: false });
     }
@@ -646,6 +699,7 @@ function renderSchoolList() {
 }
 
 function selectSchool(id) {
+  if (STATE.currentSchoolId !== id) STATE.selStudents.clear();
   STATE.currentSchoolId = id;
   const school = STATE.schools.find(s => s.id === id);
   $('students-card').classList.remove('hidden');
@@ -731,9 +785,12 @@ async function loadStudents(silent) {
   const r = await api('listStudents', { schoolId: STATE.currentSchoolId }, { pill: !silent, flash: !silent });
   STATE.currentStudents = r.students;
   const tbody = $('students-tbody');
-  if (!r.students.length) { tbody.innerHTML = '<tr><td colspan="5" class="empty">尚無學生</td></tr>'; return; }
+  if (!r.students.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty">尚無學生</td></tr>'; STATE.selStudents.clear(); updateBulk('st'); return; }
+  const ids = new Set(r.students.map(s => s.id));
+  STATE.selStudents.forEach(id => { if (!ids.has(id)) STATE.selStudents.delete(id); });   // 背景同步後保留勾選
   tbody.innerHTML = r.students.map(st => `
     <tr>
+      <td class="sel"><input type="checkbox" class="sel-box sel-st" value="${esc(st.id)}"${STATE.selStudents.has(st.id) ? ' checked' : ''} aria-label="選取 ${esc(st.name)}"></td>
       <td><b>${esc(st.grade) || '-'}</b></td>
       <td>${esc(st.name)}</td>
       <td>${contactsHtml(st.contacts)}</td>
@@ -743,7 +800,49 @@ async function loadStudents(silent) {
         <button class="icon-btn" title="刪除" aria-label="刪除 ${esc(st.name)}" onclick="deleteStudent('${esc(st.id)}')">🗑️</button>
       </td>
     </tr>`).join('');
+  updateBulk('st');
 }
+
+/* ---------------- 勾選 / 批次刪除 ---------------- */
+function selSet(kind) { return kind === 'st' ? STATE.selStudents : STATE.selTeachers; }
+function updateBulk(kind) {
+  const set = selSet(kind);
+  $('bulk-' + kind + '-count').textContent = `已選 ${set.size} ${kind === 'st' ? '位學生' : '個帳號'}`;
+  $('bulk-' + kind + '-del').disabled = !set.size;
+  const boxes = [...document.querySelectorAll('.sel-' + kind)];
+  const all = $('sel-all-' + kind);
+  all.checked = boxes.length > 0 && boxes.every(b => b.checked);
+  all.indeterminate = set.size > 0 && !all.checked;
+  boxes.forEach(b => b.closest('tr').classList.toggle('selected', b.checked));
+}
+document.addEventListener('change', e => {
+  const t = e.target;
+  const m = t.matches && (t.matches('.sel-st') ? 'st' : t.matches('.sel-tc') ? 'tc' : t.id === 'sel-all-st' ? 'all-st' : t.id === 'sel-all-tc' ? 'all-tc' : null);
+  if (!m) return;
+  const kind = m.replace('all-', '');
+  const set = selSet(kind);
+  if (m.startsWith('all-')) {
+    document.querySelectorAll('.sel-' + kind).forEach(b => { b.checked = t.checked; t.checked ? set.add(b.value) : set.delete(b.value); });
+  } else {
+    t.checked ? set.add(t.value) : set.delete(t.value);
+  }
+  updateBulk(kind);
+});
+function namesPreview(list) {
+  const shown = list.slice(0, 8).map(x => '「' + esc(x) + '」').join('、');
+  return shown + (list.length > 8 ? ` 等 ${list.length} 筆` : '');
+}
+
+async function deleteStudentsByIds(ids) {
+  const names = ids.map(id => (STATE.currentStudents.find(s => s.id === id) || {}).name || id);
+  const ok = await confirmBox('刪除學生', `確定要刪除 ${namesPreview(names)} 嗎？<br><span style="color:var(--muted);font-size:13px">刪除後不會再出現在點名名單，過去的點名紀錄仍會保留。</span>`, `刪除 ${ids.length} 位`, true);
+  if (!ok) return;
+  const r = await doWrite('deleteStudentsBatch', { studentIds: ids }, () => Promise.all([loadStudents(true), loadSchools(true)]),
+    res => `同步成功（已刪除 ${res.deleted} 位學生）`);
+  if (r) ids.forEach(id => STATE.selStudents.delete(id));
+  updateBulk('st');
+}
+function deleteSelectedStudents() { if (STATE.selStudents.size) deleteStudentsByIds([...STATE.selStudents]); }
 
 function contactsHtml(contacts) {
   if (!contacts || !contacts.length) return '-';
@@ -823,11 +922,7 @@ function openStudentModal(studentId) {
   modal.querySelector('#m-st-name').focus();
 }
 
-async function deleteStudent(id) {
-  const st = STATE.currentStudents.find(s => s.id === id);
-  if (!st || !confirm(`確定要刪除學生「${st.name}」嗎？`)) return;
-  await doWrite('deleteStudent', { studentId: id }, () => Promise.all([loadStudents(true), loadSchools(true)]));
-}
+function deleteStudent(id) { return deleteStudentsByIds([id]); }
 
 /* ---------------- 批次新增學生 ---------------- */
 let bsSeq = 0;
@@ -905,12 +1000,26 @@ async function loadTeachers(silent) {
   const r = await api('listTeachers', {}, { pill: !silent, flash: !silent });
   STATE.nextUsername = r.nextUsername;
   const tbody = $('teachers-tbody');
-  if (!r.teachers.length) { tbody.innerHTML = '<tr><td colspan="4" class="empty">尚無老師帳號</td></tr>'; return; }
-  tbody.innerHTML = r.teachers.map(t => `
-    <tr><td>${esc(t.name)}</td><td>${esc(t.username)}</td>
-    <td><span class="pill ${t.active ? 'st-present' : 'st-fixedOff'}">${t.active ? '啟用中' : '已停用'}</span></td>
-    <td>${t.active ? `<button class="icon-btn" title="停用" aria-label="停用 ${esc(t.name)}" onclick="deleteTeacher('${esc(t.id)}','${esc(t.username)}')">🗑️</button>` : ''}</td></tr>`).join('');
+  STATE.teachers = r.teachers;
+  const ids = new Set(r.teachers.map(t => t.id));
+  STATE.selTeachers.forEach(id => { if (!ids.has(id)) STATE.selTeachers.delete(id); });
+  tbody.innerHTML = r.teachers.length ? r.teachers.map(t => `
+    <tr><td class="sel"><input type="checkbox" class="sel-box sel-tc" value="${esc(t.id)}"${STATE.selTeachers.has(t.id) ? ' checked' : ''} aria-label="選取 ${esc(t.username)}"></td>
+    <td>${esc(t.name)}</td><td><b>${esc(t.username)}</b></td>
+    <td><button class="icon-btn" title="刪除" aria-label="刪除 ${esc(t.username)}" onclick="deleteTeacher('${esc(t.id)}')">🗑️</button></td></tr>`).join('')
+    : '<tr><td colspan="4" class="empty">尚無老師帳號</td></tr>';
+  updateBulk('tc');
 }
+
+async function deleteTeachersByIds(ids) {
+  const labels = ids.map(id => { const t = (STATE.teachers || []).find(x => x.id === id); return t ? `${t.name}（${t.username}）` : id; });
+  const ok = await confirmBox('刪除老師帳號', `確定要刪除 ${namesPreview(labels)} 嗎？<br><span style="color:var(--muted);font-size:13px">刪除後立即無法登入（已登入的裝置也會被登出），帳號編號會釋出給下一位新老師使用；過去的點名紀錄仍保留老師姓名。</span>`, `刪除 ${ids.length} 個帳號`, true);
+  if (!ok) return;
+  const r = await doWrite('deleteTeachersBatch', { teacherIds: ids }, () => loadTeachers(true), res => `同步成功（已刪除 ${res.deleted} 個帳號）`);
+  if (r) ids.forEach(id => STATE.selTeachers.delete(id));
+  updateBulk('tc');
+}
+function deleteSelectedTeachers() { if (STATE.selTeachers.size) deleteTeachersByIds([...STATE.selTeachers]); }
 
 async function openTeacherModal() {
   const r = await api('listTeachers');
@@ -931,10 +1040,7 @@ async function openTeacherModal() {
   modal.querySelector('#m-tc-name').focus();
 }
 
-async function deleteTeacher(id, username) {
-  if (!confirm(`確定要停用老師帳號「${username}」嗎？`)) return;
-  await doWrite('deleteTeacher', { teacherId: id }, () => loadTeachers(true));
-}
+function deleteTeacher(id) { return deleteTeachersByIds([id]); }
 
 /* ---------------- 點名總覽（管理員） ---------------- */
 function statsHtml(s, withTotal) {
@@ -988,75 +1094,165 @@ async function loadOverview(silent) {
   }).join('');
 }
 
+/* 點名明細排序：請假 → 自走 → 自送 → 固定不進班 → 未點名 → 到班(最下面)；同狀態內依年級班級 */
+const STATUS_ORDER = ['leave', 'selfWalk', 'selfDrop', 'fixedOff', '', 'present'];
+function statusLabel(st) { return st && STATUS[st] ? STATUS[st].label : '未點名'; }
+function statusClass(st) { return st && STATUS[st] ? 'st-' + st : 'st-unmarked'; }
+function sortedByStatus(list) {
+  const rank = st => { const i = STATUS_ORDER.indexOf(st || ''); return i === -1 ? 99 : i; };
+  return list.map((s, i) => ({ s, i })).sort((a, b) => (rank(a.s.status) - rank(b.s.status)) || (a.i - b.i)).map(x => x.s);
+}
+function countStatuses(list) {
+  const c = { present: 0, selfDrop: 0, selfWalk: 0, leave: 0, fixedOff: 0, unmarked: 0, total: list.length };
+  list.forEach(s => { c[s.status && c[s.status] !== undefined ? s.status : 'unmarked']++; });
+  return c;
+}
+function statusTableHtml(students) {
+  const sorted = sortedByStatus(students);
+  let html = '', cur = null;
+  sorted.forEach(st => {
+    const k = st.status || '';
+    if (k !== cur) {
+      cur = k;
+      html += `<tr class="grp ${statusClass(k)}"><td colspan="3">${statusLabel(k)}・${sorted.filter(x => (x.status || '') === k).length} 人</td></tr>`;
+    }
+    html += `<tr><td><b>${esc(st.grade) || '-'}</b></td><td>${esc(st.name)}</td><td><span class="pill ${statusClass(k)}">${statusLabel(k)}</span></td></tr>`;
+  });
+  return `<div class="table-wrap"><table><thead><tr><th>年級班級</th><th>姓名</th><th>狀態</th></tr></thead><tbody>
+    ${html || '<tr><td colspan="3" class="empty">無資料</td></tr>'}</tbody></table></div>`;
+}
+
 async function openDayDetail(schoolId, date) {
   const school = STATE.schools.find(s => s.id === schoolId);
   const r = await api('getSchoolDayDetail', { schoolId, date });
-  const pill = st => st && STATUS[st] ? `<span class="pill st-${st}">${STATUS[st].label}</span>` : '<span class="pill st-unmarked">未點名</span>';
-  buildModal(`${school ? school.name : ''}　${date} 點名明細`, `
-    <div class="table-wrap"><table><thead><tr><th>年級班級</th><th>姓名</th><th>狀態</th></tr></thead><tbody>
-    ${r.students.map(st => `<tr><td><b>${esc(st.grade) || '-'}</b></td><td>${esc(st.name)}</td><td>${pill(st.status)}</td></tr>`).join('') || '<tr><td colspan="3" class="empty">無資料</td></tr>'}
-    </tbody></table></div>`, null, { hideConfirm: true });
+  buildModal(`${school ? school.name : ''}　${date} 點名明細`,
+    `<div class="rc-summary">${statsHtml(countStatuses(r.students), true)}</div>${statusTableHtml(r.students)}`, null, { hideConfirm: true });
 }
 
 /* ---------------- 老師點名 ---------------- */
-async function loadRollCall(silent) {
+// opts.edit=true：直接進入修改模式；opts.keep：保留老師剛才勾的狀態（名單更新時用）
+async function loadRollCall(silent, opts) {
+  opts = opts || {};
   const schoolId = $('rollcall-school-select').value;
   const container = $('rollcall-container');
   if (!schoolId) {
     container.innerHTML = '<div class="empty">請先選擇學校</div>';
-    $('rollcall-submit-wrap').classList.add('hidden'); $('rollcall-banner').innerHTML = ''; STATE.rollcall = null;
+    $('rollcall-submit-wrap').classList.add('hidden'); $('rollcall-banner').innerHTML = '';
+    STATE.rollcall = null; STATE.rcMode = null;
     return;
   }
   if (!silent) container.innerHTML = '<div class="empty">載入中…</div>';
   const r = await api('getRollCall', { schoolId }, { pill: !silent, flash: !silent });
   if ($('rollcall-school-select').value !== schoolId) return;
-  STATE.rollcall = { schoolId, students: r.students };
-  $('rollcall-banner').innerHTML = r.submitted
-    ? `<div class="banner-ok">✔ 今日已由 ${esc(r.submittedBy || '')} 送出點名（${esc(fmtTime(r.submittedAt))}），可修改後重新送出</div>` : '';
-  if (!r.students.length) { container.innerHTML = '<div class="empty">此校尚無學生資料</div>'; $('rollcall-submit-wrap').classList.add('hidden'); return; }
+  STATE.rollcall = { schoolId, students: r.students, submitted: r.submitted, submittedAt: r.submittedAt || '', submittedBy: r.submittedBy || '' };
+  if (!r.students.length) {
+    $('rollcall-banner').innerHTML = '';
+    container.innerHTML = '<div class="empty">此校尚無學生資料</div>';
+    $('rollcall-submit-wrap').classList.add('hidden'); STATE.rcMode = null;
+    return;
+  }
+  if (r.submitted && !opts.edit) renderRcView(); else renderRcEdit(opts.keep);
+}
 
-  container.innerHTML = `<div class="rc-summary" id="rc-summary"></div>
+// 已送出：唯讀明細（請假 → 自走 → 自送 → … → 到班）
+function renderRcView() {
+  const rc = STATE.rollcall;
+  STATE.rcMode = 'view';
+  $('rollcall-banner').innerHTML = `<div class="banner-ok">✔ 今日已由 ${esc(rc.submittedBy)} 送出點名（${esc(fmtTime(rc.submittedAt))}）</div>`;
+  $('rollcall-container').innerHTML = `<h3 style="margin:4px 0 8px;font-size:16px">已送出的點名明細</h3>
+    <div class="rc-summary">${statsHtml(countStatuses(rc.students), true)}</div>${statusTableHtml(rc.students)}`;
+  const wrap = $('rollcall-submit-wrap');
+  wrap.innerHTML = '<button class="btn btn-edit" id="rollcall-edit-btn" onclick="loadRollCall(false, { edit: true })">修改點名單</button>';
+  wrap.classList.remove('hidden');
+}
+
+// 點名 / 修改模式
+function renderRcEdit(keep) {
+  const rc = STATE.rollcall;
+  STATE.rcMode = 'edit';
+  $('rollcall-banner').innerHTML = rc.submitted
+    ? `<div class="banner-edit">✎ 正在修改 ${esc(rc.submittedBy)} 於 ${esc(fmtTime(rc.submittedAt))} 送出的點名單，改完請按「送出點名」</div>` : '';
+  const statusOf = st => (keep && keep[st.id] !== undefined) ? keep[st.id] : st.status;
+  $('rollcall-container').innerHTML = `<div class="rc-summary" id="rc-summary"></div>
     <div class="table-wrap"><table><thead><tr><th>年級班級</th><th>姓名</th><th>出席狀態</th></tr></thead><tbody>
-    ${r.students.map(st => `
-      <tr class="rc-row${st.isFixedOff ? ' fixed' : ''}" data-sid="${esc(st.id)}" data-fixed="${st.isFixedOff ? 1 : 0}" data-status="${esc(st.status)}">
+    ${rc.students.map(st => { const s = statusOf(st); return `
+      <tr class="rc-row${st.isFixedOff ? ' fixed' : ''}${keep && !s ? ' need' : ''}" data-sid="${esc(st.id)}" data-name="${esc(st.name)}" data-fixed="${st.isFixedOff ? 1 : 0}" data-status="${esc(s)}">
         <td><b>${esc(st.grade) || '-'}</b></td>
         <td>${esc(st.name)}${st.isFixedOff ? '<span class="fixed-tag">今日固定不進班</span>' : ''}
           ${st.primaryContact ? `<div class="primary-ct">${esc(st.primaryContact.rel || '主要聯絡')} ${st.primaryContact.phone ? `<a href="tel:${esc(st.primaryContact.phone)}">${esc(st.primaryContact.phone)}</a>` : ''}</div>` : ''}</td>
         <td><div class="st-group" role="group" aria-label="${esc(st.name)} 出席狀態">
-          ${PICK.map(k => `<button type="button" class="st-btn st-${k}${st.status === k ? ' on' : ''}" data-st="${k}" aria-pressed="${st.status === k}">${STATUS[k].label}</button>`).join('')}
+          ${PICK.map(k => `<button type="button" class="st-btn st-${k}${s === k ? ' on' : ''}" data-st="${k}" aria-pressed="${s === k}">${STATUS[k].label}</button>`).join('')}
         </div></td>
-      </tr>`).join('')}
+      </tr>`; }).join('')}
     </tbody></table></div>`;
-  $('rollcall-submit-wrap').classList.remove('hidden');
+  const wrap = $('rollcall-submit-wrap');
+  wrap.innerHTML = '<button class="btn btn-primary" id="rollcall-submit-btn" onclick="submitAttendance()">送出點名</button>' +
+    (rc.submitted ? '<button class="btn btn-secondary" id="rollcall-cancel-btn" onclick="loadRollCall(false)">取消修改</button>' : '');
+  wrap.classList.remove('hidden');
   updateRcSummary();
 }
 
-$('rollcall-container').addEventListener('click', e => {
+function setRowStatus(tr, status) {
+  tr.dataset.status = status;
+  if (status) tr.classList.remove('need');
+  tr.querySelectorAll('.st-btn').forEach(b => { const on = b.dataset.st === status; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
+  updateRcSummary();
+}
+
+$('rollcall-container').addEventListener('click', async e => {
   const btn = e.target.closest('.st-btn');
   if (!btn) return;
   const tr = btn.closest('tr');
-  const next = btn.dataset.st;
-  const unset = tr.dataset.fixed === '1' ? 'fixedOff' : '';
-  tr.dataset.status = tr.dataset.status === next ? unset : next;
-  tr.querySelectorAll('.st-btn').forEach(b => { const on = b.dataset.st === tr.dataset.status; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
-  updateRcSummary();
+  const cur = tr.dataset.status;
+  const target = cur === btn.dataset.st ? (tr.dataset.fixed === '1' ? 'fixedOff' : '') : btn.dataset.st;
+  // 固定不進班的學生今天出現了：更改前先確認
+  if (tr.dataset.fixed === '1' && cur === 'fixedOff' && target !== 'fixedOff') {
+    const ok = await confirmBox('確認更改狀態',
+      `<b>${esc(tr.dataset.name)}</b> 今天（${weekdayLabel(STATE.today)}）是<b>固定不進班</b>的日子。<br>確定要改為「<b>${STATUS[target].label}</b>」嗎？`, '確定更改');
+    if (!ok) return;
+  }
+  setRowStatus(tr, target);
 });
 
 function updateRcSummary() {
-  const c = { present: 0, selfDrop: 0, selfWalk: 0, leave: 0, fixedOff: 0, unmarked: 0 };
-  document.querySelectorAll('#rollcall-container .rc-row').forEach(tr => { c[tr.dataset.status || 'unmarked']++; });
-  const total = Object.values(c).reduce((a, b) => a + b, 0);
-  $('rc-summary').innerHTML = statsHtml(Object.assign({ total }, c), true);
+  const list = [...document.querySelectorAll('#rollcall-container .rc-row')].map(tr => ({ status: tr.dataset.status }));
+  $('rc-summary').innerHTML = statsHtml(countStatuses(list), true);
 }
 
-async function submitAttendance() {
-  if (!STATE.rollcall) return;
+async function submitAttendance(force) {
+  const rc = STATE.rollcall;
+  if (!rc || STATE.rcMode !== 'edit') return;
   const rows = [...document.querySelectorAll('#rollcall-container .rc-row')];
-  const records = rows.map(tr => ({ studentId: tr.dataset.sid, status: tr.dataset.status || '' }));
-  const unmarked = records.filter(r => !r.status).length;
-  if (unmarked && !confirm(`還有 ${unmarked} 位學生尚未點名，確定要送出嗎？`)) return;
-  const schoolId = STATE.rollcall.schoolId;
-  await doWrite('submitAttendance', { schoolId, records }, () => loadRollCall(true), '點名已送出，同步成功');
+  const missing = rows.filter(tr => !tr.dataset.status);
+  rows.forEach(tr => tr.classList.toggle('need', !tr.dataset.status));
+  if (missing.length) {
+    toast(`還有 ${missing.length} 位學生尚未點名，請全部點完再送出`, true);
+    missing[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return;
+  }
+  const records = rows.map(tr => ({ studentId: tr.dataset.sid, status: tr.dataset.status }));
+  const keep = Object.fromEntries(records.map(r => [r.studentId, r.status]));
+  await doWrite('submitAttendance',
+    { schoolId: rc.schoolId, records, baseSubmittedAt: rc.submittedAt || '', force: force === true },
+    () => loadRollCall(true), '點名已送出，同步成功',
+    { onError: e => {
+      if (e.message === 'CONFLICT') { handleRcConflict(e.data || {}, keep); return true; }
+      if (e.message === 'INCOMPLETE') {
+        toast('學生名單剛被管理員更新，請確認標紅的學生後再送出', true);
+        loadRollCall(false, { edit: true, keep });
+        return true;
+      }
+      return false;
+    } });
+}
+
+// 兩位老師同時點同一校：後送出的人會看到提示，自行決定要覆蓋或改看對方的版本
+async function handleRcConflict(data, keep) {
+  const ok = await confirmBox('點名單已被更新',
+    `<b>${esc(data.submittedBy || '其他老師')}</b> 在 ${esc(fmtTime(data.submittedAt))} 已送出（或修改）這間學校今天的點名。<br>要用你目前的點名單覆蓋嗎？<br><span style="color:var(--muted);font-size:13px">按「取消」會改為顯示對方送出的點名明細。</span>`,
+    '覆蓋送出', true);
+  if (ok) submitAttendance(true);
+  else loadRollCall(false);
 }
 
 /* ---------------- 修改密碼 ---------------- */
