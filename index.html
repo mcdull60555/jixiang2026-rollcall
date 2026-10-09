@@ -1,0 +1,774 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>學生點名系統</title>
+<style>
+  :root{
+    --bg:#f4f6f9; --card:#ffffff; --border:#e2e6ec; --text:#1f2733; --muted:#6b7684;
+    --primary:#2f6fed; --primary-dark:#1f4fc0; --primary-light:#eaf1ff;
+    --green:#1f9d55; --green-light:#e7f8ee;
+    --amber:#c98a08; --amber-light:#fdf3dd;
+    --red:#d64545; --red-light:#fdeaea;
+    --grey-light:#eef0f3;
+    --radius:12px;
+    --shadow:0 1px 3px rgba(20,30,50,0.06), 0 1px 2px rgba(20,30,50,0.08);
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:"PingFang TC","Noto Sans TC","Microsoft JhengHei",system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);}
+  .hidden{display:none !important;}
+  button{cursor:pointer;font-family:inherit;}
+  input,select,button{font-size:15px;}
+
+  /* ---------- Login ---------- */
+  #view-login{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;}
+  .login-box{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:40px 36px;width:100%;max-width:360px;}
+  .login-box h1{font-size:22px;margin:0 0 4px;text-align:center;}
+  .login-box p.sub{text-align:center;color:var(--muted);margin:0 0 28px;font-size:14px;}
+  .field{margin-bottom:16px;}
+  .field label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px;}
+  .field input, .field select{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:#fff;color:var(--text);}
+  .field input:focus, .field select:focus{outline:2px solid var(--primary);outline-offset:-1px;border-color:var(--primary);}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:10px 18px;border-radius:8px;border:none;font-weight:600;transition:all .15s;}
+  .btn-primary{background:var(--primary);color:#fff;}
+  .btn-primary:hover{background:var(--primary-dark);}
+  .btn-primary:disabled{opacity:.6;cursor:default;}
+  .btn-block{width:100%;}
+  .btn-secondary{background:var(--grey-light);color:var(--text);}
+  .btn-secondary:hover{background:#e2e5ea;}
+  .btn-danger{background:var(--red-light);color:var(--red);}
+  .btn-danger:hover{background:#fbd8d8;}
+  .btn-sm{padding:6px 12px;font-size:13px;border-radius:6px;}
+  .error-msg{color:var(--red);font-size:13px;margin-top:10px;text-align:center;min-height:18px;}
+
+  /* ---------- Shell ---------- */
+  #app-shell{display:none;min-height:100vh;}
+  #app-shell.active{display:block;}
+  header.topbar{background:var(--card);border-bottom:1px solid var(--border);padding:0 24px;display:flex;align-items:center;justify-content:space-between;height:60px;position:sticky;top:0;z-index:50;}
+  .topbar-left{display:flex;align-items:center;gap:24px;}
+  .brand{font-weight:700;font-size:17px;display:flex;align-items:center;gap:8px;}
+  .brand .dot{width:9px;height:9px;border-radius:50%;background:var(--primary);}
+  nav.tabs{display:flex;gap:4px;}
+  nav.tabs button{background:none;border:none;padding:10px 14px;border-radius:8px;color:var(--muted);font-weight:600;font-size:14px;}
+  nav.tabs button.active{background:var(--primary-light);color:var(--primary);}
+  nav.tabs button:hover:not(.active){background:var(--grey-light);}
+  .topbar-right{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:14px;}
+  .topbar-right b{color:var(--text);}
+
+  main.content{max-width:1080px;margin:0 auto;padding:28px 20px 60px;}
+  .section{display:none;}
+  .section.active{display:block;}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);padding:22px;margin-bottom:20px;}
+  .card h2{margin:0 0 4px;font-size:17px;}
+  .card .hint{color:var(--muted);font-size:13px;margin:0 0 16px;}
+  .row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;}
+  .row .field{flex:1;min-width:140px;margin-bottom:0;}
+
+  table{width:100%;border-collapse:collapse;font-size:14px;}
+  th{text-align:left;color:var(--muted);font-weight:600;font-size:12.5px;text-transform:uppercase;letter-spacing:.03em;padding:8px 10px;border-bottom:1px solid var(--border);}
+  td{padding:10px;border-bottom:1px solid var(--border);vertical-align:middle;}
+  tr:last-child td{border-bottom:none;}
+  .table-wrap{overflow-x:auto;}
+
+  .pill{display:inline-flex;align-items:center;padding:3px 10px;border-radius:99px;font-size:12.5px;font-weight:600;}
+  .pill-green{background:var(--green-light);color:var(--green);}
+  .pill-amber{background:var(--amber-light);color:var(--amber);}
+  .pill-red{background:var(--red-light);color:var(--red);}
+  .pill-grey{background:var(--grey-light);color:var(--muted);}
+
+  .school-list{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px;}
+  .school-chip{padding:8px 16px;border-radius:99px;border:1px solid var(--border);background:#fff;font-weight:600;font-size:14px;color:var(--text);}
+  .school-chip.active{background:var(--primary);border-color:var(--primary);color:#fff;}
+  .school-chip .cnt{opacity:.7;font-weight:400;margin-left:4px;}
+
+  .dow-picker{display:flex;gap:6px;flex-wrap:wrap;}
+  .dow-picker label{display:flex;align-items:center;gap:4px;padding:5px 9px;border:1px solid var(--border);border-radius:7px;font-size:13px;cursor:pointer;background:#fff;}
+  .dow-picker input{margin:0;}
+
+  .status-toggle{display:flex;gap:6px;}
+  .status-btn{padding:6px 12px;border-radius:7px;border:1px solid var(--border);background:#fff;color:var(--muted);font-weight:600;font-size:13px;}
+  .status-btn.on-present{background:var(--green);border-color:var(--green);color:#fff;}
+  .status-btn.on-leave{background:var(--amber);border-color:var(--amber);color:#fff;}
+  .tag-check{display:flex;align-items:center;gap:5px;font-size:13px;color:var(--muted);}
+  .fixedoff-row{opacity:.55;}
+  .fixedoff-label{font-size:12px;color:var(--muted);}
+
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1f2733;color:#fff;padding:12px 22px;border-radius:9px;font-size:14px;box-shadow:0 4px 18px rgba(0,0,0,.2);z-index:999;opacity:0;pointer-events:none;transition:opacity .2s, transform .2s;}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(-4px);}
+  .toast.err{background:var(--red);}
+
+  .empty{color:var(--muted);text-align:center;padding:28px 0;font-size:14px;}
+  .submitted-banner{background:var(--green-light);color:var(--green);padding:10px 14px;border-radius:8px;font-size:13.5px;margin-bottom:14px;}
+  .summary-row{display:flex;gap:18px;flex-wrap:wrap;margin:10px 0 0;font-size:13.5px;color:var(--muted);}
+  .summary-row b{color:var(--text);}
+
+  .day-group{margin-bottom:22px;}
+  .day-group h3{font-size:14px;color:var(--muted);margin:0 0 10px;font-weight:700;}
+  .day-school-card{border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;cursor:pointer;background:#fff;}
+  .day-school-card:hover{border-color:var(--primary);}
+  .day-school-card .name{font-weight:700;font-size:14.5px;}
+  .day-school-card .meta{font-size:12px;color:var(--muted);margin-top:2px;}
+  .day-school-card .stats{display:flex;gap:14px;font-size:13px;}
+  .day-school-card .stats div b{display:block;font-size:16px;}
+
+  .modal-bg{position:fixed;inset:0;background:rgba(20,25,35,.45);display:flex;align-items:center;justify-content:center;z-index:200;padding:20px;}
+  .modal{background:#fff;border-radius:var(--radius);padding:26px;width:100%;max-width:480px;max-height:85vh;overflow:auto;}
+  .modal h3{margin:0 0 16px;font-size:17px;}
+  .modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:20px;}
+  .icon-btn{background:none;border:none;color:var(--muted);padding:5px;border-radius:6px;}
+  .icon-btn:hover{background:var(--grey-light);color:var(--text);}
+  .spinner{display:inline-block;width:16px;height:16px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  .filter-row{display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap;}
+</style>
+</head>
+<body>
+
+<!-- ============ LOGIN ============ -->
+<div id="view-login">
+  <div class="login-box">
+    <h1>學生點名系統</h1>
+    <p class="sub">請登入以繼續</p>
+    <div class="field">
+      <label>帳號</label>
+      <input type="text" id="login-username" autocomplete="username">
+    </div>
+    <div class="field">
+      <label>密碼</label>
+      <input type="password" id="login-password" autocomplete="current-password">
+    </div>
+    <button class="btn btn-primary btn-block" id="login-btn" onclick="doLogin()">登入</button>
+    <div class="error-msg" id="login-error"></div>
+  </div>
+</div>
+
+<!-- ============ APP SHELL ============ -->
+<div id="app-shell">
+  <header class="topbar">
+    <div class="topbar-left">
+      <div class="brand"><span class="dot"></span>學生點名系統</div>
+      <nav class="tabs" id="admin-tabs">
+        <button data-tab="overview" onclick="switchTab('overview')">點名總覽</button>
+        <button data-tab="schools" onclick="switchTab('schools')">學校與學生</button>
+        <button data-tab="teachers" onclick="switchTab('teachers')">老師帳號</button>
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <span id="whoami"></span>
+      <button class="btn btn-secondary btn-sm" onclick="openPwdModal()">修改密碼</button>
+      <button class="btn btn-secondary btn-sm" onclick="doLogout()">登出</button>
+    </div>
+  </header>
+
+  <main class="content">
+
+    <!-- ===== ADMIN: 總覽 ===== -->
+    <section class="section" id="sec-overview">
+      <div class="card">
+        <h2>每日點名總覽</h2>
+        <p class="hint">依日期由上而下遞減排序；每日內先依學校排序，點進去可看各年級明細</p>
+        <div class="filter-row">
+          <select id="overview-school-filter" onchange="loadOverview()">
+            <option value="">全部學校</option>
+          </select>
+        </div>
+        <div id="overview-container"><div class="empty">載入中…</div></div>
+      </div>
+    </section>
+
+    <!-- ===== ADMIN: 學校與學生 ===== -->
+    <section class="section" id="sec-schools">
+      <div class="card">
+        <h2>學校</h2>
+        <p class="hint">新增學校分頁，點選學校以管理該校學生</p>
+        <div class="school-list" id="school-list"></div>
+        <div class="row">
+          <div class="field">
+            <label>新增學校名稱</label>
+            <input type="text" id="new-school-name" placeholder="例如：中山國小">
+          </div>
+          <button class="btn btn-primary" onclick="addSchool()">新增學校</button>
+        </div>
+      </div>
+
+      <div class="card" id="students-card" style="display:none;">
+        <h2 id="students-card-title">學生名單</h2>
+        <p class="hint">管理此校學生姓名、年級、聯絡人資訊與固定不到班星期</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              <th>姓名</th><th>年級</th><th>聯絡人</th><th>聯絡電話</th><th>固定不到班</th><th></th>
+            </tr></thead>
+            <tbody id="students-tbody"></tbody>
+          </table>
+        </div>
+        <div style="margin-top:14px;">
+          <button class="btn btn-primary btn-sm" onclick="openStudentModal()">+ 新增學生</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== ADMIN: 老師帳號 ===== -->
+    <section class="section" id="sec-teachers">
+      <div class="card">
+        <h2>老師帳號管理</h2>
+        <p class="hint">建立老師登入帳號，老師登入後可自行選擇學校進行點名</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>姓名</th><th>帳號</th><th>狀態</th><th></th></tr></thead>
+            <tbody id="teachers-tbody"></tbody>
+          </table>
+        </div>
+        <div style="margin-top:14px;">
+          <button class="btn btn-primary btn-sm" onclick="openTeacherModal()">+ 新增老師帳號</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== TEACHER: 點名 ===== -->
+    <section class="section" id="sec-rollcall">
+      <div class="card">
+        <h2 id="rollcall-date-title"></h2>
+        <div class="row" style="margin-bottom:6px;">
+          <div class="field">
+            <label>選擇學校</label>
+            <select id="rollcall-school-select" onchange="loadRollCall()">
+              <option value="">請選擇學校…</option>
+            </select>
+          </div>
+        </div>
+        <div id="rollcall-submitted-banner"></div>
+        <div id="rollcall-container"><div class="empty">請先選擇學校</div></div>
+        <div id="rollcall-submit-wrap" style="margin-top:18px; display:none;">
+          <button class="btn btn-primary" id="rollcall-submit-btn" onclick="submitAttendance()">送出點名</button>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================================================
+   設定：請將下面的 API_URL 換成你部署 Apps Script 後取得的 /exec 網址
+   ============================================================ */
+const CONFIG = {
+  API_URL: 'https://script.google.com/macros/s/AKfycbxY4vnTyElFA512SRxd85JnNeFnLh0RGdGYlZOomrv-b4XNZ-V0s238yFJjYrHX8mXx/exec'
+};
+
+const DOW_LABELS = ['一','二','三','四','五','六','日'];
+
+let STATE = {
+  token: localStorage.getItem('rc_token') || null,
+  role: localStorage.getItem('rc_role') || null,
+  name: localStorage.getItem('rc_name') || null,
+  schools: [],
+  currentSchoolId: null,     // admin: school being managed
+  currentStudents: [],
+  rollcallSchoolId: null,
+  rollcallData: null,
+  today: null
+};
+
+/* ---------------- API helper ---------------- */
+async function api(action, payload) {
+  payload = payload || {};
+  payload.action = action;
+  if (STATE.token) payload.token = STATE.token;
+  let res;
+  try {
+    res = await fetch(CONFIG.API_URL, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  } catch (e) {
+    throw new Error('NETWORK_ERROR');
+  }
+  let json;
+  try { json = await res.json(); } catch (e) { throw new Error('BAD_RESPONSE'); }
+  if (!json.ok) {
+    if (json.error === 'AUTH_EXPIRED') {
+      toast('登入已過期，請重新登入', true);
+      doLogout();
+    }
+    throw new Error(json.error || 'UNKNOWN_ERROR');
+  }
+  return json;
+}
+
+function toast(msg, isErr) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (isErr ? ' err' : '');
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => { t.className = 'toast'; }, 2600);
+}
+
+function errMsg(code) {
+  const map = {
+    INVALID_LOGIN: '帳號或密碼錯誤',
+    ACCOUNT_DISABLED: '此帳號已被停用',
+    NETWORK_ERROR: '無法連線到伺服器，請確認網路或 API 設定',
+    BAD_RESPONSE: '伺服器回應異常',
+    USERNAME_TAKEN: '此帳號已被使用',
+    WRONG_OLD_PASSWORD: '原密碼不正確',
+    NAME_REQUIRED: '請輸入名稱',
+    USERNAME_REQUIRED: '請輸入帳號'
+  };
+  return map[code] || ('發生錯誤 (' + code + ')');
+}
+
+/* ---------------- Login / Logout ---------------- */
+async function doLogin() {
+  const username = document.getElementById('login-username').value.trim();
+  const password = document.getElementById('login-password').value;
+  const btn = document.getElementById('login-btn');
+  const errEl = document.getElementById('login-error');
+  errEl.textContent = '';
+  if (!username || !password) { errEl.textContent = '請輸入帳號密碼'; return; }
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+  try {
+    const r = await api('login', { username, password });
+    STATE.token = r.token; STATE.role = r.role; STATE.name = r.name;
+    localStorage.setItem('rc_token', r.token);
+    localStorage.setItem('rc_role', r.role);
+    localStorage.setItem('rc_name', r.name);
+    await boot();
+  } catch (e) {
+    errEl.textContent = errMsg(e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = '登入';
+  }
+}
+
+function doLogout() {
+  STATE.token = null; STATE.role = null; STATE.name = null;
+  localStorage.removeItem('rc_token');
+  localStorage.removeItem('rc_role');
+  localStorage.removeItem('rc_name');
+  document.getElementById('app-shell').classList.remove('active');
+  document.getElementById('view-login').style.display = 'flex';
+  document.getElementById('login-password').value = '';
+}
+
+/* ---------------- Boot ---------------- */
+async function boot() {
+  if (!STATE.token) { document.getElementById('view-login').style.display = 'flex'; return; }
+  try {
+    const r = await api('bootstrap');
+    STATE.role = r.role; STATE.name = r.name; STATE.today = r.today;
+  } catch (e) {
+    doLogout(); return;
+  }
+  document.getElementById('view-login').style.display = 'none';
+  document.getElementById('app-shell').classList.add('active');
+  document.getElementById('whoami').innerHTML = (STATE.role === 'admin' ? '管理員' : '老師') + '　<b>' + STATE.name + '</b>';
+
+  if (STATE.role === 'admin') {
+    document.getElementById('admin-tabs').classList.remove('hidden');
+    document.getElementById('sec-rollcall').classList.remove('active');
+    switchTab('overview');
+    await loadSchools();
+  } else {
+    document.getElementById('admin-tabs').classList.add('hidden');
+    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+    document.getElementById('sec-rollcall').classList.add('active');
+    document.getElementById('rollcall-date-title').textContent = '今日點名　' + STATE.today;
+    await loadSchools();
+    const sel = document.getElementById('rollcall-school-select');
+    sel.innerHTML = '<option value="">請選擇學校…</option>' +
+      STATE.schools.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
+  }
+}
+
+function switchTab(tab) {
+  document.querySelectorAll('#admin-tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.getElementById('sec-' + tab).classList.add('active');
+  if (tab === 'overview') loadOverview();
+  if (tab === 'schools') renderSchoolList();
+  if (tab === 'teachers') loadTeachers();
+}
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+/* ---------------- Schools ---------------- */
+async function loadSchools() {
+  const r = await api('listSchools');
+  STATE.schools = r.schools;
+  if (STATE.role === 'admin') {
+    renderSchoolList();
+    const filterSel = document.getElementById('overview-school-filter');
+    filterSel.innerHTML = '<option value="">全部學校</option>' +
+      STATE.schools.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
+  }
+}
+
+function renderSchoolList() {
+  const wrap = document.getElementById('school-list');
+  if (!STATE.schools.length) {
+    wrap.innerHTML = '<span class="empty" style="padding:0;">尚無學校，請於下方新增</span>';
+    document.getElementById('students-card').style.display = 'none';
+    return;
+  }
+  wrap.innerHTML = STATE.schools.map(s =>
+    `<button class="school-chip ${s.id === STATE.currentSchoolId ? 'active' : ''}" onclick="selectSchool('${s.id}')">${esc(s.name)}<span class="cnt">(${s.studentCount})</span></button>`
+  ).join('');
+  if (STATE.currentSchoolId) loadStudents();
+}
+
+async function addSchool() {
+  const input = document.getElementById('new-school-name');
+  const name = input.value.trim();
+  if (!name) { toast('請輸入學校名稱', true); return; }
+  try {
+    await api('addSchool', { name });
+    input.value = '';
+    toast('已新增學校');
+    await loadSchools();
+  } catch (e) { toast(errMsg(e.message), true); }
+}
+
+function selectSchool(id) {
+  STATE.currentSchoolId = id;
+  const school = STATE.schools.find(s => s.id === id);
+  document.getElementById('students-card').style.display = 'block';
+  document.getElementById('students-card-title').textContent = (school ? school.name : '') + ' 學生名單';
+  renderSchoolList();
+  loadStudents();
+}
+
+/* ---------------- Students ---------------- */
+async function loadStudents() {
+  if (!STATE.currentSchoolId) return;
+  const r = await api('listStudents', { schoolId: STATE.currentSchoolId });
+  STATE.currentStudents = r.students;
+  const tbody = document.getElementById('students-tbody');
+  if (!r.students.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="empty">尚無學生</td></tr>';
+    return;
+  }
+  tbody.innerHTML = r.students.map(st => `
+    <tr>
+      <td>${esc(st.name)}</td>
+      <td>${esc(st.grade)}</td>
+      <td>${esc(st.contactName || '-')}</td>
+      <td>${esc(st.contactPhone || '-')}</td>
+      <td>${st.fixedOffDays.length ? st.fixedOffDays.map(d => '週' + DOW_LABELS[d-1]).join('、') : '-'}</td>
+      <td style="white-space:nowrap;">
+        <button class="icon-btn" title="編輯" onclick='openStudentModal(${JSON.stringify(st).replace(/'/g, "&#39;")})'>✏️</button>
+        <button class="icon-btn" title="刪除" onclick="deleteStudent('${st.id}','${esc(st.name)}')">🗑️</button>
+      </td>
+    </tr>`).join('');
+}
+
+function openStudentModal(student) {
+  const isEdit = !!student;
+  const offDays = (student && student.fixedOffDays) || [];
+  const modal = buildModal(isEdit ? '編輯學生' : '新增學生', `
+    <div class="field"><label>姓名</label><input id="m-st-name" value="${isEdit ? esc(student.name) : ''}"></div>
+    <div class="field"><label>年級</label><input id="m-st-grade" value="${isEdit ? esc(student.grade) : ''}" placeholder="例如 3"></div>
+    <div class="field"><label>聯絡人</label><input id="m-st-contactname" value="${isEdit ? esc(student.contactName) : ''}"></div>
+    <div class="field"><label>聯絡電話</label><input id="m-st-contactphone" value="${isEdit ? esc(student.contactPhone) : ''}"></div>
+    <div class="field"><label>固定不到班星期</label>
+      <div class="dow-picker">
+        ${[1,2,3,4,5,6,7].map(d => `<label><input type="checkbox" value="${d}" ${offDays.includes(d) ? 'checked' : ''}>週${DOW_LABELS[d-1]}</label>`).join('')}
+      </div>
+    </div>
+  `, async () => {
+    const name = document.getElementById('m-st-name').value.trim();
+    const grade = document.getElementById('m-st-grade').value.trim();
+    if (!name) { toast('請輸入姓名', true); return false; }
+    const fixedOffDays = Array.from(modal.querySelectorAll('.dow-picker input:checked')).map(el => Number(el.value));
+    const payload = {
+      name, grade,
+      contactName: document.getElementById('m-st-contactname').value.trim(),
+      contactPhone: document.getElementById('m-st-contactphone').value.trim(),
+      fixedOffDays
+    };
+    try {
+      if (isEdit) {
+        await api('editStudent', Object.assign({ studentId: student.id }, payload));
+      } else {
+        await api('addStudent', Object.assign({ schoolId: STATE.currentSchoolId }, payload));
+      }
+      toast(isEdit ? '已更新學生資料' : '已新增學生');
+      await loadStudents();
+      await loadSchools();
+      return true;
+    } catch (e) { toast(errMsg(e.message), true); return false; }
+  });
+}
+
+async function deleteStudent(id, name) {
+  if (!confirm(`確定要刪除學生「${name}」嗎？`)) return;
+  try {
+    await api('deleteStudent', { studentId: id });
+    toast('已刪除');
+    await loadStudents();
+    await loadSchools();
+  } catch (e) { toast(errMsg(e.message), true); }
+}
+
+/* ---------------- Teachers ---------------- */
+async function loadTeachers() {
+  const r = await api('listTeachers');
+  const tbody = document.getElementById('teachers-tbody');
+  if (!r.teachers.length) {
+    tbody.innerHTML = '<tr><td colspan="4" class="empty">尚無老師帳號</td></tr>';
+    return;
+  }
+  tbody.innerHTML = r.teachers.map(t => `
+    <tr>
+      <td>${esc(t.name)}</td>
+      <td>${esc(t.username)}</td>
+      <td><span class="pill ${t.active ? 'pill-green' : 'pill-grey'}">${t.active ? '啟用中' : '已停用'}</span></td>
+      <td><button class="icon-btn" title="刪除" onclick="deleteTeacher('${t.id}','${esc(t.name)}')">🗑️</button></td>
+    </tr>`).join('');
+}
+
+function openTeacherModal() {
+  buildModal('新增老師帳號', `
+    <div class="field"><label>姓名</label><input id="m-tc-name"></div>
+    <div class="field"><label>登入帳號</label><input id="m-tc-username"></div>
+    <div class="field"><label>登入密碼</label><input id="m-tc-password" placeholder="預設 0000"></div>
+  `, async () => {
+    const name = document.getElementById('m-tc-name').value.trim();
+    const username = document.getElementById('m-tc-username').value.trim();
+    const password = document.getElementById('m-tc-password').value.trim() || '0000';
+    if (!username) { toast('請輸入登入帳號', true); return false; }
+    try {
+      await api('addTeacher', { name: name || username, username, password });
+      toast('已新增老師帳號');
+      await loadTeachers();
+      return true;
+    } catch (e) { toast(errMsg(e.message), true); return false; }
+  });
+}
+
+async function deleteTeacher(id, name) {
+  if (!confirm(`確定要停用老師帳號「${name}」嗎？`)) return;
+  try {
+    await api('deleteTeacher', { teacherId: id });
+    toast('已停用');
+    await loadTeachers();
+  } catch (e) { toast(errMsg(e.message), true); }
+}
+
+/* ---------------- Overview (Admin) ---------------- */
+async function loadOverview() {
+  const container = document.getElementById('overview-container');
+  container.innerHTML = '<div class="empty">載入中…</div>';
+  const schoolId = document.getElementById('overview-school-filter').value;
+  const r = await api('getOverview', { schoolId: schoolId || null });
+  if (!r.dates.length) {
+    container.innerHTML = '<div class="empty">目前沒有點名紀錄</div>';
+    return;
+  }
+  container.innerHTML = r.dates.map(d => `
+    <div class="day-group">
+      <h3>${d.date}</h3>
+      ${d.schools.map(s => `
+        <div class="day-school-card" onclick="openDayDetail('${s.schoolId}','${d.date}','${esc(s.schoolName)}')">
+          <div>
+            <div class="name">${esc(s.schoolName)}</div>
+            <div class="meta">送出：${s.submittedBy ? esc(s.submittedBy) : '-'}　${s.submittedAt ? fmtTime(s.submittedAt) : ''}</div>
+          </div>
+          <div class="stats">
+            <div><b>${s.present}</b>到班</div>
+            <div><b>${s.leave}</b>請假</div>
+            <div><b>${s.fixedOff}</b>固定不到班</div>
+            <div><b>${s.selfDrop}</b>自送</div>
+            <div><b>${s.selfWalk}</b>自走</div>
+            <div><b>${s.total}</b>總人數</div>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `).join('');
+}
+
+function fmtTime(iso) {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleString('zh-TW', { hour12: false, month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+  } catch (e) { return iso; }
+}
+
+async function openDayDetail(schoolId, date, schoolName) {
+  const r = await api('getSchoolDayDetail', { schoolId, date });
+  const rows = r.students.map(st => {
+    const statusLabel = st.status === 'present' ? '<span class="pill pill-green">到班</span>'
+      : st.status === 'leave' ? '<span class="pill pill-amber">請假</span>'
+      : st.status === 'fixedOff' ? '<span class="pill pill-grey">固定不到班</span>'
+      : '<span class="pill pill-red">未點名</span>';
+    const tags = [st.selfDrop ? '自送' : '', st.selfWalk ? '自走' : ''].filter(Boolean).join('、');
+    return `<tr><td>${esc(st.grade)}</td><td>${esc(st.name)}</td><td>${statusLabel}</td><td>${tags || '-'}</td></tr>`;
+  }).join('');
+  buildModal(`${schoolName}　${date} 點名明細`, `
+    <div class="table-wrap">
+      <table><thead><tr><th>年級</th><th>姓名</th><th>狀態</th><th>標註</th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="4" class="empty">無資料</td></tr>'}</tbody></table>
+    </div>
+  `, null, true);
+}
+
+/* ---------------- Roll call (Teacher) ---------------- */
+async function loadRollCall() {
+  const schoolId = document.getElementById('rollcall-school-select').value;
+  STATE.rollcallSchoolId = schoolId;
+  const container = document.getElementById('rollcall-container');
+  const submitWrap = document.getElementById('rollcall-submit-wrap');
+  const banner = document.getElementById('rollcall-submitted-banner');
+  if (!schoolId) {
+    container.innerHTML = '<div class="empty">請先選擇學校</div>';
+    submitWrap.style.display = 'none';
+    banner.innerHTML = '';
+    return;
+  }
+  container.innerHTML = '<div class="empty">載入中…</div>';
+  const r = await api('getRollCall', { schoolId, date: STATE.today });
+  STATE.rollcallData = r;
+  banner.innerHTML = r.submitted
+    ? `<div class="submitted-banner">今日已由 ${esc(r.submittedBy || '')} 送出點名（${fmtTime(r.submittedAt)}），可修改後重新送出</div>`
+    : '';
+  if (!r.students.length) {
+    container.innerHTML = '<div class="empty">此校尚無學生資料</div>';
+    submitWrap.style.display = 'none';
+    return;
+  }
+  container.innerHTML = `
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>年級</th><th>姓名</th><th>狀態</th><th>標註</th></tr></thead>
+        <tbody>
+          ${r.students.map(st => rollcallRow(st)).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+  submitWrap.style.display = 'block';
+}
+
+function rollcallRow(st) {
+  return `
+    <tr data-student-id="${st.id}" class="${st.isFixedOff ? 'fixedoff-row' : ''}">
+      <td>${esc(st.grade)}</td>
+      <td>${esc(st.name)}${st.isFixedOff ? '<div class="fixedoff-label">固定不到班</div>' : ''}</td>
+      <td>
+        <div class="status-toggle">
+          <button type="button" class="status-btn btn-present ${st.status === 'present' ? 'on-present' : ''}" onclick="setStatus(this,'present')">到班</button>
+          <button type="button" class="status-btn btn-leave ${st.status === 'leave' ? 'on-leave' : ''}" onclick="setStatus(this,'leave')">請假</button>
+        </div>
+      </td>
+      <td>
+        <div style="display:flex;gap:10px;">
+          <label class="tag-check"><input type="checkbox" class="chk-selfdrop" ${st.selfDrop ? 'checked' : ''}>自送</label>
+          <label class="tag-check"><input type="checkbox" class="chk-selfwalk" ${st.selfWalk ? 'checked' : ''}>自走</label>
+        </div>
+      </td>
+    </tr>`;
+}
+
+function setStatus(btn, status) {
+  const row = btn.closest('tr');
+  const presentBtn = row.querySelector('.btn-present');
+  const leaveBtn = row.querySelector('.btn-leave');
+  const currentlyOn = btn.classList.contains(status === 'present' ? 'on-present' : 'on-leave');
+  presentBtn.classList.remove('on-present');
+  leaveBtn.classList.remove('on-leave');
+  if (!currentlyOn) {
+    btn.classList.add(status === 'present' ? 'on-present' : 'on-leave');
+  }
+  if (status === 'leave' && !currentlyOn) {
+    row.querySelector('.chk-selfdrop').checked = false;
+    row.querySelector('.chk-selfwalk').checked = false;
+  }
+}
+
+async function submitAttendance() {
+  const container = document.getElementById('rollcall-container');
+  const rows = container.querySelectorAll('tbody tr[data-student-id]');
+  const records = Array.from(rows).map(row => {
+    const id = row.dataset.studentId;
+    const status = row.querySelector('.btn-present').classList.contains('on-present') ? 'present'
+      : row.querySelector('.btn-leave').classList.contains('on-leave') ? 'leave' : '';
+    return {
+      studentId: id,
+      status,
+      selfDrop: row.querySelector('.chk-selfdrop').checked,
+      selfWalk: row.querySelector('.chk-selfwalk').checked
+    };
+  });
+  const btn = document.getElementById('rollcall-submit-btn');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+  try {
+    await api('submitAttendance', { schoolId: STATE.rollcallSchoolId, date: STATE.today, records });
+    toast('點名已送出');
+    await loadRollCall();
+  } catch (e) {
+    toast(errMsg(e.message), true);
+  } finally {
+    btn.disabled = false; btn.textContent = '送出點名';
+  }
+}
+
+/* ---------------- Password change ---------------- */
+function openPwdModal() {
+  buildModal('修改密碼', `
+    <div class="field"><label>目前密碼</label><input type="password" id="m-pwd-old"></div>
+    <div class="field"><label>新密碼</label><input type="password" id="m-pwd-new"></div>
+  `, async () => {
+    const oldPassword = document.getElementById('m-pwd-old').value;
+    const newPassword = document.getElementById('m-pwd-new').value;
+    if (!newPassword) { toast('請輸入新密碼', true); return false; }
+    try {
+      await api('changePwd', { oldPassword, newPassword });
+      toast('密碼已更新');
+      return true;
+    } catch (e) { toast(errMsg(e.message), true); return false; }
+  });
+}
+
+/* ---------------- Generic modal ---------------- */
+function buildModal(title, bodyHtml, onConfirm, hideConfirm) {
+  const existing = document.querySelector('.modal-bg');
+  if (existing) existing.remove();
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.innerHTML = `
+    <div class="modal">
+      <h3>${esc(title)}</h3>
+      <div class="modal-body">${bodyHtml}</div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="modal-cancel">${hideConfirm ? '關閉' : '取消'}</button>
+        ${hideConfirm ? '' : '<button class="btn btn-primary" id="modal-confirm">確定</button>'}
+      </div>
+    </div>`;
+  document.body.appendChild(bg);
+  bg.addEventListener('click', e => { if (e.target === bg) bg.remove(); });
+  bg.querySelector('#modal-cancel').addEventListener('click', () => bg.remove());
+  if (!hideConfirm) {
+    bg.querySelector('#modal-confirm').addEventListener('click', async () => {
+      const okBtn = bg.querySelector('#modal-confirm');
+      okBtn.disabled = true;
+      const ok = await onConfirm();
+      okBtn.disabled = false;
+      if (ok !== false) bg.remove();
+    });
+  }
+  return bg;
+}
+
+/* ---------------- Init ---------------- */
+document.getElementById('login-password').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+document.getElementById('login-username').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+boot();
+</script>
+</body>
+</html>
