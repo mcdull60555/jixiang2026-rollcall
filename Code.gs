@@ -18,7 +18,7 @@ var SPREADSHEET_ID = '';      // 試算表 ID 或整段網址 (留空則使用�
 var RETENTION_DAYS = 60;      // 點名紀錄保留天數 (超過才清除)
 var SESSION_HOURS = 12;       // 登入 token 最長有效時數 (前端另外有閒置 60 分鐘自動登出)
 var TZ = 'Asia/Taipei';
-var SCHEMA_VERSION = 'schema_v3';
+var SCHEMA_VERSION = 'schema_v4';
 var DEFAULT_CONTACT_TYPES = ['爸爸', '媽媽', '爺爺', '奶奶', '住家', '公司'];
 var VALID_STATUS = ['present', 'selfDrop', 'selfWalk', 'leave', 'fixedOff', ''];
 
@@ -34,8 +34,8 @@ var HEADERS = {
   Admins: ['id', 'username', 'password', 'name'],
   Teachers: ['id', 'username', 'password', 'name', 'active', 'createdAt'],
   Schools: ['id', 'name', 'createdAt'],
-  Students: ['id', 'schoolId', 'name', 'grade', 'contacts', 'fixedOffDays', 'active', 'createdAt'],
-  Attendance: ['id', 'date', 'schoolId', 'studentId', 'status', 'selfDrop', 'selfWalk', 'teacherId', 'teacherName', 'submittedAt'],
+  Students: ['id', 'schoolId', 'name', 'grade', 'contacts', 'fixedOffDays', 'active', 'createdAt', 'note'],
+  Attendance: ['id', 'date', 'schoolId', 'studentId', 'status', 'selfDrop', 'selfWalk', 'teacherId', 'teacherName', 'submittedAt', 'wasFixedOff'],
   Sessions: ['token', 'userId', 'role', 'name', 'username', 'createdAt', 'expiresAt'],
   Settings: ['key', 'value']
 };
@@ -422,7 +422,8 @@ function actionAddTeacher(body) {
     var active = all.filter(function (t) { return isActive_(t.active); });
     var name = String(body.name || '').trim();
     if (!name) return { ok: false, error: 'NAME_REQUIRED' };
-    var username = String(body.username || '').trim() || nextTeacherUsername_(active);
+    var username = String(body.username || '').trim();
+    if (!username) return { ok: false, error: 'USERNAME_REQUIRED' };
     var lower = username.toLowerCase();
     var taken = active.concat(sheetToObjects(SHEET_ADMINS)).some(function (u) { return String(u.username).toLowerCase() === lower; });
     if (taken) return { ok: false, error: 'USERNAME_TAKEN' };
@@ -601,8 +602,17 @@ function parseDays_(v) {
 function studentOut_(x) {
   return {
     id: x.id, name: x.name, grade: String(x.grade), gradeNum: gradeNum_(x.grade),
-    contacts: parseContacts(x), fixedOffDays: parseDays_(x.fixedOffDays)
+    contacts: parseContacts(x), fixedOffDays: parseDays_(x.fixedOffDays), note: String(x.note || '')
   };
+}
+
+// 學生必填：姓名、年級班級、至少一組「聯絡人 + 聯絡方式」
+function validateStudent_(name, grade, contacts) {
+  if (!String(name || '').trim()) return 'NAME_REQUIRED';
+  if (!String(grade || '').trim()) return 'GRADE_REQUIRED';
+  var ok = normalizeContacts(contacts).some(function (c) { return c.rel && c.phone; });
+  if (!ok) return 'CONTACT_REQUIRED';
+  return null;
 }
 
 function actionListStudents(body) {
@@ -618,13 +628,15 @@ function studentRow_(schoolId, st) {
   return {
     id: genId('T'), schoolId: schoolId, name: String(st.name || '').trim(), grade: String(st.grade || '').trim(),
     contacts: JSON.stringify(normalizeContacts(st.contacts)),
-    fixedOffDays: normalizeDays_(st.fixedOffDays).join('|'), active: true, createdAt: new Date().toISOString()
+    fixedOffDays: normalizeDays_(st.fixedOffDays).join('|'), active: true, createdAt: new Date().toISOString(),
+    note: String(st.note || '').trim()
   };
 }
 
 function actionAddStudent(body) {
   requireSession(body.token, 'admin');
-  if (!String(body.name || '').trim()) return { ok: false, error: 'NAME_REQUIRED' };
+  var err = validateStudent_(body.name, body.grade, body.contacts);
+  if (err) return { ok: false, error: err };
   var row = studentRow_(body.schoolId, body);
   appendObject(SHEET_STUDENTS, row);
   return { ok: true, id: row.id };
@@ -632,15 +644,22 @@ function actionAddStudent(body) {
 
 function actionAddStudentsBatch(body) {
   requireSession(body.token, 'admin');
+  var list = (body.students || []).filter(function (st) { return st && String(st.name || '').trim(); });
+  // 任何一列不完整就整批不寫入，並回報第幾列
+  var bad = [];
+  list.forEach(function (st, i) {
+    var err = validateStudent_(st.name, st.grade, st.contacts);
+    if (err) bad.push({ index: i, name: String(st.name).trim(), error: err });
+  });
+  if (bad.length) return { ok: false, error: 'INVALID_ROWS', rows: bad };
   return withLock_(function () {
     var existing = {};
     sheetToObjects(SHEET_STUDENTS).forEach(function (x) {
       if (x.schoolId === body.schoolId && isActive_(x.active)) existing[x.name + '|' + String(x.grade)] = true;
     });
     var rows = [], skipped = [];
-    (body.students || []).forEach(function (st) {
+    list.forEach(function (st) {
       var name = String(st.name || '').trim();
-      if (!name) return;
       var key = name + '|' + String(st.grade || '').trim();
       if (existing[key]) { skipped.push(name); return; }
       existing[key] = true;
@@ -657,13 +676,16 @@ function actionEditStudent(body) {
   for (var i = 0; i < students.length; i++) {
     if (students[i].id === body.studentId) {
       var u = students[i];
-      if (body.name !== undefined) {
-        if (!String(body.name).trim()) return { ok: false, error: 'NAME_REQUIRED' };
-        u.name = String(body.name).trim();
-      }
-      if (body.grade !== undefined) u.grade = String(body.grade).trim();
-      if (body.contacts !== undefined) u.contacts = JSON.stringify(normalizeContacts(body.contacts));
+      var name = body.name !== undefined ? String(body.name).trim() : u.name;
+      var grade = body.grade !== undefined ? String(body.grade).trim() : String(u.grade);
+      var contacts = body.contacts !== undefined ? body.contacts : parseContacts(u);
+      var err = validateStudent_(name, grade, contacts);
+      if (err) return { ok: false, error: err };
+      u.name = name;
+      u.grade = grade;
+      u.contacts = JSON.stringify(normalizeContacts(contacts));
       if (body.fixedOffDays !== undefined) u.fixedOffDays = normalizeDays_(body.fixedOffDays).join('|');
+      if (body.note !== undefined) u.note = String(body.note || '').trim();
       updateObjectByRow(SHEET_STUDENTS, u._row, u);
       return { ok: true };
     }
@@ -729,6 +751,7 @@ function actionGetRollCall(body) {
     var primary = so.contacts.filter(function (c) { return c.primary; })[0] || null;
     return {
       id: so.id, name: so.name, grade: so.grade, isFixedOff: isFixedOff, primaryContact: primary,
+      contacts: so.contacts, note: so.note,
       status: existing ? effectiveStatus_(existing) : (isFixedOff ? 'fixedOff' : '')
     };
   });
@@ -754,14 +777,13 @@ function actionSubmitAttendance(body) {
     // 同一位學生若重複出現，以最後一筆為準
     var latestOf = {};
     (body.records || []).forEach(function (r) { if (r) latestOf[r.studentId] = r; });
-    // 每一位學生都必須點名（固定不進班也是一種狀態）
-    var missing = students.filter(function (st) {
-      var r = latestOf[st.id];
-      return !r || !r.status || VALID_STATUS.indexOf(r.status) === -1;
+    // 允許先送出部分名單（有的學生中午接、有的下午接），未點名的之後可再補
+    var wd = weekdayOf(date);
+    var valid = {}, fixedToday = {};
+    students.forEach(function (st) {
+      valid[st.id] = true;
+      if (parseDays_(st.fixedOffDays).indexOf(wd) !== -1) fixedToday[st.id] = true;
     });
-    if (missing.length) return { ok: false, error: 'INCOMPLETE', missing: missing.length };
-    var valid = {};
-    students.forEach(function (st) { valid[st.id] = true; });
 
     var sheet = sheet_(SHEET_ATTENDANCE);
     var values = sheet.getDataRange().getValues();
@@ -786,11 +808,12 @@ function actionSubmitAttendance(body) {
     var changed = false, fresh = [], n = 0;
     Object.keys(latestOf).map(function (k) { return latestOf[k]; }).forEach(function (r) {
       if (!valid[r.studentId]) return;
-      var status = r.status;
+      var status = VALID_STATUS.indexOf(r.status) === -1 ? '' : (r.status || '');
       var rec = {
         date: date, schoolId: schoolId, studentId: r.studentId, status: status,
         selfDrop: status === 'selfDrop', selfWalk: status === 'selfWalk',
-        teacherId: s.userId, teacherName: s.name, submittedAt: now
+        teacherId: s.userId, teacherName: s.name, submittedAt: now,
+        wasFixedOff: !!fixedToday[r.studentId]   // 今天本來是固定不進班（之後若改為到班，明細會標示）
       };
       n++;
       if (rowOf[r.studentId] !== undefined) {
@@ -887,9 +910,16 @@ function actionGetSchoolDayDetail(body) {
   sheetToObjects(SHEET_ATTENDANCE).forEach(function (a) {
     if (a.schoolId === body.schoolId && String(a.date) === String(body.date)) attMap[a.studentId] = a;
   });
+  var wd = weekdayOf(String(body.date));
   var out = activeStudentsOf_(body.schoolId).map(function (st) {
     var a = attMap[st.id];
-    return { id: st.id, name: st.name, grade: String(st.grade), status: a ? effectiveStatus_(a) : '' };
+    var so = studentOut_(st);
+    // 有記錄就用當天記錄；舊資料沒有這個欄位時，以學生目前的固定不進班設定推算
+    var fixed = (a && String(a.wasFixedOff) !== '') ? isTrue_(a.wasFixedOff) : so.fixedOffDays.indexOf(wd) !== -1;
+    return {
+      id: st.id, name: st.name, grade: String(st.grade), status: a ? effectiveStatus_(a) : '',
+      wasFixedOff: fixed, contacts: so.contacts, note: so.note
+    };
   });
   sortStudents(out);
   return { ok: true, students: out };
