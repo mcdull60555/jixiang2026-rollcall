@@ -18,7 +18,7 @@ var SPREADSHEET_ID = '1Xk5mxGTzRDmsLlbag6dkHn6420n6ZLUP59z6QefTjKo';      // 試
 var RETENTION_DAYS = 40;      // 點名紀錄保留天數：超過 40 天的舊資料於每天凌晨 3 點自動清除
 var SESSION_HOURS = 12;       // 登入 token 最長有效時數 (前端另外有閒置 60 分鐘自動登出)
 var TZ = 'Asia/Taipei';
-var SCHEMA_VERSION = 'schema_v5';
+var SCHEMA_VERSION = 'schema_v6';
 var DEFAULT_CONTACT_TYPES = ['爸爸', '媽媽', '住家'];
 var VALID_STATUS = ['present', 'selfDrop', 'selfWalk', 'leave', 'fixedOff', ''];
 
@@ -30,6 +30,7 @@ var SHEET_ATTENDANCE = 'Attendance';
 var SHEET_SESSIONS = 'Sessions';
 var SHEET_SETTINGS = 'Settings';
 var SHEET_SUBMISSIONS = 'Submissions';
+var SHEET_SPECIAL = 'SpecialDays';
 
 var HEADERS = {
   Admins: ['id', 'username', 'password', 'name'],
@@ -40,7 +41,9 @@ var HEADERS = {
   Sessions: ['token', 'userId', 'role', 'name', 'username', 'createdAt', 'expiresAt'],
   Settings: ['key', 'value'],
   // 每次送出點名的紀錄：同一天同一校可能上午 A 老師、下午 B 老師分批送出
-  Submissions: ['id', 'date', 'schoolId', 'teacherId', 'teacherName', 'submittedAt', 'count']
+  Submissions: ['id', 'date', 'schoolId', 'teacherId', 'teacherName', 'submittedAt', 'count'],
+  // 點名日設定：workday=補班補課（週末可點名）、holiday=國定假日放假（不能點名）
+  SpecialDays: ['date', 'type', 'reason', 'createdBy', 'createdAt']
 };
 
 // ---------- 初始化 ----------
@@ -353,12 +356,14 @@ function route(body) {
     listTeachers: actionListTeachers, addTeacher: actionAddTeacher,
     deleteTeacher: actionDeleteTeacher, deleteTeachersBatch: actionDeleteTeachersBatch,
     getRollCall: actionGetRollCall, submitAttendance: actionSubmitAttendance,
+    getDayInfo: actionGetDayInfo, listSpecialDays: actionListSpecialDays,
+    setSpecialDay: actionSetSpecialDay, deleteSpecialDay: actionDeleteSpecialDay,
     getOverview: actionGetOverview, getSchoolDayDetail: actionGetSchoolDayDetail
   };
   // 會寫入試算表的動作：一律在全域鎖內執行（多人同時操作也不會互相覆蓋）
   var WRITES = ['login', 'logout', 'changePwd', 'addContactType', 'addSchool', 'addSchoolsBatch', 'editSchool', 'deleteSchool',
     'addStudent', 'addStudentsBatch', 'editStudent', 'deleteStudent', 'deleteStudentsBatch',
-    'addTeacher', 'deleteTeacher', 'deleteTeachersBatch', 'submitAttendance'];
+    'addTeacher', 'deleteTeacher', 'deleteTeachersBatch', 'submitAttendance', 'setSpecialDay', 'deleteSpecialDay'];
   var fn = ACTIONS[action];
   if (!fn) return { ok: false, error: 'UNKNOWN_ACTION' };
   if (WRITES.indexOf(action) !== -1) return withLock_(function () { return fn(body); });
@@ -793,6 +798,62 @@ function actionDeleteStudent(body) {
   return r.deleted ? { ok: true } : { ok: false, error: 'STUDENT_NOT_FOUND' };
 }
 
+// ---------- 點名日：例假日 / 補班補課 / 國定假日 ----------
+var WEEKDAY_NAMES = ['', '一', '二', '三', '四', '五', '六', '日'];
+
+function specialDays_() {
+  return sheetToObjects(SHEET_SPECIAL).map(function (x) {
+    return { date: String(x.date), type: String(x.type), reason: String(x.reason || ''), createdBy: x.createdBy, createdAt: String(x.createdAt || '') };
+  });
+}
+
+// 某一天能不能點名：補班補課 > 國定假日 > 週六日例假日 > 平日
+function dayInfo_(date, list) {
+  var sp = (list || specialDays_()).filter(function (x) { return x.date === date; })[0];
+  var wd = weekdayOf(date);
+  var base = { date: date, weekday: wd, reason: sp ? sp.reason : '' };
+  if (sp && sp.type === 'workday') return Object.assign(base, { open: true, type: 'workday', label: '補班補課' });
+  if (sp && sp.type === 'holiday') return Object.assign(base, { open: false, type: 'holiday', label: '國定假日放假' });
+  if (wd >= 6) return Object.assign(base, { open: false, type: 'weekend', label: '例假日（星期' + WEEKDAY_NAMES[wd] + '）放假' });
+  return Object.assign(base, { open: true, type: 'normal', label: '' });
+}
+
+function actionGetDayInfo(body) {
+  requireSession(body.token);
+  var date = body.date && /^\d{4}-\d{2}-\d{2}$/.test(body.date) ? body.date : today_();
+  return { ok: true, today: today_(), day: dayInfo_(date) };
+}
+
+function actionListSpecialDays(body) {
+  requireSession(body.token, 'admin');
+  var list = specialDays_().sort(function (a, b) { return b.date.localeCompare(a.date); });
+  list.forEach(function (x) { x.weekday = weekdayOf(x.date); });
+  return { ok: true, today: today_(), todayInfo: dayInfo_(today_(), list), days: list };
+}
+
+function actionSetSpecialDay(body) {
+  var s = requireSession(body.token, 'admin');
+  var date = String(body.date || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { ok: false, error: 'DATE_REQUIRED' };
+  var type = body.type;
+  if (type !== 'workday' && type !== 'holiday') return { ok: false, error: 'UNKNOWN_ACTION' };
+  var wd = weekdayOf(date);
+  if (type === 'workday' && wd < 6) return { ok: false, error: 'NOT_WEEKEND' };   // 平日本來就可以點名
+  if (type === 'holiday' && wd >= 6) return { ok: false, error: 'NOT_WEEKDAY' };  // 週末本來就放假
+  var rows = sheetToObjects(SHEET_SPECIAL).filter(function (x) { return String(x.date) === date; });
+  deleteRows_(SHEET_SPECIAL, rows);
+  appendObject(SHEET_SPECIAL, { date: date, type: type, reason: String(body.reason || '').trim().slice(0, 30), createdBy: s.name, createdAt: new Date().toISOString() });
+  return { ok: true, day: dayInfo_(date) };
+}
+
+function actionDeleteSpecialDay(body) {
+  requireSession(body.token, 'admin');
+  var rows = sheetToObjects(SHEET_SPECIAL).filter(function (x) { return String(x.date) === String(body.date); });
+  if (!rows.length) return { ok: false, error: 'DAY_NOT_FOUND' };
+  deleteRows_(SHEET_SPECIAL, rows);
+  return { ok: true, day: dayInfo_(String(body.date)) };
+}
+
 // ---------- 點名 ----------
 // 自送/自走本身就是一種出席狀態；相容舊資料(狀態=到班 + 自送/自走旗標)
 function effectiveStatus_(a) {
@@ -870,7 +931,7 @@ function actionGetRollCall(body) {
   var submitters = submittersIndex_(date, attendance)[date + '|' + schoolId] || [];
   var last = submitters[submitters.length - 1] || null;
   return {
-    ok: true, date: date, students: out, submitted: submitters.length > 0, submitters: submitters,
+    ok: true, date: date, day: dayInfo_(date), students: out, submitted: submitters.length > 0, submitters: submitters,
     submittedAt: last ? last.at : null, submittedBy: last ? last.name : null
   };
 }
@@ -880,6 +941,8 @@ function actionSubmitAttendance(body) {
   var date = today_();
   var schoolId = body.schoolId;
   var now = new Date().toISOString();
+  var day = dayInfo_(date);
+  if (!day.open) return { ok: false, error: 'DAY_CLOSED', day: day };   // 例假日 / 國定假日不能點名
 
   // 整段在全域鎖內：兩位老師同時送出同一校時，第二位會看到「已被他人更新」而不是默默覆蓋
   var result = withLock_(function () {
@@ -1018,7 +1081,10 @@ function overviewData_(schoolFilter, cutoff) {
 function actionGetOverview(body) {
   requireSession(body.token, 'admin');
   var d = overviewData_(body.schoolId || null, dateStrDaysAgo_(Number(body.days) || RETENTION_DAYS));
-  return { ok: true, today: d.today, dates: d.dates };
+  var sp = specialDays_();
+  var special = {};
+  sp.forEach(function (x) { special[x.date] = { type: x.type, reason: x.reason }; });
+  return { ok: true, today: d.today, todayInfo: dayInfo_(d.today, sp), special: special, dates: d.dates };
 }
 
 // 某一天的請假名單（全部學校或單一學校）＋ 當天各校摘要
@@ -1099,6 +1165,7 @@ function cleanupOldRecords() {
     var cutoff = dateStrDaysAgo_(RETENTION_DAYS);
     pruneByDate_(SHEET_ATTENDANCE, cutoff);
     pruneByDate_(SHEET_SUBMISSIONS, cutoff);
+    pruneByDate_(SHEET_SPECIAL, cutoff);
   });
   cleanupExpiredSessions_();
 }

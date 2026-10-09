@@ -92,6 +92,7 @@
   nav.tabs button[data-tab="overview"].active{background:var(--indigo-l);color:var(--indigo-d);}
   nav.tabs button[data-tab="schools"].active{background:var(--teal-l);color:#0f766e;}
   nav.tabs button[data-tab="teachers"].active{background:var(--violet-l);color:#5b21b6;}
+  nav.tabs button[data-tab="days"].active{background:var(--amber-l);color:#92400e;}
 
   /* ---------- Login ---------- */
   #view-login{flex:1;display:flex;align-items:center;justify-content:center;padding:28px 16px;background:linear-gradient(160deg,#e0e7ff 0%,#f1f5f9 45%,#ccfbf1 100%);}
@@ -126,7 +127,16 @@
   main.content{width:100%;max-width:1120px;margin:0 auto;padding:22px 16px 60px;flex:1;}
   .section{display:none;} .section.active{display:block;}
   .card{background:var(--card);border:1px solid var(--border);border-top:4px solid var(--card-accent,var(--accent));border-radius:var(--radius);box-shadow:var(--shadow);padding:20px;margin-bottom:18px;}
-  .card.accent-indigo{--card-accent:var(--indigo);} .card.accent-teal{--card-accent:var(--teal);} .card.accent-violet{--card-accent:var(--violet);} .card.accent-sky{--card-accent:var(--sky);}
+  .card.accent-indigo{--card-accent:var(--indigo);} .card.accent-teal{--card-accent:var(--teal);} .card.accent-violet{--card-accent:var(--violet);} .card.accent-sky{--card-accent:var(--sky);} .card.accent-amber{--card-accent:var(--amber);}
+  .banner-closed{background:var(--rose-l);color:#9f1239;padding:10px 14px;border-radius:10px;font-size:13.5px;margin-bottom:12px;font-weight:700;}
+  .closed-box{display:flex;gap:14px;align-items:center;background:#fff1f2;border:1.5px solid #fecdd3;border-radius:14px;padding:18px;margin:10px 0;}
+  .closed-box .closed-icon{font-size:34px;line-height:1;}
+  .closed-box .closed-title{font-size:19px;font-weight:800;color:#9f1239;margin-bottom:4px;}
+  .hday .hd-tag{display:inline-block;font-size:10.5px;font-weight:800;border-radius:6px;padding:1px 6px;margin-top:4px;}
+  .hd-tag.hd-workday{background:var(--teal-l);color:#0f766e;}
+  .hd-tag.hd-holiday{background:var(--rose-l);color:#9f1239;}
+  .day-status{font-size:14px;font-weight:700;margin:2px 0 12px;}
+  .day-status .open{color:var(--emerald);} .day-status .closed{color:var(--rose);}
   .card h2{margin:0 0 4px;font-size:17px;display:flex;align-items:center;gap:8px;}
   .card h2 .dot-sm{width:9px;height:9px;border-radius:50%;background:var(--card-accent,var(--accent));display:inline-block;}
   .card .hint,.hint{color:var(--muted);font-size:13px;margin:0 0 14px;}
@@ -390,6 +400,7 @@
   <button data-tab="overview" onclick="switchTab('overview')">點名總覽</button>
   <button data-tab="schools" onclick="switchTab('schools')">學校與學生</button>
   <button data-tab="teachers" onclick="switchTab('teachers')">老師帳號</button>
+  <button data-tab="days" onclick="switchTab('days')">點名日設定</button>
 </nav>
 
 <!-- ============ LOGIN ============ -->
@@ -499,10 +510,34 @@
     </div>
   </section>
 
+  <section class="section" id="sec-days">
+    <div class="card accent-amber">
+      <h2><span class="dot-sm"></span>點名日設定</h2>
+      <p class="hint">預設：星期一到五可以點名，星期六、日為例假日不能點名。週末要上課請設為「補班補課」；平日放假請設為「國定假日放假」，老師端會看到不能點名的原因。</p>
+      <div id="days-today"></div>
+      <div class="row">
+        <div class="field"><label for="day-date">日期</label><input type="date" id="day-date" onchange="updateDayDateStatus()"></div>
+        <div class="field"><label for="day-reason">原因（選填，會顯示給老師）</label><input id="day-reason" maxlength="30" placeholder="例如：國慶日、颱風假補課"></div>
+      </div>
+      <div class="day-status" id="day-date-status"></div>
+      <div class="row">
+        <button class="btn btn-teal" id="btn-workday" onclick="setSpecialDay('workday')">補班補課（可以點名）</button>
+        <button class="btn btn-danger" id="btn-holiday" onclick="setSpecialDay('holiday')">國定假日放假（不能點名）</button>
+      </div>
+    </div>
+    <div class="card accent-amber">
+      <h2><span class="dot-sm"></span>已設定的日期</h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th>日期</th><th>設定</th><th>原因</th><th>設定者</th><th></th></tr></thead>
+        <tbody id="days-tbody"></tbody></table></div>
+    </div>
+  </section>
+
   <section class="section" id="sec-rollcall">
     <div class="card accent-sky">
       <h2 id="rollcall-date-title"></h2>
-      <div class="row" style="margin:8px 0 6px;">
+      <div id="rollcall-dayinfo"></div>
+      <div class="row" id="rollcall-school-row" style="margin:8px 0 6px;">
         <div class="field">
           <label for="rollcall-school-select">選擇學校</label>
           <select id="rollcall-school-select" onchange="loadRollCall()"><option value="">請選擇學校…</option></select>
@@ -614,7 +649,7 @@ function errMsg(code) {
     USERNAME_TAKEN: '此帳號已被使用', WRONG_OLD_PASSWORD: '原密碼不正確', PASSWORD_REQUIRED: '請輸入新密碼',
     NAME_REQUIRED: '請輸入名稱', NAME_TOO_LONG: '名稱太長（最多 12 字）', SCHOOL_EXISTS: '已有同名學校',
     STUDENT_NOT_FOUND: '找不到該學生', TEACHER_NOT_FOUND: '找不到該老師', UNKNOWN_ACTION: '後端版本過舊，請重新部署 Code.gs',
-    BUSY: '目前多人同時操作中，請稍後再試一次', SCHOOL_NOT_FOUND: '找不到這間學校（可能已被刪除）', GRADE_REQUIRED: '請填寫年級班級', CONTACT_REQUIRED: '請至少填寫一組聯絡人與聯絡方式', INVALID_ROWS: '有學生資料不完整（姓名、年級班級、聯絡人與聯絡方式為必填）', USERNAME_REQUIRED: '請填寫登入帳號', CONFLICT: '這間學校的點名剛被其他老師更新', INCOMPLETE: '還有學生尚未點名'
+    BUSY: '目前多人同時操作中，請稍後再試一次', DATE_REQUIRED: '請選擇日期', NOT_WEEKEND: '補班補課只能設定在星期六或星期日', NOT_WEEKDAY: '星期六、日本來就放假，不需要設定國定假日', DAY_NOT_FOUND: '這天沒有特別設定', DAY_CLOSED: '今天不能點名', SCHOOL_NOT_FOUND: '找不到這間學校（可能已被刪除）', GRADE_REQUIRED: '請填寫年級班級', CONTACT_REQUIRED: '請至少填寫一組聯絡人與聯絡方式', INVALID_ROWS: '有學生資料不完整（姓名、年級班級、聯絡人與聯絡方式為必填）', USERNAME_REQUIRED: '請填寫登入帳號', CONFLICT: '這間學校的點名剛被其他老師更新', INCOMPLETE: '還有學生尚未點名'
   };
   return map[code] || ('發生錯誤（' + code + '）');
 }
@@ -799,6 +834,7 @@ function clearSession() {
   STATE.currentSchoolId = null; STATE.currentStudents = []; STATE.rollcall = null; STATE.rcMode = null;
   busyReset();
   STATE.selStudents.clear(); STATE.selTeachers.clear();
+  STATE.dayInfo = null; $('rollcall-dayinfo').innerHTML = ''; $('rollcall-school-row').classList.remove('hidden');
   document.body.classList.remove('role-admin', 'role-teacher');
   document.querySelectorAll('.modal-bg,.prompt-bg').forEach(m => m.remove());
   ['header-right', 'admin-tabs', 'app-main'].forEach(id => $(id).classList.add('hidden'));
@@ -849,11 +885,96 @@ async function enterApp() {
     $('rollcall-banner').innerHTML = '';
     $('rollcall-container').innerHTML = '<div class="empty">請先選擇學校</div>';
     $('rollcall-submit-wrap').classList.add('hidden');
-    const r = await api('listSchools');
+    const [r, di] = await Promise.all([api('listSchools'), api('getDayInfo')]);
     STATE.schools = r.schools;
     $('rollcall-school-select').innerHTML = '<option value="">請選擇學校…</option>' +
       r.schools.map(s => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('');
+    STATE.dayInfo = di.day;
+    renderTeacherDay();
   }
+}
+
+/* ---------------- 點名日（例假日 / 補班補課 / 國定假日） ---------------- */
+function dayReasonText(d) { return esc(d.label) + (d.reason ? '（' + esc(d.reason) + '）' : ''); }
+// 老師端：今天不能點名就顯示原因，不顯示點名表
+function renderTeacherDay() {
+  const d = STATE.dayInfo;
+  if (d && !d.open) {
+    $('rollcall-dayinfo').innerHTML = `<div class="closed-box" role="status"><div class="closed-icon" aria-hidden="true">📅</div><div>
+      <div class="closed-title">今天不能點名</div><div>原因：<b>${dayReasonText(d)}</b></div>
+      <div class="hint" style="margin:4px 0 0">${d.type === 'holiday' ? '如果今天仍需要點名，請聯絡管理員取消國定假日設定。' : '如果今天要上課，請聯絡管理員設定為「補班補課」。'}</div></div></div>`;
+    $('rollcall-school-row').classList.add('hidden');
+    $('rollcall-banner').innerHTML = '';
+    $('rollcall-container').innerHTML = '';
+    $('rollcall-submit-wrap').classList.add('hidden');
+    STATE.rcMode = null; STATE.rollcall = null;
+  } else {
+    $('rollcall-dayinfo').innerHTML = d && d.type === 'workday'
+      ? `<div class="banner-ok">📅 今天是補班補課日，可以點名${d.reason ? '（' + esc(d.reason) + '）' : ''}</div>` : '';
+    $('rollcall-school-row').classList.remove('hidden');
+    if (!$('rollcall-school-select').value) $('rollcall-container').innerHTML = '<div class="empty">請先選擇學校</div>';
+  }
+}
+
+// 管理端：與後端相同的判斷，用來即時顯示所選日期的狀態
+function clientDayInfo(date) {
+  const sp = (STATE.specialDays || []).find(x => x.date === date);
+  const wd = (new Date(date + 'T12:00:00').getDay() + 6) % 7 + 1;
+  if (sp && sp.type === 'workday') return { open: true, type: 'workday', label: '補班補課', reason: sp.reason };
+  if (sp && sp.type === 'holiday') return { open: false, type: 'holiday', label: '國定假日放假', reason: sp.reason };
+  if (wd >= 6) return { open: false, type: 'weekend', label: '例假日（星期' + DOW[wd - 1] + '）放假', reason: '' };
+  return { open: true, type: 'normal', label: '一般上課日', reason: '' };
+}
+function dayStatusHtml(d) {
+  return d.open ? `<span class="open">✔ 可以點名</span>（${dayReasonText(d)}）` : `<span class="closed">✖ 不能點名</span>（${dayReasonText(d)}）`;
+}
+function mdw(date) { return `${date.slice(5).replace('-', '/')}（${weekdayLabel(date)}）`; }
+
+async function loadDays(silent) {
+  const r = await api('listSpecialDays', {}, { pill: !silent, flash: !silent });
+  STATE.specialDays = r.days;
+  $('days-today').innerHTML = `<div class="${r.todayInfo.open ? 'banner-ok' : 'banner-closed'}">今天 ${mdw(r.today)}：${r.todayInfo.open ? '可以點名' : '不能點名'}（${r.todayInfo.label ? dayReasonText(r.todayInfo) : '一般上課日'}）</div>`;
+  if (!$('day-date').value) $('day-date').value = r.today;
+  updateDayDateStatus();
+  $('days-tbody').innerHTML = r.days.length ? r.days.map(x => `<tr>
+      <td><b>${esc(mdw(x.date))}</b><div class="marked-by">${esc(x.date.slice(0, 4))}</div></td>
+      <td><span class="pill ${x.type === 'workday' ? 'st-present' : 'st-unmarked'}">${x.type === 'workday' ? '補班補課（可點名）' : '國定假日放假（不能點名）'}</span></td>
+      <td>${esc(x.reason) || '-'}</td><td>${esc(x.createdBy || '-')}</td>
+      <td><button class="btn btn-secondary btn-sm" onclick="deleteSpecialDay('${esc(x.date)}')">取消設定</button></td></tr>`).join('')
+    : '<tr><td colspan="5" class="empty">目前沒有特別設定的日期</td></tr>';
+}
+
+function updateDayDateStatus() {
+  const date = $('day-date').value;
+  if (!date) { $('day-date-status').innerHTML = ''; return; }
+  const wd = (new Date(date + 'T12:00:00').getDay() + 6) % 7 + 1;
+  $('day-date-status').innerHTML = `${esc(mdw(date))} 目前：${dayStatusHtml(clientDayInfo(date))}`;
+  $('btn-workday').disabled = wd < 6;    // 補班補課只能設在週六日
+  $('btn-holiday').disabled = wd >= 6;   // 國定假日只能設在平日
+}
+
+async function setSpecialDay(type) {
+  const date = $('day-date').value;
+  if (!date) { toast('請先選擇日期', true); return; }
+  const reason = $('day-reason').value.trim();
+  const reasonTxt = reason ? '（' + esc(reason) + '）' : '';
+  const ok = type === 'workday'
+    ? await confirmBox('設為補班補課', `確定把 <b>${esc(mdw(date))}</b> 設為「<b>補班補課</b>」${reasonTxt}嗎？<br>設定後老師當天<b>可以點名</b>。`, '確定設定')
+    : await confirmBox('設為國定假日放假', `確定把 <b>${esc(mdw(date))}</b> 設為「<b>國定假日放假</b>」${reasonTxt}嗎？<br>設定後老師當天<b>不能點名</b>，並會看到原因。`, '確定設定', true);
+  if (!ok) return;
+  const r = await doWrite('setSpecialDay', { date, type, reason }, () => loadDays(true));
+  if (r) $('day-reason').value = '';
+}
+
+async function deleteSpecialDay(date) {
+  const sp = (STATE.specialDays || []).find(x => x.date === date);
+  if (!sp) return;
+  const after = clientDayInfo(date);
+  const wd = (new Date(date + 'T12:00:00').getDay() + 6) % 7 + 1;
+  const restore = wd >= 6 ? '例假日，不能點名' : '一般上課日，可以點名';
+  const ok = await confirmBox('取消設定', `確定取消 <b>${esc(mdw(date))}</b> 的「${sp.type === 'workday' ? '補班補課' : '國定假日放假'}」設定嗎？<br>取消後恢復為：<b>${restore}</b>。`, '取消設定', true);
+  if (!ok || !after) return;
+  await doWrite('deleteSpecialDay', { date }, () => loadDays(true));
 }
 
 function switchTab(tab) {
@@ -864,6 +985,7 @@ function switchTab(tab) {
   if (tab === 'overview') loadOverview();
   if (tab === 'schools') loadSchools();
   if (tab === 'teachers') loadTeachers();
+  if (tab === 'days') loadDays();
 }
 
 /* ---------------- 連線 / 同步錯誤：跳出提示，要求重新整理或重新登入 ---------------- */
@@ -902,6 +1024,11 @@ async function tick() {
       if (STATE.activeTab === 'overview') await loadOverview(true);
       else if (STATE.activeTab === 'schools') await loadSchools(true);
       else if (STATE.activeTab === 'teachers') await loadTeachers(true);
+      else if (STATE.activeTab === 'days') await loadDays(true);
+    } else if (STATE.token && STATE.role === 'teacher' && STATE.dayInfo && !STATE.dayInfo.open && !modalOpen) {
+      // 今天不能點名：定時確認管理員是否改成補班補課
+      const di = await api('getDayInfo', {}, { pill: false, flash: false });
+      if (di.day.open !== STATE.dayInfo.open) { STATE.dayInfo = di.day; renderTeacherDay(); }
     } else if (STATE.token && STATE.role === 'teacher' && STATE.rcMode === 'view' && !modalOpen) {
       await loadRollCall(true);   // 檢視模式下，其他老師的更新會自動同步過來（修改中不會被打斷）
     } else {
@@ -1399,9 +1526,13 @@ async function loadOverview(silent) {
   STATE.today = r.today;
 
   const todayEntry = r.dates.find(d => d.date === r.today);
+  STATE.special = r.special || {};
+  STATE.todayInfo = r.todayInfo;
+  const closedNote = r.todayInfo && !r.todayInfo.open
+    ? `<div class="banner-closed">📅 今天${dayReasonText(r.todayInfo)}，老師端不能點名</div>` : '';
   if (todayEntry && todayEntry.schools.length) {
     const t = sumSchools(todayEntry.schools);
-    $('today-summary').innerHTML = `<div class="today-card"><h3>今日 ${esc(r.today)}（${weekdayLabel(r.today)}）全部學校　已點名 ${t.submitted} / ${todayEntry.schools.length} 校</h3>
+    $('today-summary').innerHTML = `<div class="today-card">${closedNote}<h3>今日 ${esc(r.today)}（${weekdayLabel(r.today)}）全部學校　已點名 ${t.submitted} / ${todayEntry.schools.length} 校</h3>
       <div class="stats">${statsHtml(t, true)}</div></div>`;
   } else {
     $('today-summary').innerHTML = '';
@@ -1423,14 +1554,16 @@ async function loadOverview(silent) {
     const has = d && d.schools.some(s => s.submitted);
     const wd = weekdayLabel(date);
     const weekend = wd === '週六' || wd === '週日';
+    const sp = STATE.special[date];
+    const tag = sp ? `<div class="hd-tag hd-${sp.type}">${sp.type === 'workday' ? '補班補課' : '國定假日'}</div>` : '';
     if (has) {
       const t = sumSchools(d.schools);
       cards.push(`<button type="button" class="hday${weekend ? ' weekend' : ''}" data-date="${date}" onclick="openDayLeaves('${date}')" aria-label="${date} ${wd}，請假 ${t.leave} 人">
         <div class="hd-date">${date.slice(5).replace('-', '/')}</div><div class="hd-wd">${wd}</div>
-        <div class="hd-leave${t.leave ? ' has' : ''}">請假 ${t.leave}</div><div class="hd-sub">${t.submitted} 校已點名</div></button>`);
+        <div class="hd-leave${t.leave ? ' has' : ''}">請假 ${t.leave}</div>${tag}<div class="hd-sub">${t.submitted} 校已點名</div></button>`);
     } else {
       cards.push(`<button type="button" class="hday${weekend ? ' weekend' : ''}" data-date="${date}" disabled>
-        <div class="hd-date">${date.slice(5).replace('-', '/')}</div><div class="hd-wd">${wd}</div><div class="hd-sub">無點名紀錄</div></button>`);
+        <div class="hd-date">${date.slice(5).replace('-', '/')}</div><div class="hd-wd">${wd}</div>${tag}<div class="hd-sub">${sp && sp.type === 'holiday' ? '放假' : '無點名紀錄'}</div></button>`);
     }
   }
   $('history-grid').innerHTML = cards.join('');
@@ -1450,6 +1583,10 @@ function submittersText(list) {
   return (list || []).map(x => `${esc(x.name)}（${esc(fmtClock(x.at))}）`).join('、') || '-';
 }
 function schoolDayCardHtml(s, date, fromLeaves) {
+  if (!s.submitted && date === STATE.today && STATE.todayInfo && !STATE.todayInfo.open) {
+    return `<div class="day-school pending" style="border-left-color:#94a3b8;background:#f8fafc;border-color:var(--border)"><div><div class="name">${esc(s.schoolName)}</div><div class="meta">${dayReasonText(STATE.todayInfo)}・總人數 ${s.total}</div></div>
+      <span class="pill st-fixedOff">今日不點名</span></div>`;
+  }
   if (!s.submitted) {
     return `<div class="day-school pending"><div><div class="name">${esc(s.schoolName)}</div><div class="meta">尚未點名・總人數 ${s.total}</div></div>
       <span class="pill st-unmarked">尚未點名</span></div>`;
@@ -1544,6 +1681,12 @@ async function loadRollCall(silent, opts) {
   if (!silent) container.innerHTML = '<div class="empty">載入中…</div>';
   const r = await api('getRollCall', { schoolId }, { pill: !silent, flash: !silent });
   if ($('rollcall-school-select').value !== schoolId) return;
+  if (r.day) {
+    const changed = !STATE.dayInfo || STATE.dayInfo.open !== r.day.open;
+    STATE.dayInfo = r.day;
+    if (!r.day.open) { renderTeacherDay(); return; }   // 管理員剛把今天設為放假
+    if (changed) renderTeacherDay();
+  }
   STATE.rollcall = { schoolId, students: r.students, submitted: r.submitted, submittedAt: r.submittedAt || '', submittedBy: r.submittedBy || '', submitters: r.submitters || [] };
   if (!r.students.length) {
     $('rollcall-banner').innerHTML = '';
@@ -1639,6 +1782,12 @@ async function submitAttendance(force) {
     '點名已送出，同步成功' + (unmarked ? `（尚有 ${unmarked} 位未點名，可稍後再補）` : ''),
     { onError: e => {
       if (e.message === 'CONFLICT') { handleRcConflict(e.data || {}); return true; }
+      if (e.message === 'DAY_CLOSED') {
+        STATE.dayInfo = (e.data && e.data.day) || STATE.dayInfo;
+        toast('今天不能點名：' + (STATE.dayInfo ? STATE.dayInfo.label : ''), true);
+        renderTeacherDay();
+        return true;
+      }
       return false;
     } });
 }
