@@ -329,6 +329,17 @@
     .hday .hd-sub{display:none;}
 
     /* 點名 / 明細表格 → 卡片：一位學生一張 */
+    .days-table thead{display:none;}
+    .days-table,.days-table tbody{display:block;}
+    .days-table tr{display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 12px;align-items:center;padding:12px 2px;border-bottom:1px solid var(--border);}
+    .days-table td{display:block;border:none;padding:0;}
+    .days-table td[colspan]{grid-column:1 / -1;}
+    .days-table td:nth-child(1) .marked-by{display:none;}
+    .days-table td:nth-child(3)::before{content:'原因：';color:var(--muted);}
+    .days-table td:nth-child(4){font-size:12.5px;color:var(--muted);}
+    .days-table td:nth-child(4)::before{content:'設定者：';}
+    .days-table td:nth-child(5){grid-column:2;grid-row:2;}
+    .days-table td:nth-child(5) .day-actions{justify-content:flex-end;}
     .card-table thead{display:none;}
     .card-table,.card-table tbody{display:block;}
     .card-table tr:not(.grp):not(.sec){display:grid;grid-template-columns:48px minmax(0,1fr);gap:6px 10px;padding:12px 4px;border-bottom:1px solid var(--border);}
@@ -374,6 +385,9 @@
     #toast{bottom:16px;font-size:13.5px;}
     #doneToast{font-size:15px;padding:12px 20px;max-width:90vw;}
   }
+.bd-range { background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; }
+.bd-range-title { font-weight: 700; color: #92400e; margin-bottom: 6px; font-size: 14px; }
+.day-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 </style>
 </head>
 <body>
@@ -524,10 +538,14 @@
         <button class="btn btn-teal" id="btn-workday" onclick="setSpecialDay('workday')">補班補課（可以點名）</button>
         <button class="btn btn-danger" id="btn-holiday" onclick="setSpecialDay('holiday')">國定假日放假（不能點名）</button>
       </div>
+      <div class="row" style="margin-top:4px">
+        <button class="btn btn-secondary" id="btn-days-batch" style="white-space:nowrap" onclick="openBatchDaysModal()">批次新增日期</button>
+        <span class="hint" style="margin:0;align-self:center">一次設定多天，例如整年的國定假日或連假</span>
+      </div>
     </div>
     <div class="card accent-amber">
       <h2><span class="dot-sm"></span>已設定的日期</h2>
-      <div class="table-wrap"><table>
+      <div class="table-wrap"><table class="days-table">
         <thead><tr><th>日期</th><th>設定</th><th>原因</th><th>設定者</th><th></th></tr></thead>
         <tbody id="days-tbody"></tbody></table></div>
     </div>
@@ -649,7 +667,7 @@ function errMsg(code) {
     USERNAME_TAKEN: '此帳號已被使用', WRONG_OLD_PASSWORD: '原密碼不正確', PASSWORD_REQUIRED: '請輸入新密碼',
     NAME_REQUIRED: '請輸入名稱', NAME_TOO_LONG: '名稱太長（最多 12 字）', SCHOOL_EXISTS: '已有同名學校',
     STUDENT_NOT_FOUND: '找不到該學生', TEACHER_NOT_FOUND: '找不到該老師', UNKNOWN_ACTION: '後端版本過舊，請重新部署 Code.gs',
-    BUSY: '目前多人同時操作中，請稍後再試一次', DATE_REQUIRED: '請選擇日期', NOT_WEEKEND: '補班補課只能設定在星期六或星期日', NOT_WEEKDAY: '星期六、日本來就放假，不需要設定國定假日', DAY_NOT_FOUND: '這天沒有特別設定', DAY_CLOSED: '今天不能點名', SCHOOL_NOT_FOUND: '找不到這間學校（可能已被刪除）', GRADE_REQUIRED: '請填寫年級班級', CONTACT_REQUIRED: '請至少填寫一組聯絡人與聯絡方式', INVALID_ROWS: '有學生資料不完整（姓名、年級班級、聯絡人與聯絡方式為必填）', USERNAME_REQUIRED: '請填寫登入帳號', CONFLICT: '這間學校的點名剛被其他老師更新', INCOMPLETE: '還有學生尚未點名'
+    BUSY: '目前多人同時操作中，請稍後再試一次', DATE_REQUIRED: '請選擇日期', NOT_WEEKEND: '補班補課只能設定在星期六或星期日', NOT_WEEKDAY: '星期六、日本來就放假，不需要設定國定假日', DAY_NOT_FOUND: '這天沒有特別設定（可能已被取消）', DAY_EXISTS: '新的日期已經有設定了，請先取消那天的設定或改選其他日期', INVALID_DAYS: '有日期設定不正確，請檢查後再送出', DAY_CLOSED: '今天不能點名', SCHOOL_NOT_FOUND: '找不到這間學校（可能已被刪除）', GRADE_REQUIRED: '請填寫年級班級', CONTACT_REQUIRED: '請至少填寫一組聯絡人與聯絡方式', INVALID_ROWS: '有學生資料不完整（姓名、年級班級、聯絡人與聯絡方式為必填）', USERNAME_REQUIRED: '請填寫登入帳號', CONFLICT: '這間學校的點名剛被其他老師更新', INCOMPLETE: '還有學生尚未點名'
   };
   return map[code] || ('發生錯誤（' + code + '）');
 }
@@ -940,7 +958,8 @@ async function loadDays(silent) {
       <td><b>${esc(mdw(x.date))}</b><div class="marked-by">${esc(x.date.slice(0, 4))}</div></td>
       <td><span class="pill ${x.type === 'workday' ? 'st-present' : 'st-unmarked'}">${x.type === 'workday' ? '補班補課（可點名）' : '國定假日放假（不能點名）'}</span></td>
       <td>${esc(x.reason) || '-'}</td><td>${esc(x.createdBy || '-')}</td>
-      <td><button class="btn btn-secondary btn-sm" onclick="deleteSpecialDay('${esc(x.date)}')">取消設定</button></td></tr>`).join('')
+      <td><div class="day-actions"><button class="btn btn-secondary btn-sm" onclick="openEditDayModal('${esc(x.date)}')">修改</button>
+        <button class="btn btn-secondary btn-sm" onclick="deleteSpecialDay('${esc(x.date)}')">取消設定</button></div></td></tr>`).join('')
     : '<tr><td colspan="5" class="empty">目前沒有特別設定的日期</td></tr>';
 }
 
@@ -975,6 +994,153 @@ async function deleteSpecialDay(date) {
   const ok = await confirmBox('取消設定', `確定取消 <b>${esc(mdw(date))}</b> 的「${sp.type === 'workday' ? '補班補課' : '國定假日放假'}」設定嗎？<br>取消後恢復為：<b>${restore}</b>。`, '取消設定', true);
   if (!ok || !after) return;
   await doWrite('deleteSpecialDay', { date }, () => loadDays(true));
+}
+
+// ---- 點名日：批次新增 / 修改 ----
+function wdOf(date) { return (new Date(date + 'T12:00:00').getDay() + 6) % 7 + 1; }
+function autoTypeOf(date) { return wdOf(date) >= 6 ? 'workday' : 'holiday'; }
+function dayTypePill(type) {
+  return type === 'workday' ? '<span class="pill st-present">補班補課（可點名）</span>' : '<span class="pill st-unmarked">國定假日放假（不能點名）</span>';
+}
+function bdRowHtml(date, reason) {
+  return `<tr><td class="idx"></td>
+    <td><input type="date" class="bd-date cell-input" aria-label="日期" value="${esc(date || '')}" onchange="bdRowUpdate(this)"></td>
+    <td class="bd-type"></td>
+    <td><input class="bd-reason cell-input" aria-label="原因" maxlength="30" placeholder="例如：國慶日" value="${esc(reason || '')}" style="min-width:150px"></td>
+    <td><button type="button" class="icon-btn" aria-label="刪除此列" onclick="bdRemoveRow(this)">✕</button></td></tr>`;
+}
+function bdRowUpdate(el) {
+  const tr = el.closest('tr');
+  const date = tr.querySelector('.bd-date').value;
+  const cell = tr.querySelector('.bd-type');
+  tr.querySelector('.bd-date').classList.remove('invalid');
+  if (!date) { cell.innerHTML = '<span class="hint" style="margin:0">選日期後自動判斷</span>'; return; }
+  const exists = (STATE.specialDays || []).some(x => x.date === date);
+  cell.innerHTML = `<div class="marked-by" style="margin:0 0 2px">${esc(mdw(date))}</div>${dayTypePill(autoTypeOf(date))}` + (exists ? '<div class="marked-by">已有設定，送出後會覆蓋</div>' : '');
+}
+function bdRenumber() { document.querySelectorAll('#bd-body tr').forEach((tr, i) => { tr.querySelector('.idx').textContent = i + 1; }); }
+function bdAddRows(list) {
+  // 先把空白列補上，不夠再新增
+  list = list.slice();
+  [...document.querySelectorAll('#bd-body tr')].forEach(tr => {
+    if (!list.length) return;
+    const d = tr.querySelector('.bd-date'), r = tr.querySelector('.bd-reason');
+    if (!d.value && !r.value.trim()) { const it = list.shift(); d.value = it.date || ''; r.value = it.reason || ''; bdRowUpdate(d); }
+  });
+  if (list.length) $('bd-body').insertAdjacentHTML('beforeend', list.map(it => bdRowHtml(it.date, it.reason)).join(''));
+  document.querySelectorAll('#bd-body tr').forEach(tr => bdRowUpdate(tr.querySelector('.bd-date')));
+  bdRenumber();
+}
+async function bdRemoveRow(btn) {
+  const tr = btn.closest('tr');
+  const date = tr.querySelector('.bd-date').value, reason = tr.querySelector('.bd-reason').value.trim();
+  if ((date || reason) && !(await confirmBox('刪除這一列', `確定要刪除第 ${esc(tr.querySelector('.idx').textContent)} 列${date ? '「' + esc(mdw(date)) + '」' : ''}嗎？`, '刪除', true))) return;
+  tr.remove(); bdRenumber();
+}
+// 加入一段期間：國定假日只加平日、補班補課只加週六日
+function bdAddRange() {
+  const from = $('bd-from').value, to = $('bd-to').value || from;
+  const type = $('bd-range-type').value, reason = $('bd-range-reason').value.trim();
+  if (!from) { toast('請選擇開始日期', true); return; }
+  if (to < from) { toast('結束日期不能早於開始日期', true); return; }
+  const out = [];
+  const d = new Date(from + 'T12:00:00'), end = new Date(to + 'T12:00:00');
+  let guard = 0;
+  while (d <= end && guard++ < 400) {
+    const ds = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    if (autoTypeOf(ds) === type) out.push({ date: ds, reason });
+    d.setDate(d.getDate() + 1);
+  }
+  const have = new Set([...document.querySelectorAll('#bd-body .bd-date')].map(el => el.value).filter(Boolean));
+  const add = out.filter(x => !have.has(x.date));
+  if (!add.length) { toast(type === 'holiday' ? '這段期間沒有可加入的平日（週六日本來就放假）' : '這段期間沒有週六日可以加入', true); return; }
+  bdAddRows(add);
+  toast(`已加入 ${add.length} 天`);
+}
+function openBatchDaysModal() {
+  const modal = buildModal('批次新增點名日', `
+    <p class="hint" style="margin-top:0">每一列選日期即可：<b>平日</b>自動設為「國定假日放假」、<b>週六日</b>自動設為「補班補課」。完全空白的列會略過。</p>
+    <div class="bd-range">
+      <div class="bd-range-title">快速加入一段期間（例如連假）</div>
+      <div class="row">
+        <div class="field"><label for="bd-from">開始</label><input type="date" id="bd-from"></div>
+        <div class="field"><label for="bd-to">結束</label><input type="date" id="bd-to"></div>
+        <div class="field"><label for="bd-range-type">設定</label><select id="bd-range-type">
+          <option value="holiday">國定假日（只加平日）</option>
+          <option value="workday">補班補課（只加週六日）</option></select></div>
+        <div class="field"><label for="bd-range-reason">原因</label><input id="bd-range-reason" maxlength="30" placeholder="例如：春節"></div>
+      </div>
+      <button type="button" class="btn btn-secondary btn-sm" id="bd-range-add" onclick="bdAddRange()">加入這段期間</button>
+    </div>
+    <div class="batch-scroll"><table class="batch-table" id="bd-table">
+      <thead><tr><th>#</th><th>日期 <span class="req">*</span></th><th>設定（自動判斷）</th><th>原因（選填）</th><th></th></tr></thead>
+      <tbody id="bd-body"></tbody></table></div>
+    <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+      <button type="button" class="btn btn-secondary btn-sm" onclick="bdAddRows([{}])">+ 新增一列</button>
+      <button type="button" class="btn btn-secondary btn-sm" onclick="bdAddRows([{},{},{},{},{}])">+ 新增五列</button>
+    </div>
+  `, async () => {
+    const days = [];
+    let firstBad = null;
+    const seen = {};
+    [...document.querySelectorAll('#bd-body tr')].forEach((tr, i) => {
+      const dEl = tr.querySelector('.bd-date');
+      const date = dEl.value, reason = tr.querySelector('.bd-reason').value.trim();
+      if (!date && !reason) return;
+      if (!date) { dEl.classList.add('invalid'); if (!firstBad) firstBad = `第 ${i + 1} 列沒有選日期`; return; }
+      if (seen[date]) { dEl.classList.add('invalid'); if (!firstBad) firstBad = `第 ${i + 1} 列的日期和第 ${seen[date]} 列重複`; return; }
+      seen[date] = i + 1;
+      days.push({ date, type: autoTypeOf(date), reason });
+    });
+    if (firstBad) { toast(firstBad, true); return false; }
+    if (!days.length) { toast('請至少填寫一個日期', true); return false; }
+    days.sort((a, b) => a.date.localeCompare(b.date));
+    const nW = days.filter(x => x.type === 'workday').length, nH = days.length - nW;
+    const nOver = days.filter(x => (STATE.specialDays || []).some(y => y.date === x.date)).length;
+    const list = days.slice(0, 8).map(x => `${esc(mdw(x.date))} ${x.type === 'workday' ? '補班補課' : '國定假日'}${x.reason ? '（' + esc(x.reason) + '）' : ''}`).join('<br>') + (days.length > 8 ? `<br>…等共 ${days.length} 天` : '');
+    const ok = await confirmBox('批次設定點名日', `確定設定以下 <b>${days.length}</b> 天嗎？<br>
+      ${nH ? `國定假日放假 <b>${nH}</b> 天（老師<b>不能點名</b>）<br>` : ''}${nW ? `補班補課 <b>${nW}</b> 天（老師<b>可以點名</b>）<br>` : ''}
+      ${nOver ? `<span style="color:var(--danger)">其中 ${nOver} 天原本已有設定，會被覆蓋</span><br>` : ''}
+      <div style="margin-top:8px;font-size:13px;color:var(--muted);max-height:180px;overflow:auto">${list}</div>`, '確定設定');
+    if (!ok) return false;
+    const r = await doWrite('setSpecialDaysBatch', { days }, () => loadDays(true),
+      res => `同步成功（新增 ${res.created} 天` + (res.updated ? `，覆蓋 ${res.updated} 天` : '') + '）');
+    return !!r;
+  }, { wide: true, confirmText: '送出並同步' });
+  bdAddRows([{}, {}, {}]);
+  modal.querySelector('#bd-from').focus();
+}
+
+function openEditDayModal(date) {
+  const sp = (STATE.specialDays || []).find(x => x.date === date);
+  if (!sp) return;
+  const modal = buildModal('修改點名日設定', `
+    <div class="field"><label for="m-day-date">日期</label><input type="date" id="m-day-date" value="${esc(date)}"></div>
+    <div class="day-status" id="m-day-status" style="margin:8px 0"></div>
+    <div class="field"><label for="m-day-reason">原因（選填，會顯示給老師）</label><input id="m-day-reason" maxlength="30" value="${esc(sp.reason || '')}" placeholder="例如：國慶日、颱風假補課"></div>
+  `, async () => {
+    const newDate = $('m-day-date').value, reason = $('m-day-reason').value.trim();
+    if (!newDate) { toast('請選擇日期', true); return false; }
+    if (newDate !== date && (STATE.specialDays || []).some(x => x.date === newDate)) { toast(errMsg('DAY_EXISTS'), true); return false; }
+    const newType = autoTypeOf(newDate);
+    if (newDate === date && reason === (sp.reason || '')) return true;   // 沒有變更
+    if (newDate !== date || newType !== sp.type) {
+      const restore = wdOf(date) >= 6 ? '例假日，不能點名' : '一般上課日，可以點名';
+      const ok = await confirmBox('修改點名日', `確定把設定從 <b>${esc(mdw(date))}</b> 改到 <b>${esc(mdw(newDate))}</b> 嗎？<br>
+        ${esc(mdw(newDate))} 會設為「<b>${newType === 'workday' ? '補班補課' : '國定假日放假'}</b>」，老師當天<b>${newType === 'workday' ? '可以' : '不能'}點名</b>。<br>
+        ${esc(mdw(date))} 恢復為：<b>${restore}</b>。`, '確定修改', newType === 'holiday');
+      if (!ok) return false;
+    }
+    const r = await doWrite('editSpecialDay', { date, newDate, reason }, () => loadDays(true));
+    return !!r;
+  }, { confirmText: '儲存修改' });
+  const upd = () => {
+    const d = $('m-day-date').value;
+    $('m-day-status').innerHTML = d ? `${esc(mdw(d))} 將設為：${dayTypePill(autoTypeOf(d))}` : '';
+  };
+  $('m-day-date').addEventListener('change', upd);
+  upd();
+  modal.querySelector('#m-day-reason').focus();
 }
 
 function switchTab(tab) {

@@ -358,12 +358,14 @@ function route(body) {
     getRollCall: actionGetRollCall, submitAttendance: actionSubmitAttendance,
     getDayInfo: actionGetDayInfo, listSpecialDays: actionListSpecialDays,
     setSpecialDay: actionSetSpecialDay, deleteSpecialDay: actionDeleteSpecialDay,
+    setSpecialDaysBatch: actionSetSpecialDaysBatch, editSpecialDay: actionEditSpecialDay,
     getOverview: actionGetOverview, getSchoolDayDetail: actionGetSchoolDayDetail
   };
   // 會寫入試算表的動作：一律在全域鎖內執行（多人同時操作也不會互相覆蓋）
   var WRITES = ['login', 'logout', 'changePwd', 'addContactType', 'addSchool', 'addSchoolsBatch', 'editSchool', 'deleteSchool',
     'addStudent', 'addStudentsBatch', 'editStudent', 'deleteStudent', 'deleteStudentsBatch',
-    'addTeacher', 'deleteTeacher', 'deleteTeachersBatch', 'submitAttendance', 'setSpecialDay', 'deleteSpecialDay'];
+    'addTeacher', 'deleteTeacher', 'deleteTeachersBatch', 'submitAttendance', 'setSpecialDay', 'deleteSpecialDay',
+    'setSpecialDaysBatch', 'editSpecialDay'];
   var fn = ACTIONS[action];
   if (!fn) return { ok: false, error: 'UNKNOWN_ACTION' };
   if (WRITES.indexOf(action) !== -1) return withLock_(function () { return fn(body); });
@@ -852,6 +854,55 @@ function actionDeleteSpecialDay(body) {
   if (!rows.length) return { ok: false, error: 'DAY_NOT_FOUND' };
   deleteRows_(SHEET_SPECIAL, rows);
   return { ok: true, day: dayInfo_(String(body.date)) };
+}
+
+// 依星期自動決定設定種類：週六日 → 補班補課；平日 → 國定假日放假
+function autoDayType_(date) { return weekdayOf(date) >= 6 ? 'workday' : 'holiday'; }
+function isDateStr_(d) { return /^\d{4}-\d{2}-\d{2}$/.test(String(d || '')) && !isNaN(Date.parse(String(d) + 'T00:00:00Z')); }
+
+// 批次新增點名日：days = [{date, type(可省略，依星期自動判斷), reason}]；同一天已有設定會覆蓋
+function actionSetSpecialDaysBatch(body) {
+  var s = requireSession(body.token, 'admin');
+  var input = Array.isArray(body.days) ? body.days : [];
+  var map = {}, order = [], bad = [];
+  input.forEach(function (d, i) {
+    var date = String((d && d.date) || '');
+    if (!isDateStr_(date)) { bad.push({ row: i + 1, error: 'DATE_REQUIRED' }); return; }
+    var wd = weekdayOf(date);
+    var type = d.type || autoDayType_(date);
+    if (type !== 'workday' && type !== 'holiday') { bad.push({ row: i + 1, date: date, error: 'UNKNOWN_ACTION' }); return; }
+    if (type === 'workday' && wd < 6) { bad.push({ row: i + 1, date: date, error: 'NOT_WEEKEND' }); return; }
+    if (type === 'holiday' && wd >= 6) { bad.push({ row: i + 1, date: date, error: 'NOT_WEEKDAY' }); return; }
+    if (!map[date]) order.push(date);
+    map[date] = { type: type, reason: String(d.reason || '').trim().slice(0, 30) };   // 重複日期：以最後一筆為準
+  });
+  if (bad.length) return { ok: false, error: 'INVALID_DAYS', bad: bad };
+  if (!order.length) return { ok: false, error: 'DATE_REQUIRED' };
+  var existing = sheetToObjects(SHEET_SPECIAL).filter(function (x) { return map[String(x.date)]; });
+  var updated = {};
+  existing.forEach(function (x) { updated[String(x.date)] = true; });
+  deleteRows_(SHEET_SPECIAL, existing);
+  var now = new Date().toISOString();
+  order.forEach(function (date) {
+    appendObject(SHEET_SPECIAL, { date: date, type: map[date].type, reason: map[date].reason, createdBy: s.name, createdAt: now });
+  });
+  var nUpd = Object.keys(updated).length;
+  return { ok: true, created: order.length - nUpd, updated: nUpd };
+}
+
+// 修改點名日：可改日期與原因；種類依新日期的星期自動決定
+function actionEditSpecialDay(body) {
+  var s = requireSession(body.token, 'admin');
+  var date = String(body.date || '');
+  var newDate = String(body.newDate || date);
+  if (!isDateStr_(newDate)) return { ok: false, error: 'DATE_REQUIRED' };
+  var all = sheetToObjects(SHEET_SPECIAL);
+  var rows = all.filter(function (x) { return String(x.date) === date; });
+  if (!rows.length) return { ok: false, error: 'DAY_NOT_FOUND' };
+  if (newDate !== date && all.some(function (x) { return String(x.date) === newDate; })) return { ok: false, error: 'DAY_EXISTS' };
+  deleteRows_(SHEET_SPECIAL, rows);
+  appendObject(SHEET_SPECIAL, { date: newDate, type: autoDayType_(newDate), reason: String(body.reason || '').trim().slice(0, 30), createdBy: s.name, createdAt: new Date().toISOString() });
+  return { ok: true, day: dayInfo_(newDate) };
 }
 
 // ---------- 點名 ----------
