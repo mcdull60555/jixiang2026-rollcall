@@ -352,14 +352,21 @@
     .card-table tr:not(.grp):not(.sec) td:nth-child(1){font-size:17px;font-weight:700;}
     .card-table .p-name{font-size:19px;font-weight:700;line-height:1.35;}
     .card-table .primary-ct{font-size:16px;line-height:1.7;margin-top:3px;}
-    .card-table .primary-ct a{font-size:16.5px;font-weight:700;}
+    .card-table .primary-ct a{font-size:16.5px;font-weight:700;white-space:nowrap;}
     .card-table .pill-primary{font-size:12.5px;padding:1px 8px;}
     .card-table .fixed-tag{font-size:12px;}
     .card-table .note-box{font-size:14px;}
     .card-table td:nth-child(3) .pill{font-size:13.5px;}
-    .rc-table .st-group{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;width:100%;}
-    .rc-table .st-btn{min-width:0;padding:6px 0;font-size:14px;border-radius:8px;border-width:1.5px;}
-    .rc-table td:nth-child(3) .note-box{width:100%;}
+    /* 點名模式：狀態按鈕放右邊、排成兩行 */
+    .rc-table tr.rc-row{grid-template-columns:36px minmax(0,1fr) 112px !important;gap:6px 8px !important;align-items:center;}
+    .rc-table .primary-ct{font-size:15.5px;}
+    .rc-table .primary-ct a{font-size:16px;}
+    .rc-table tr.rc-row td:nth-child(1){align-self:start;padding-top:3px;}
+    .rc-table tr.rc-row td:nth-child(3){display:contents !important;}
+    .rc-table .st-group{grid-column:3;grid-row:1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;width:100%;}
+    .rc-table .st-btn{min-width:0;padding:7px 0;font-size:14px;border-radius:8px;border-width:1.5px;}
+    .rc-table tr.rc-row .note-box{grid-column:1 / -1;grid-row:2;margin:0;}
+    .rc-table td:nth-child(3) .note-box{width:auto;}
 
     /* 學生名單 → 卡片 */
     .stu-table thead tr{display:flex;align-items:center;}
@@ -1427,9 +1434,11 @@ async function deleteStudentsByIds(ids) {
 }
 function deleteSelectedStudents() { if (STATE.selStudents.size) deleteStudentsByIds([...STATE.selStudents]); }
 
+// 顯示時主要聯絡人一律排第一個，其餘維持原本順序
+function primaryFirst(cs) { return (cs || []).slice().sort((a, b) => (b.primary ? 1 : 0) - (a.primary ? 1 : 0)); }
 function contactsHtml(contacts) {
   if (!contacts || !contacts.length) return '-';
-  return contacts.map(c => `<div class="ct-line">${c.primary ? '<span class="pill-primary">主要</span>' : ''}${esc(c.rel || '聯絡人')}　${esc(c.phone)}</div>`).join('');
+  return primaryFirst(contacts).map(c => `<div class="ct-line">${c.primary ? '<span class="pill-primary">主要</span>' : ''}${esc(c.rel || '聯絡人')}　${esc(c.phone)}</div>`).join('');
 }
 
 function daysChips(selected, cls) {
@@ -1808,7 +1817,7 @@ function statusPillHtml(status, wasFixedOff) {
 function noteHtml(st) { return st.note ? `<div class="note-box">📝 ${esc(st.note)}</div>` : ''; }
 // noNote=true：備註不放在姓名欄（改放在狀態後面）
 function personCellHtml(st, fixedTag, noNote) {
-  const cs = st.contacts || [];
+  const cs = primaryFirst(st.contacts);
   const contacts = cs.map(c => `<div>${c.primary && cs.length > 1 ? '<span class="pill-primary">主要</span>' : ''}${esc(c.rel || '聯絡人')} ${c.phone ? `<a href="tel:${esc(c.phone)}">${esc(c.phone)}</a>` : ''}</div>`).join('');
   return `<div class="p-name">${esc(st.name)}${fixedTag ? '<span class="fixed-tag">今日固定不進班</span>' : ''}</div>` +
     (!noNote && st.note ? `<div class="note-box">📝 ${esc(st.note)}</div>` : '') +
