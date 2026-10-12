@@ -349,9 +349,16 @@
     .card-table td:nth-child(3) .marked-by,.card-table td:nth-child(3) .note-box{margin-top:0;}
     .card-table tr.grp,.card-table tr.sec{display:block;}
     .card-table tr.grp td,.card-table tr.sec td{display:block;border-radius:8px;}
-    .card-table .p-name{font-size:16px;}
+    .card-table tr:not(.grp):not(.sec) td:nth-child(1){font-size:17px;font-weight:700;}
+    .card-table .p-name{font-size:19px;font-weight:700;line-height:1.35;}
+    .card-table .primary-ct{font-size:16px;line-height:1.7;margin-top:3px;}
+    .card-table .primary-ct a{font-size:16.5px;font-weight:700;}
+    .card-table .pill-primary{font-size:12.5px;padding:1px 8px;}
+    .card-table .fixed-tag{font-size:12px;}
+    .card-table .note-box{font-size:14px;}
+    .card-table td:nth-child(3) .pill{font-size:13.5px;}
     .rc-table .st-group{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;width:100%;}
-    .rc-table .st-btn{min-width:0;padding:11px 0;font-size:15px;}
+    .rc-table .st-btn{min-width:0;padding:6px 0;font-size:14px;border-radius:8px;border-width:1.5px;}
     .rc-table td:nth-child(3) .note-box{width:100%;}
 
     /* 學生名單 → 卡片 */
