@@ -359,7 +359,8 @@ function route(body) {
     getDayInfo: actionGetDayInfo, listSpecialDays: actionListSpecialDays,
     setSpecialDay: actionSetSpecialDay, deleteSpecialDay: actionDeleteSpecialDay,
     setSpecialDaysBatch: actionSetSpecialDaysBatch, editSpecialDay: actionEditSpecialDay,
-    getOverview: actionGetOverview, getSchoolDayDetail: actionGetSchoolDayDetail
+    getOverview: actionGetOverview, getSchoolDayDetail: actionGetSchoolDayDetail,
+    listLeaveStreaks: actionListLeaveStreaks
   };
   // 會寫入試算表的動作：一律在全域鎖內執行（多人同時操作也不會互相覆蓋）
   var WRITES = ['login', 'logout', 'changePwd', 'addContactType', 'addSchool', 'addSchoolsBatch', 'editSchool', 'deleteSchool',
@@ -916,6 +917,98 @@ function effectiveStatus_(a) {
   return s;
 }
 
+// 連續請假天數：從 date 往前數「可以點名的日子」，跳過例假日/國定假日與學生固定不進班的日子；
+// 當天必須是請假，往前遇到出席或沒有點名紀錄就停止。回傳 { studentId: 天數 }
+var LEAVE_STREAK_ALERT = 3;
+function prevDate_(d) { return Utilities.formatDate(new Date(Date.parse(d + 'T12:00:00+08:00') - 86400000), TZ, 'yyyy-MM-dd'); }
+function leaveStreakCtx_() {
+  var idx = {};
+  sheetToObjects(SHEET_ATTENDANCE).forEach(function (a) { idx[String(a.date) + '|' + a.studentId] = effectiveStatus_(a); });
+  var fixed = {};
+  sheetToObjects(SHEET_STUDENTS).forEach(function (st) { fixed[st.id] = studentOut_(st).fixedOffDays; });
+  var sp = specialDays_(), openCache = {};
+  return { idx: idx, fixed: fixed, isOpen: function (d) { if (!(d in openCache)) openCache[d] = dayInfo_(d, sp).open; return openCache[d]; } };
+}
+function leaveStreaks_(date, studentIds, ctx) {
+  var out = {};
+  if (!studentIds.length) return out;
+  ctx = ctx || leaveStreakCtx_();
+  var idx = ctx.idx, fixed = ctx.fixed, isOpen = ctx.isOpen;
+  var oldest = dateStrDaysAgo_(RETENTION_DAYS + 1);
+  studentIds.forEach(function (sid) {
+    if (idx[date + '|' + sid] !== 'leave') return;
+    var n = 0, d = date;
+    while (d >= oldest) {
+      var st = idx[d + '|' + sid];
+      if (st === 'leave') n++;
+      else if (st === 'fixedOff') { /* 固定不進班：不中斷也不計入 */ }
+      else if (!st && (!isOpen(d) || (fixed[sid] || []).indexOf(weekdayOf(d)) !== -1)) { /* 放假日或固定不進班日沒點名：跳過 */ }
+      else break;
+      d = prevDate_(d);
+    }
+    out[sid] = n;
+  });
+  return out;
+}
+
+function nextDate_(d) { return Utilities.formatDate(new Date(Date.parse(d + 'T12:00:00+08:00') + 86400000), TZ, 'yyyy-MM-dd'); }
+
+// 管理端「連續請假名單」：列出保留期間內每一段連續請假（給管理員評估退費）
+// body: { schoolId?, minDays?(預設 3), from?, to? } → 期間有重疊的才列出
+function actionListLeaveStreaks(body) {
+  requireSession(body.token, 'admin');
+  var today = today_();
+  var minDays = Math.max(1, Number(body.minDays) || LEAVE_STREAK_ALERT);
+  var oldest = dateStrDaysAgo_(RETENTION_DAYS);
+  var from = isDateStr_(body.from) ? String(body.from) : oldest;
+  var to = isDateStr_(body.to) ? String(body.to) : today;
+  var ctx = leaveStreakCtx_();
+  var schoolMap = {};
+  sheetToObjects(SHEET_SCHOOLS).forEach(function (sc) { schoolMap[sc.id] = sc.name; });
+  // 每位學生有出現過請假的才需要計算
+  var cand = {};
+  sheetToObjects(SHEET_ATTENDANCE).forEach(function (a) {
+    if (effectiveStatus_(a) !== 'leave' || String(a.date) < oldest) return;
+    if (body.schoolId && a.schoolId !== body.schoolId) return;
+    cand[a.studentId] = a.schoolId;
+  });
+  var stMap = {};
+  sheetToObjects(SHEET_STUDENTS).forEach(function (st) { stMap[st.id] = st; });
+  var dates = [];
+  for (var d = oldest; d <= today; d = nextDate_(d)) dates.push(d);
+  var out = [];
+  Object.keys(cand).forEach(function (sid) {
+    var run = [];
+    var close = function (ongoing) {
+      if (run.length >= minDays && run[run.length - 1] >= from && run[0] <= to) {
+        var st = stMap[sid];
+        var so = st ? studentOut_(st) : { name: '(已刪除的學生)', grade: '' };
+        out.push({
+          studentId: sid, schoolId: cand[sid], schoolName: schoolMap[cand[sid]] || '(已移除的學校)',
+          name: so.name, grade: String(so.grade), start: run[0], end: run[run.length - 1],
+          days: run.length, dates: run.slice(), ongoing: !!ongoing
+        });
+      }
+      run = [];
+    };
+    dates.forEach(function (d) {
+      var s = ctx.idx[d + '|' + sid];
+      if (s === 'leave') run.push(d);
+      else if (s === 'fixedOff') { /* 固定不進班：不中斷 */ }
+      else if (!s && (d === today || !ctx.isOpen(d) || (ctx.fixed[sid] || []).indexOf(weekdayOf(d)) !== -1)) { /* 今天還沒點名、放假日、固定不進班日：不中斷 */ }
+      else close(false);
+    });
+    close(true);
+  });
+  out.sort(function (a, b) {
+    return (b.ongoing - a.ongoing) || (b.days - a.days) ||
+      String(a.schoolName).localeCompare(String(b.schoolName), 'zh-Hant') ||
+      (gradeNum_(a.grade) - gradeNum_(b.grade)) || (classNum_(a.grade) - classNum_(b.grade)) ||
+      String(a.name).localeCompare(String(b.name), 'zh-Hant') || a.start.localeCompare(b.start);
+  });
+  return { ok: true, today: today, oldest: oldest, from: from, to: to, minDays: minDays, items: out };
+}
+
 function activeStudentsOf_(schoolId) {
   return sheetToObjects(SHEET_STUDENTS).filter(function (x) {
     return x.schoolId === schoolId && isActive_(x.active);
@@ -1085,7 +1178,7 @@ function overviewData_(schoolFilter, cutoff) {
   var attendance = sheetToObjects(SHEET_ATTENDANCE);
   var subIdx = submittersIndex_(cutoff, attendance);
 
-  var byDate = {};
+  var byDate = {}, leaveIds = {};
   attendance.forEach(function (a) {
     var d = String(a.date);
     if (d < cutoff) return;
@@ -1094,6 +1187,16 @@ function overviewData_(schoolFilter, cutoff) {
     var b = byDate[d][a.schoolId] = byDate[d][a.schoolId] || { present: 0, selfDrop: 0, selfWalk: 0, leave: 0, fixedOff: 0, marked: 0 };
     var st = effectiveStatus_(a);
     if (st) { b[st] = (b[st] || 0) + 1; b.marked++; }
+    if (st === 'leave') (leaveIds[d] = leaveIds[d] || []).push({ sid: a.studentId, school: a.schoolId });
+  });
+  // 每天各校「連續請假 3 天以上」的人數
+  var longLeave = {}, ctx = null;
+  Object.keys(leaveIds).forEach(function (d) {
+    ctx = ctx || leaveStreakCtx_();
+    var streaks = leaveStreaks_(d, leaveIds[d].map(function (x) { return x.sid; }), ctx);
+    leaveIds[d].forEach(function (x) {
+      if (streaks[x.sid] >= LEAVE_STREAK_ALERT) longLeave[d + '|' + x.school] = (longLeave[d + '|' + x.school] || 0) + 1;
+    });
   });
   byDate[today] = byDate[today] || {};
 
@@ -1113,7 +1216,8 @@ function overviewData_(schoolFilter, cutoff) {
       var item = {
         schoolId: sid, schoolName: schoolMap[sid] || '(已移除的學校)', total: total, submitted: !!b,
         present: 0, selfDrop: 0, selfWalk: 0, leave: 0, fixedOff: 0, attended: 0,
-        unmarked: total, submitters: subs, submittedAt: last ? last.at : null, submittedBy: last ? last.name : null
+        unmarked: total, submitters: subs, submittedAt: last ? last.at : null, submittedBy: last ? last.name : null,
+        longLeave: longLeave[date + '|' + sid] || 0
       };
       if (b) {
         item.present = b.present; item.selfDrop = b.selfDrop; item.selfWalk = b.selfWalk;
@@ -1158,6 +1262,8 @@ function actionGetDayLeaves(body) {
       markedBy: a.teacherName, markedAt: String(a.submittedAt)
     };
   });
+  var streaks = leaveStreaks_(date, leaves.map(function (x) { return x.id; }));
+  leaves.forEach(function (x) { x.leaveStreak = streaks[x.id] || 0; });
   leaves.sort(function (a, b) {
     return String(a.schoolName).localeCompare(String(b.schoolName), 'zh-Hant') ||
       (gradeNum_(a.grade) - gradeNum_(b.grade)) || (classNum_(a.grade) - classNum_(b.grade)) ||
@@ -1185,6 +1291,8 @@ function actionGetSchoolDayDetail(body) {
       markedBy: a && status ? a.teacherName : '', markedAt: a && status ? String(a.submittedAt) : ''
     };
   });
+  var streaks = leaveStreaks_(String(body.date), out.map(function (x) { return x.id; }));
+  out.forEach(function (x) { x.leaveStreak = streaks[x.id] || 0; });
   sortStudents(out);
   var submitters = submittersIndex_(String(body.date), rows)[String(body.date) + '|' + body.schoolId] || [];
   return { ok: true, students: out, submitters: submitters };
