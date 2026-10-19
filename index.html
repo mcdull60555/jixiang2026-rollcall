@@ -455,6 +455,9 @@ tr.lv-ongoing td{background:#fff7f7;}
   .lv-table td:nth-child(5){grid-column:3;grid-row:2;justify-self:end;}
   .lv-table td:nth-child(4){grid-column:1 / -1;grid-row:3;}
 }
+.past-tag{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:99px;background:#e2e8f0;color:#64748b;font-size:11.5px;font-weight:700;vertical-align:middle;}
+tr.day-past td{opacity:.6;}
+tr.day-past td:last-child{opacity:1;}
 </style>
 </head>
 <body>
@@ -1048,8 +1051,12 @@ async function loadDays(silent) {
   $('days-today').innerHTML = `<div class="${r.todayInfo.open ? 'banner-ok' : 'banner-closed'}">今天 ${mdw(r.today)}：${r.todayInfo.open ? '可以點名' : '不能點名'}（${r.todayInfo.label ? dayReasonText(r.todayInfo) : '一般上課日'}）</div>`;
   if (!$('day-date').value) $('day-date').value = r.today;
   updateDayDateStatus();
-  $('days-tbody').innerHTML = r.days.length ? r.days.map(x => `<tr>
-      <td><b>${esc(mdw(x.date))}</b><div class="marked-by">${esc(x.date.slice(0, 4))}</div></td>
+  // 排序：由最接近今天往下排 → 今天與之後的日期由近到遠，已過的日期放在後面（最近過去的在前）
+  const upcoming = r.days.filter(x => x.date >= r.today).sort((a, b) => a.date.localeCompare(b.date));
+  const past = r.days.filter(x => x.date < r.today).sort((a, b) => b.date.localeCompare(a.date));
+  const ordered = upcoming.concat(past);
+  $('days-tbody').innerHTML = ordered.length ? ordered.map(x => `<tr class="${x.date < r.today ? 'day-past' : ''}">
+      <td><b>${esc(mdw(x.date))}</b>${x.date === r.today ? '<span class="today-badge" style="margin-left:6px">今天</span>' : x.date < r.today ? '<span class="past-tag">已過</span>' : ''}<div class="marked-by">${esc(x.date.slice(0, 4))}</div></td>
       <td><span class="pill ${x.type === 'workday' ? 'st-present' : 'st-unmarked'}">${x.type === 'workday' ? '補班補課（可點名）' : '國定假日放假（不能點名）'}</span></td>
       <td>${esc(x.reason) || '-'}</td><td>${esc(x.createdBy || '-')}</td>
       <td><div class="day-actions"><button class="btn btn-secondary btn-sm" onclick="openEditDayModal('${esc(x.date)}')">修改</button>
