@@ -402,6 +402,12 @@
 .bd-range { background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; }
 .bd-range-title { font-weight: 700; color: #92400e; margin-bottom: 6px; font-size: 14px; }
 .day-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.ct-toggle{display:inline-flex;align-items:center;gap:4px;margin-top:4px;padding:3px 10px;border-radius:99px;border:1.5px solid #bae6fd;background:#f0f9ff;color:var(--sky);font-weight:700;font-size:13px;cursor:pointer;}
+.ct-toggle:hover{border-color:var(--sky);}
+.ct-toggle.open{background:var(--sky);border-color:var(--sky);color:#fff;}
+.ct-caret{transition:transform .15s;display:inline-block;}
+.ct-toggle.open .ct-caret{transform:rotate(180deg);}
+.ct-pop{margin-top:6px;padding:6px 10px;background:#f8fafc;border:1px solid var(--border);border-radius:8px;}
 </style>
 </head>
 <body>
@@ -1816,14 +1822,26 @@ function statusPillHtml(status, wasFixedOff) {
 // 備註框（放在狀態後面）
 function noteHtml(st) { return st.note ? `<div class="note-box">📝 ${esc(st.note)}</div>` : ''; }
 // noNote=true：備註不放在姓名欄（改放在狀態後面）
-function personCellHtml(st, fixedTag, noNote) {
+// collapse=true：聯絡資訊收在「聯絡人」按鈕裡，點擊後才展開（點名端用，節省版面）
+function personCellHtml(st, fixedTag, noNote, collapse) {
   const cs = primaryFirst(st.contacts);
   const contacts = cs.map(c => `<div>${c.primary && cs.length > 1 ? '<span class="pill-primary">主要</span>' : ''}${esc(c.rel || '聯絡人')} ${c.phone ? `<a href="tel:${esc(c.phone)}">${esc(c.phone)}</a>` : ''}</div>`).join('');
   return `<div class="p-name">${esc(st.name)}${fixedTag ? '<span class="fixed-tag">今日固定不進班</span>' : ''}</div>` +
     (!noNote && st.note ? `<div class="note-box">📝 ${esc(st.note)}</div>` : '') +
-    (contacts ? `<div class="primary-ct">${contacts}</div>` : '');
+    (!contacts ? '' : collapse
+      ? `<button type="button" class="ct-toggle" aria-expanded="false">📞 聯絡人（${cs.length}）<span class="ct-caret" aria-hidden="true">▾</span></button><div class="primary-ct ct-pop hidden">${contacts}</div>`
+      : `<div class="primary-ct">${contacts}</div>`);
 }
-function statusTableHtml(students) {
+// 點「聯絡人」按鈕：展開 / 收合（點名畫面與明細都適用）
+document.addEventListener('click', e => {
+  const b = e.target.closest('.ct-toggle');
+  if (!b) return;
+  const pop = b.nextElementSibling;
+  const open = pop.classList.toggle('hidden') === false;
+  b.setAttribute('aria-expanded', open);
+  b.classList.toggle('open', open);
+});
+function statusTableHtml(students, collapse) {
   const sorted = sortedByStatus(students);
   let html = '', cur = null;
   sorted.forEach(st => {
@@ -1832,7 +1850,7 @@ function statusTableHtml(students) {
       cur = k;
       html += `<tr class="grp ${statusClass(k)}"><td colspan="3">${statusLabel(k)}・${sorted.filter(x => (x.status || '') === k).length} 人</td></tr>`;
     }
-    html += `<tr><td><b>${esc(st.grade) || '-'}</b></td><td>${personCellHtml(st, false, true)}</td><td>${statusPillHtml(k, st.wasFixedOff || st.isFixedOff)}` +
+    html += `<tr><td><b>${esc(st.grade) || '-'}</b></td><td>${personCellHtml(st, false, true, collapse)}</td><td>${statusPillHtml(k, st.wasFixedOff || st.isFixedOff)}` +
       (st.markedBy ? `<div class="marked-by">${esc(st.markedBy)} ${esc(fmtClock(st.markedAt))}</div>` : '') + noteHtml(st) + '</td></tr>';
   });
   return `<div class="table-wrap"><table class="card-table"><thead><tr><th>年級班級</th><th>姓名 / 聯絡人</th><th>狀態 / 備註</th></tr></thead><tbody>
@@ -1887,7 +1905,7 @@ function renderRcView() {
   $('rollcall-banner').innerHTML = `<div class="banner-ok">✔ 今日已送出點名：${submittersText(rc.submitters)}` +
     (c.unmarked ? `　<span class="pill st-unmarked">尚有 ${c.unmarked} 位未點名</span>` : '') + '</div>';
   $('rollcall-container').innerHTML = `<h3 style="margin:4px 0 8px;font-size:16px">已送出的點名明細</h3>
-    <div class="rc-summary">${statsHtml(c, true)}</div>${statusTableHtml(rc.students)}`;
+    <div class="rc-summary">${statsHtml(c, true)}</div>${statusTableHtml(rc.students, true)}`;
   const wrap = $('rollcall-submit-wrap');
   wrap.innerHTML = '<button class="btn btn-edit" id="rollcall-edit-btn" onclick="loadRollCall(false, { edit: true })">修改點名單</button>';
   wrap.classList.remove('hidden');
@@ -1898,7 +1916,7 @@ function rcRowHtml(st) {
   return `
       <tr class="rc-row${st.isFixedOff ? ' fixed' : ''}" data-sid="${esc(st.id)}" data-name="${esc(st.name)}" data-fixed="${st.isFixedOff ? 1 : 0}" data-status="${esc(s)}">
         <td><b>${esc(st.grade) || '-'}</b></td>
-        <td>${personCellHtml(st, st.isFixedOff, true)}</td>
+        <td>${personCellHtml(st, st.isFixedOff, true, true)}</td>
         <td><div class="st-group" role="group" aria-label="${esc(st.name)} 出席狀態">
           ${PICK.map(k => `<button type="button" class="st-btn st-${k}${s === k ? ' on' : ''}" data-st="${k}" aria-pressed="${s === k}">${STATUS[k].label}</button>`).join('')}
         </div>${noteHtml(st)}</td>
