@@ -1765,7 +1765,8 @@ async function loadTeachers(silent) {
   tbody.innerHTML = r.teachers.length ? r.teachers.map(t => `
     <tr><td class="sel"><input type="checkbox" class="sel-box sel-tc" value="${esc(t.id)}"${STATE.selTeachers.has(t.id) ? ' checked' : ''} aria-label="選取 ${esc(t.username)}"></td>
     <td>${esc(t.name)}</td><td><b>${esc(t.username)}</b></td>
-    <td><button class="icon-btn" title="刪除" aria-label="刪除 ${esc(t.username)}" onclick="deleteTeacher('${esc(t.id)}')">🗑️</button></td></tr>`).join('')
+    <td style="white-space:nowrap"><button class="icon-btn" title="編輯" aria-label="編輯 ${esc(t.username)}" onclick="openEditTeacherModal('${esc(t.id)}')">✏️</button>
+      <button class="icon-btn" title="刪除" aria-label="刪除 ${esc(t.username)}" onclick="deleteTeacher('${esc(t.id)}')">🗑️</button></td></tr>`).join('')
     : '<tr><td colspan="4" class="empty">尚無老師帳號</td></tr>';
   updateBulk('tc');
 }
@@ -1800,6 +1801,35 @@ async function openTeacherModal() {
 }
 
 function deleteTeacher(id) { return deleteTeachersByIds([id]); }
+
+function openEditTeacherModal(id) {
+  const t = (STATE.teachers || []).find(x => x.id === id);
+  if (!t) return;
+  const modal = buildModal('編輯老師帳號', `
+    <div class="field"><label for="m-tc-name">老師姓名</label><input id="m-tc-name" value="${esc(t.name)}"></div>
+    <div class="field"><label for="m-tc-username">登入帳號</label><input id="m-tc-username" value="${esc(t.username)}"></div>
+    <div class="field"><label for="m-tc-password">重設密碼（選填）</label><input id="m-tc-password" placeholder="留空表示不變更密碼" autocomplete="new-password">
+      <div class="hint" style="margin:4px 0 0">重設密碼後，這位老師已登入的裝置會被登出，需用新密碼重新登入。</div></div>
+  `, async () => {
+    const name = $('m-tc-name').value.trim();
+    const username = $('m-tc-username').value.trim();
+    const password = $('m-tc-password').value.trim();
+    if (!name) { toast('請填寫老師姓名', true); return false; }
+    if (!username) { toast('請填寫登入帳號', true); return false; }
+    if (name === t.name && username === t.username && !password) return true;   // 沒有變更
+    if (username !== t.username || password) {
+      const lines = [];
+      if (username !== t.username) lines.push(`登入帳號：<b>${esc(t.username)}</b> → <b>${esc(username)}</b>（之後要用新帳號登入）`);
+      if (password) lines.push('重設密碼：已登入的裝置會被<b>登出</b>');
+      const ok = await confirmBox('確認修改老師帳號', `確定修改 <b>${esc(t.name)}</b> 的帳號嗎？<br>${lines.join('<br>')}`, '確定修改');
+      if (!ok) return false;
+    }
+    const r = await doWrite('editTeacher', { teacherId: id, name, username, password }, () => Promise.all([loadTeachers(true), loadLoginAccounts()]),
+      res => res.passwordReset ? '同步成功（密碼已重設' + (res.loggedOut ? `，已登出 ${res.loggedOut} 個裝置` : '') + '）' : '同步成功');
+    return !!r;
+  }, { confirmText: '儲存修改' });
+  modal.querySelector('#m-tc-name').focus();
+}
 
 /* ---------------- 點名總覽（管理員） ---------------- */
 function statsHtml(s, withTotal) {

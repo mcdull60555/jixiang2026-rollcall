@@ -353,7 +353,7 @@ function route(body) {
     editSchool: actionEditSchool, deleteSchool: actionDeleteSchool, getDayLeaves: actionGetDayLeaves,
     listStudents: actionListStudents, addStudent: actionAddStudent, addStudentsBatch: actionAddStudentsBatch,
     editStudent: actionEditStudent, deleteStudent: actionDeleteStudent, deleteStudentsBatch: actionDeleteStudentsBatch,
-    listTeachers: actionListTeachers, addTeacher: actionAddTeacher,
+    listTeachers: actionListTeachers, addTeacher: actionAddTeacher, editTeacher: actionEditTeacher,
     deleteTeacher: actionDeleteTeacher, deleteTeachersBatch: actionDeleteTeachersBatch,
     getRollCall: actionGetRollCall, submitAttendance: actionSubmitAttendance,
     getDayInfo: actionGetDayInfo, listSpecialDays: actionListSpecialDays,
@@ -365,7 +365,7 @@ function route(body) {
   // 會寫入試算表的動作：一律在全域鎖內執行（多人同時操作也不會互相覆蓋）
   var WRITES = ['login', 'logout', 'changePwd', 'addContactType', 'addSchool', 'addSchoolsBatch', 'editSchool', 'deleteSchool',
     'addStudent', 'addStudentsBatch', 'editStudent', 'deleteStudent', 'deleteStudentsBatch',
-    'addTeacher', 'deleteTeacher', 'deleteTeachersBatch', 'submitAttendance', 'setSpecialDay', 'deleteSpecialDay',
+    'addTeacher', 'editTeacher', 'deleteTeacher', 'deleteTeachersBatch', 'submitAttendance', 'setSpecialDay', 'deleteSpecialDay',
     'setSpecialDaysBatch', 'editSpecialDay'];
   var fn = ACTIONS[action];
   if (!fn) return { ok: false, error: 'UNKNOWN_ACTION' };
@@ -487,6 +487,39 @@ function actionAddTeacher(body) {
     });
     return { ok: true, id: id, username: username };
   });
+}
+
+// 編輯老師帳號：姓名、登入帳號、重設密碼（選填）
+// 重設密碼 → 這位老師所有已登入的裝置都會被登出；只改姓名/帳號 → 已登入的裝置繼續使用並套用新姓名
+function actionEditTeacher(body) {
+  requireSession(body.token, 'admin');
+  var all = sheetToObjects(SHEET_TEACHERS);
+  var t = all.filter(function (x) { return x.id === body.teacherId && isActive_(x.active); })[0];
+  if (!t) return { ok: false, error: 'TEACHER_NOT_FOUND' };
+  var name = String(body.name || '').trim();
+  if (!name) return { ok: false, error: 'NAME_REQUIRED' };
+  var username = String(body.username || '').trim();
+  if (!username) return { ok: false, error: 'USERNAME_REQUIRED' };
+  var lower = username.toLowerCase();
+  var taken = all.filter(function (x) { return x.id !== t.id && isActive_(x.active); }).concat(sheetToObjects(SHEET_ADMINS))
+    .some(function (u) { return String(u.username).toLowerCase() === lower; });
+  if (taken) return { ok: false, error: 'USERNAME_TAKEN' };
+  var newPwd = String(body.password || '').trim();
+  var row = Object.assign({}, t, { name: name, username: username });
+  if (newPwd) row.password = hashPwd(newPwd);
+  delete row._row;
+  updateObjectByRow(SHEET_TEACHERS, t._row, row);
+  // 已登入的裝置：重設密碼就登出，否則更新登入資料中的姓名與帳號
+  var cache = CacheService.getScriptCache();
+  var sessions = sheetToObjects(SHEET_SESSIONS).filter(function (x) { return x.userId === t.id; });
+  cache.removeAll(sessions.map(function (x) { return 'sess_' + x.token; }).concat(['user_' + t.id]));
+  if (newPwd) deleteRows_(SHEET_SESSIONS, sessions);
+  else sessions.forEach(function (x) {
+    var o = Object.assign({}, x, { name: name, username: username });
+    delete o._row;
+    updateObjectByRow(SHEET_SESSIONS, x._row, o);
+  });
+  return { ok: true, passwordReset: !!newPwd, loggedOut: newPwd ? sessions.length : 0 };
 }
 
 function deleteRows_(sheetName, rowObjs) {
