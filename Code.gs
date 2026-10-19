@@ -18,7 +18,7 @@ var SPREADSHEET_ID = '1Xk5mxGTzRDmsLlbag6dkHn6420n6ZLUP59z6QefTjKo';      // 試
 var RETENTION_DAYS = 40;      // 點名紀錄保留天數：超過 40 天的舊資料於每天凌晨 3 點自動清除
 var SESSION_HOURS = 12;       // 登入 token 最長有效時數 (前端另外有閒置 60 分鐘自動登出)
 var TZ = 'Asia/Taipei';
-var SCHEMA_VERSION = 'schema_v6';
+var SCHEMA_VERSION = 'schema_v7';
 var DEFAULT_CONTACT_TYPES = ['爸爸', '媽媽', '住家'];
 var VALID_STATUS = ['present', 'selfDrop', 'selfWalk', 'leave', 'fixedOff', ''];
 
@@ -31,19 +31,23 @@ var SHEET_SESSIONS = 'Sessions';
 var SHEET_SETTINGS = 'Settings';
 var SHEET_SUBMISSIONS = 'Submissions';
 var SHEET_SPECIAL = 'SpecialDays';
+var SHEET_BOOKINGS = 'LeaveBookings';
 
 var HEADERS = {
   Admins: ['id', 'username', 'password', 'name'],
   Teachers: ['id', 'username', 'password', 'name', 'active', 'createdAt'],
   Schools: ['id', 'name', 'createdAt', 'active'],
   Students: ['id', 'schoolId', 'name', 'grade', 'contacts', 'fixedOffDays', 'active', 'createdAt', 'note'],
-  Attendance: ['id', 'date', 'schoolId', 'studentId', 'status', 'selfDrop', 'selfWalk', 'teacherId', 'teacherName', 'submittedAt', 'wasFixedOff'],
+  // auto=true：這筆狀態是系統預設值（預約請假 / 固定不進班），老師沒有改過
+  Attendance: ['id', 'date', 'schoolId', 'studentId', 'status', 'selfDrop', 'selfWalk', 'teacherId', 'teacherName', 'submittedAt', 'wasFixedOff', 'auto'],
   Sessions: ['token', 'userId', 'role', 'name', 'username', 'createdAt', 'expiresAt'],
   Settings: ['key', 'value'],
   // 每次送出點名的紀錄：同一天同一校可能上午 A 老師、下午 B 老師分批送出
   Submissions: ['id', 'date', 'schoolId', 'teacherId', 'teacherName', 'submittedAt', 'count'],
   // 點名日設定：workday=補班補課（週末可點名）、holiday=國定假日放假（不能點名）
-  SpecialDays: ['date', 'type', 'reason', 'createdBy', 'createdAt']
+  SpecialDays: ['date', 'type', 'reason', 'createdBy', 'createdAt'],
+  // 預約請假：家長事先告知的請假期間（管理員與老師都可以登記）
+  LeaveBookings: ['id', 'schoolId', 'studentId', 'startDate', 'endDate', 'reason', 'createdBy', 'createdRole', 'createdAt', 'updatedBy', 'updatedAt']
 };
 
 // ---------- 初始化 ----------
@@ -168,7 +172,7 @@ function weekdayOf(dateStr) {
 
 // 試算表若不小心把文字轉成日期，讀取時轉回字串
 function fromDateCell_(v, header) {
-  if (header === 'date') return Utilities.formatDate(v, ss_().getSpreadsheetTimeZone(), 'yyyy-MM-dd');
+  if (header === 'date' || header === 'startDate' || header === 'endDate') return Utilities.formatDate(v, ss_().getSpreadsheetTimeZone(), 'yyyy-MM-dd');
   return v.toISOString();
 }
 
@@ -359,6 +363,7 @@ function route(body) {
     getDayInfo: actionGetDayInfo, listSpecialDays: actionListSpecialDays,
     setSpecialDay: actionSetSpecialDay, deleteSpecialDay: actionDeleteSpecialDay,
     setSpecialDaysBatch: actionSetSpecialDaysBatch, editSpecialDay: actionEditSpecialDay,
+    listBookings: actionListBookings, saveBooking: actionSaveBooking, deleteBooking: actionDeleteBooking,
     getOverview: actionGetOverview, getSchoolDayDetail: actionGetSchoolDayDetail,
     listLeaveStreaks: actionListLeaveStreaks
   };
@@ -366,7 +371,7 @@ function route(body) {
   var WRITES = ['login', 'logout', 'changePwd', 'addContactType', 'addSchool', 'addSchoolsBatch', 'editSchool', 'deleteSchool',
     'addStudent', 'addStudentsBatch', 'editStudent', 'deleteStudent', 'deleteStudentsBatch',
     'addTeacher', 'editTeacher', 'deleteTeacher', 'deleteTeachersBatch', 'submitAttendance', 'setSpecialDay', 'deleteSpecialDay',
-    'setSpecialDaysBatch', 'editSpecialDay'];
+    'setSpecialDaysBatch', 'editSpecialDay', 'saveBooking', 'deleteBooking'];
   var fn = ACTIONS[action];
   if (!fn) return { ok: false, error: 'UNKNOWN_ACTION' };
   if (WRITES.indexOf(action) !== -1) return withLock_(function () { return fn(body); });
@@ -939,6 +944,103 @@ function actionEditSpecialDay(body) {
   return { ok: true, day: dayInfo_(newDate) };
 }
 
+// ---------- 預約請假 ----------
+var BOOKING_MAX_DAYS = 120;   // 一次最多登記 120 天
+function bookings_() {
+  return sheetToObjects(SHEET_BOOKINGS).map(function (b) {
+    return { id: String(b.id), schoolId: String(b.schoolId), studentId: String(b.studentId), startDate: String(b.startDate),
+      endDate: String(b.endDate), reason: String(b.reason || ''), createdBy: String(b.createdBy || ''), createdRole: String(b.createdRole || ''),
+      createdAt: String(b.createdAt || ''), updatedBy: String(b.updatedBy || ''), _row: b._row };
+  });
+}
+function bookingBrief_(b) { return { id: b.id, startDate: b.startDate, endDate: b.endDate, reason: b.reason }; }
+// 預約期間實際請假的上課日（扣除例假日、國定假日、學生固定不進班）
+function bookingDays_(ctx, sid, start, end) {
+  var out = [];
+  for (var d = start; d <= end && out.length <= 400; d = nextDate_(d)) if (ctx.isOpen(d) && !ctx.isFixed(sid, d)) out.push(d);
+  return out;
+}
+function bookingOut_(ctx, b, schoolMap) {
+  var st = ctx.stMap[b.studentId];
+  var so = st ? studentOut_(st) : { name: '(已刪除的學生)', grade: '' };
+  var today = ctx.today;
+  var state = b.endDate < today ? 'past' : (b.startDate <= today ? 'ongoing' : 'upcoming');
+  return Object.assign(bookingBrief_(b), {
+    schoolId: b.schoolId, schoolName: schoolMap[b.schoolId] || '(已移除的學校)', studentId: b.studentId,
+    name: so.name, grade: String(so.grade), days: bookingDays_(ctx, b.studentId, b.startDate, b.endDate).length,
+    createdBy: b.createdBy, createdRole: b.createdRole, updatedBy: b.updatedBy, state: state
+  });
+}
+
+// 列出預約請假（管理員與老師都可以看）；body: { schoolId?, includePast? }
+function actionListBookings(body) {
+  requireSession(body.token);
+  var ctx = statusCtx_();
+  var schoolMap = {};
+  sheetToObjects(SHEET_SCHOOLS).forEach(function (sc) { schoolMap[sc.id] = sc.name; });
+  var items = bookings_().filter(function (b) {
+    var st = ctx.stMap[b.studentId];
+    if (!st || !isActive_(st.active)) return false;
+    if (body.schoolId && b.schoolId !== body.schoolId) return false;
+    return body.includePast || b.endDate >= ctx.today;
+  }).map(function (b) { return bookingOut_(ctx, b, schoolMap); });
+  var rank = { ongoing: 0, upcoming: 1, past: 2 };
+  items.sort(function (a, b) {
+    return (rank[a.state] - rank[b.state]) ||
+      (a.state === 'past' ? b.endDate.localeCompare(a.endDate) : a.startDate.localeCompare(b.startDate)) ||
+      String(a.schoolName).localeCompare(String(b.schoolName), 'zh-Hant') || (gradeNum_(a.grade) - gradeNum_(b.grade)) ||
+      (classNum_(a.grade) - classNum_(b.grade)) || String(a.name).localeCompare(String(b.name), 'zh-Hant');
+  });
+  return { ok: true, today: ctx.today, oldest: dateStrDaysAgo_(RETENTION_DAYS), items: items };
+}
+
+// 新增或修改預約請假；body: { id?, studentId, startDate, endDate, reason }
+// 老師只能登記今天以後的日期，已經開始的預約要請管理員修改
+function actionSaveBooking(body) {
+  var s = requireSession(body.token);
+  var isAdmin = s.role === 'admin';
+  var ctx = statusCtx_();
+  var today = ctx.today;
+  var start = String(body.startDate || ''), end = String(body.endDate || body.startDate || '');
+  if (!isDateStr_(start) || !isDateStr_(end)) return { ok: false, error: 'DATE_REQUIRED' };
+  if (end < start) return { ok: false, error: 'BOOKING_RANGE' };
+  var st = ctx.stMap[String(body.studentId || '')];
+  if (!st || !isActive_(st.active)) return { ok: false, error: 'STUDENT_NOT_FOUND' };
+  var all = bookings_();
+  var old = body.id ? all.filter(function (b) { return b.id === String(body.id); })[0] : null;
+  if (body.id && !old) return { ok: false, error: 'BOOKING_NOT_FOUND' };
+  if (!isAdmin) {
+    if (old && old.startDate < today) return { ok: false, error: 'BOOKING_STARTED' };
+    if (start < today) return { ok: false, error: 'BOOKING_PAST' };
+  } else if (start < dateStrDaysAgo_(RETENTION_DAYS)) return { ok: false, error: 'BOOKING_TOO_OLD' };
+  if ((Date.parse(end) - Date.parse(start)) / 86400000 + 1 > BOOKING_MAX_DAYS) return { ok: false, error: 'BOOKING_TOO_LONG' };
+  var clash = all.filter(function (b) {
+    return b.studentId === st.id && (!old || b.id !== old.id) && b.startDate <= end && start <= b.endDate;
+  })[0];
+  if (clash) return { ok: false, error: 'BOOKING_OVERLAP', clash: bookingBrief_(clash) };
+  var days = bookingDays_(ctx, st.id, start, end);
+  if (!days.length) return { ok: false, error: 'BOOKING_NO_DAYS' };
+  var now = new Date().toISOString();
+  var row = {
+    id: old ? old.id : genId('BK'), schoolId: st.schoolId, studentId: st.id, startDate: start, endDate: end,
+    reason: String(body.reason || '').trim().slice(0, 30),
+    createdBy: old ? old.createdBy : s.name, createdRole: old ? old.createdRole : s.role, createdAt: old ? old.createdAt : now,
+    updatedBy: old ? s.name : '', updatedAt: old ? now : ''
+  };
+  if (old) updateObjectByRow(SHEET_BOOKINGS, old._row, row);
+  else appendObject(SHEET_BOOKINGS, row);
+  return { ok: true, id: row.id, days: days.length, startDate: start, endDate: end };
+}
+
+function actionDeleteBooking(body) {
+  var s = requireSession(body.token);
+  var b = bookings_().filter(function (x) { return x.id === String(body.id || ''); })[0];
+  if (!b) return { ok: false, error: 'BOOKING_NOT_FOUND' };
+  if (s.role !== 'admin' && b.startDate < today_()) return { ok: false, error: 'BOOKING_STARTED' };
+  deleteRows_(SHEET_BOOKINGS, [b]);
+  return { ok: true };
+}
+
 // ---------- 點名 ----------
 // 自送/自走本身就是一種出席狀態；相容舊資料(狀態=到班 + 自送/自走旗標)
 function effectiveStatus_(a) {
@@ -954,28 +1056,64 @@ function effectiveStatus_(a) {
 // 當天必須是請假，往前遇到出席或沒有點名紀錄就停止。回傳 { studentId: 天數 }
 var LEAVE_STREAK_ALERT = 3;
 function prevDate_(d) { return Utilities.formatDate(new Date(Date.parse(d + 'T12:00:00+08:00') - 86400000), TZ, 'yyyy-MM-dd'); }
-function leaveStreakCtx_() {
-  var idx = {};
-  sheetToObjects(SHEET_ATTENDANCE).forEach(function (a) { idx[String(a.date) + '|' + a.studentId] = effectiveStatus_(a); });
-  var fixed = {};
-  sheetToObjects(SHEET_STUDENTS).forEach(function (st) { fixed[st.id] = studentOut_(st).fixedOffDays; });
-  var sp = specialDays_(), openCache = {};
-  return { idx: idx, fixed: fixed, isOpen: function (d) { if (!(d in openCache)) openCache[d] = dayInfo_(d, sp).open; return openCache[d]; } };
+// ---------- 每位學生每天的狀態（全系統共用同一套判斷）----------
+// 1. 老師點過的狀態（到班、自送、自走、請假）優先
+// 2. 預約請假期間（只算可以點名、且不是學生固定不進班的日子）→ 請假，老師沒送出也算
+// 3. 今天：跟著學生目前的固定不進班設定；過去的日子：照當天的紀錄
+function statusCtx_() {
+  var today = today_();
+  var rec = {};
+  sheetToObjects(SHEET_ATTENDANCE).forEach(function (a) { rec[String(a.date) + '|' + a.studentId] = a; });
+  var fixed = {}, stMap = {};
+  sheetToObjects(SHEET_STUDENTS).forEach(function (st) { fixed[st.id] = parseDays_(st.fixedOffDays); stMap[st.id] = st; });
+  var sp = specialDays_(), openCache = {}, wdCache = {};
+  var wdOf = function (d) { if (!(d in wdCache)) wdCache[d] = weekdayOf(d); return wdCache[d]; };
+  var isOpen = function (d) { if (!(d in openCache)) openCache[d] = dayInfo_(d, sp).open; return openCache[d]; };
+  var isFixed = function (sid, d) { return (fixed[sid] || []).indexOf(wdOf(d)) !== -1; };
+  var bk = {};
+  bookings_().forEach(function (b) { (bk[b.studentId] = bk[b.studentId] || []).push(b); });
+  var bookingOn = function (sid, d) {
+    var list = bk[sid] || [];
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].startDate <= d && d <= list[i].endDate) return (isOpen(d) && !isFixed(sid, d)) ? list[i] : null;
+    }
+    return null;
+  };
+  var teacherSet = function (a) {   // 老師親自點的狀態（不含系統預設值）
+    if (!a) return '';
+    var v = effectiveStatus_(a);
+    return v && v !== 'fixedOff' && !isTrue_(a.auto) ? v : '';
+  };
+  var status = function (sid, d) {
+    var a = rec[d + '|' + sid];
+    var mine = teacherSet(a);
+    if (mine) return mine;
+    if (bookingOn(sid, d)) return 'leave';
+    if (d === today) return isFixed(sid, d) ? 'fixedOff' : '';
+    var saved = a ? effectiveStatus_(a) : '';
+    if (saved === 'fixedOff') return 'fixedOff';
+    if (a && isTrue_(a.auto) && saved === 'leave') return '';   // 預約請假後來被取消
+    return saved;
+  };
+  // 系統預設值：預約請假 > 固定不進班
+  var defaultOf = function (sid, d) { return bookingOn(sid, d) ? 'leave' : (isFixed(sid, d) ? 'fixedOff' : ''); };
+  return { today: today, rec: rec, fixed: fixed, stMap: stMap, isOpen: isOpen, isFixed: isFixed, wdOf: wdOf,
+    bookings: bk, bookingOn: bookingOn, teacherSet: teacherSet, status: status, defaultOf: defaultOf };
 }
+function leaveStreakCtx_() { return statusCtx_(); }
 function leaveStreaks_(date, studentIds, ctx) {
   var out = {};
   if (!studentIds.length) return out;
-  ctx = ctx || leaveStreakCtx_();
-  var idx = ctx.idx, fixed = ctx.fixed, isOpen = ctx.isOpen;
+  ctx = ctx || statusCtx_();
   var oldest = dateStrDaysAgo_(RETENTION_DAYS + 1);
   studentIds.forEach(function (sid) {
-    if (idx[date + '|' + sid] !== 'leave') return;
+    if (ctx.status(sid, date) !== 'leave') return;
     var n = 0, d = date;
     while (d >= oldest) {
-      var st = idx[d + '|' + sid];
+      var st = ctx.status(sid, d);
       if (st === 'leave') n++;
       else if (st === 'fixedOff') { /* 固定不進班：不中斷也不計入 */ }
-      else if (!st && (!isOpen(d) || (fixed[sid] || []).indexOf(weekdayOf(d)) !== -1)) { /* 放假日或固定不進班日沒點名：跳過 */ }
+      else if (!st && (!ctx.isOpen(d) || ctx.isFixed(sid, d))) { /* 放假日或固定不進班日沒點名：跳過 */ }
       else break;
       d = prevDate_(d);
     }
@@ -995,23 +1133,29 @@ function actionListLeaveStreaks(body) {
   var oldest = dateStrDaysAgo_(RETENTION_DAYS);
   var from = isDateStr_(body.from) ? String(body.from) : oldest;
   var to = isDateStr_(body.to) ? String(body.to) : today;
-  var ctx = leaveStreakCtx_();
+  var ctx = statusCtx_();
   var schoolMap = {};
   sheetToObjects(SHEET_SCHOOLS).forEach(function (sc) { schoolMap[sc.id] = sc.name; });
-  // 每位學生有出現過請假的才需要計算
+  // 有出現過請假紀錄或預約請假的學生才需要計算
   var cand = {};
   sheetToObjects(SHEET_ATTENDANCE).forEach(function (a) {
     if (effectiveStatus_(a) !== 'leave' || String(a.date) < oldest) return;
     if (body.schoolId && a.schoolId !== body.schoolId) return;
     cand[a.studentId] = a.schoolId;
   });
-  var stMap = {};
-  sheetToObjects(SHEET_STUDENTS).forEach(function (st) { stMap[st.id] = st; });
+  Object.keys(ctx.bookings).forEach(function (sid) {
+    ctx.bookings[sid].forEach(function (b) {
+      if (b.endDate < oldest || b.startDate > today) return;
+      if (body.schoolId && b.schoolId !== body.schoolId) return;
+      cand[sid] = cand[sid] || b.schoolId;
+    });
+  });
+  var stMap = ctx.stMap;
   var dates = [];
   for (var d = oldest; d <= today; d = nextDate_(d)) dates.push(d);
   var out = [];
   Object.keys(cand).forEach(function (sid) {
-    var run = [];
+    var run = [], booked = [];
     var close = function (ongoing) {
       if (run.length >= minDays && run[run.length - 1] >= from && run[0] <= to) {
         var st = stMap[sid];
@@ -1019,16 +1163,16 @@ function actionListLeaveStreaks(body) {
         out.push({
           studentId: sid, schoolId: cand[sid], schoolName: schoolMap[cand[sid]] || '(已移除的學校)',
           name: so.name, grade: String(so.grade), start: run[0], end: run[run.length - 1],
-          days: run.length, dates: run.slice(), ongoing: !!ongoing
+          days: run.length, dates: run.slice(), bookedDates: booked.slice(), ongoing: !!ongoing
         });
       }
-      run = [];
+      run = []; booked = [];
     };
     dates.forEach(function (d) {
-      var s = ctx.idx[d + '|' + sid];
-      if (s === 'leave') run.push(d);
+      var s = ctx.status(sid, d);
+      if (s === 'leave') { run.push(d); if (ctx.bookingOn(sid, d) && !ctx.teacherSet(ctx.rec[d + '|' + sid])) booked.push(d); }
       else if (s === 'fixedOff') { /* 固定不進班：不中斷 */ }
-      else if (!s && (d === today || !ctx.isOpen(d) || (ctx.fixed[sid] || []).indexOf(weekdayOf(d)) !== -1)) { /* 今天還沒點名、放假日、固定不進班日：不中斷 */ }
+      else if (!s && (d === today || !ctx.isOpen(d) || ctx.isFixed(sid, d))) { /* 今天還沒點名、放假日、固定不進班日：不中斷 */ }
       else close(false);
     });
     close(true);
@@ -1102,17 +1246,19 @@ function actionGetRollCall(body) {
   var attMap = {};
   attendance.forEach(function (a) { attMap[a.studentId] = a; });
 
+  var ctx = statusCtx_();
   var out = activeStudentsOf_(schoolId).map(function (st) {
     var so = studentOut_(st);
     var isFixedOff = so.fixedOffDays.indexOf(wd) !== -1;
     var existing = attMap[st.id];
     var primary = so.contacts.filter(function (c) { return c.primary; })[0] || null;
-    var saved = existing ? effectiveStatus_(existing) : '';
-    var status = todayStatus_(saved, isFixedOff);
-    var byTeacher = existing && status && status === saved;   // 系統自動判斷的不顯示點名老師
+    var status = ctx.status(st.id, date);
+    var byTeacher = !!ctx.teacherSet(existing);   // 系統自動判斷的不顯示點名老師
+    var bk = ctx.bookingOn(st.id, date);
     return {
       id: so.id, name: so.name, grade: so.grade, isFixedOff: isFixedOff, primaryContact: primary,
-      contacts: so.contacts, note: so.note, status: status,
+      contacts: so.contacts, note: so.note, status: status, defaultStatus: ctx.defaultOf(st.id, date), fixedOffDays: so.fixedOffDays,
+      booking: bk ? bookingBrief_(bk) : null,
       markedBy: byTeacher ? existing.teacherName : '', markedAt: byTeacher ? String(existing.submittedAt) : ''
     };
   });
@@ -1147,6 +1293,7 @@ function actionSubmitAttendance(body) {
       valid[st.id] = true;
       if (parseDays_(st.fixedOffDays).indexOf(wd) !== -1) fixedToday[st.id] = true;
     });
+    var ctx = statusCtx_();
 
     var sheet = sheet_(SHEET_ATTENDANCE);
     var values = sheet.getDataRange().getValues();
@@ -1180,13 +1327,17 @@ function actionSubmitAttendance(body) {
         date: date, schoolId: schoolId, studentId: r.studentId, status: status,
         selfDrop: status === 'selfDrop', selfWalk: status === 'selfWalk',
         teacherId: s.userId, teacherName: s.name, submittedAt: now,
-        wasFixedOff: !!fixedToday[r.studentId]   // 今天本來是固定不進班（之後若改為到班，明細會標示）
+        wasFixedOff: !!fixedToday[r.studentId],   // 今天本來是固定不進班（之後若改為到班，明細會標示）
+        auto: false
       };
+      // 與系統預設值（預約請假 / 固定不進班）相同 → 標記為預設值，之後取消預約或設定時會跟著更新
+      var def = ctx.defaultOf(r.studentId, date);
+      rec.auto = !!def && status === def;
       if (rowOf[r.studentId] !== undefined) {
         var row = values[rowOf[r.studentId]];
         var old = {};
         headers.forEach(function (h, c) { old[h] = row[c]; });
-        if (effectiveStatus_(old) === status) return;
+        if (effectiveStatus_(old) === status && isTrue_(old.auto) === rec.auto) return;
         rec.id = row[idx.id];
         headers.forEach(function (h, c) { row[c] = toCell_(rec[h]); });
         changed = true;
@@ -1224,43 +1375,59 @@ function overviewData_(schoolFilter, cutoff) {
   var attendance = sheetToObjects(SHEET_ATTENDANCE);
   var subIdx = submittersIndex_(cutoff, attendance);
 
-  var byDate = {}, leaveIds = {};
+  var ctx = statusCtx_();
+  var byDate = {}, leaveIds = {}, hasRec = {};
+  var bucket = function (d, sid) {
+    byDate[d] = byDate[d] || {};
+    return byDate[d][sid] = byDate[d][sid] || { present: 0, selfDrop: 0, selfWalk: 0, leave: 0, fixedOff: 0, marked: 0 };
+  };
+  var count = function (b, d, studentId, schoolId, st) {
+    if (st) { b[st] = (b[st] || 0) + 1; b.marked++; }
+    if (st === 'leave') (leaveIds[d] = leaveIds[d] || []).push({ sid: studentId, school: schoolId });
+  };
   attendance.forEach(function (a) {
     var d = String(a.date);
-    if (d < cutoff) return;
+    if (d < cutoff || d > today) return;
     if (schoolFilter && a.schoolId !== schoolFilter) return;
-    byDate[d] = byDate[d] || {};
-    var b = byDate[d][a.schoolId] = byDate[d][a.schoolId] || { present: 0, selfDrop: 0, selfWalk: 0, leave: 0, fixedOff: 0, marked: 0 };
-    var st = effectiveStatus_(a);
-    if (st) { b[st] = (b[st] || 0) + 1; b.marked++; }
-    if (st === 'leave') (leaveIds[d] = leaveIds[d] || []).push({ sid: a.studentId, school: a.schoolId });
+    hasRec[d + '|' + a.schoolId] = true;
+    count(bucket(d, a.schoolId), d, a.studentId, a.schoolId, ctx.status(a.studentId, d));
+  });
+  // 預約請假：當天沒有點名紀錄也算請假
+  Object.keys(ctx.bookings).forEach(function (sid) {
+    var st = ctx.stMap[sid];
+    if (!st || !isActive_(st.active) || (schoolFilter && st.schoolId !== schoolFilter)) return;
+    ctx.bookings[sid].forEach(function (bk) {
+      var from = bk.startDate < cutoff ? cutoff : bk.startDate, to = bk.endDate > today ? today : bk.endDate;
+      for (var d = from; d <= to; d = nextDate_(d)) {
+        if (ctx.rec[d + '|' + sid] || d === today || !ctx.bookingOn(sid, d)) continue;   // 今天另外計算
+        count(bucket(d, st.schoolId), d, sid, st.schoolId, 'leave');
+      }
+    });
+  });
+  // 今天：依學生目前的設定與預約重新計算
+  var schoolStudents = {};
+  sheetToObjects(SHEET_STUDENTS).forEach(function (st) {
+    if (isActive_(st.active)) (schoolStudents[st.schoolId] = schoolStudents[st.schoolId] || []).push(st);
+  });
+  activeIds.forEach(function (sid) {
+    if (schoolFilter && schoolFilter !== sid) return;
+    var list = schoolStudents[sid] || [];
+    var anyBooked = list.some(function (st) { return ctx.bookingOn(st.id, today); });
+    if (!hasRec[today + '|' + sid] && !anyBooked) return;
+    var b = { present: 0, selfDrop: 0, selfWalk: 0, leave: 0, fixedOff: 0, marked: 0 };
+    leaveIds[today] = (leaveIds[today] || []).filter(function (x) { return x.school !== sid; });
+    list.forEach(function (st) { count(b, today, st.id, sid, ctx.status(st.id, today)); });
+    byDate[today] = byDate[today] || {};
+    byDate[today][sid] = b;
   });
   // 每天各校「連續請假 3 天以上」的人數
-  var longLeave = {}, ctx = null;
+  var longLeave = {};
   Object.keys(leaveIds).forEach(function (d) {
-    ctx = ctx || leaveStreakCtx_();
     var streaks = leaveStreaks_(d, leaveIds[d].map(function (x) { return x.sid; }), ctx);
     leaveIds[d].forEach(function (x) {
       if (streaks[x.sid] >= LEAVE_STREAK_ALERT) longLeave[d + '|' + x.school] = (longLeave[d + '|' + x.school] || 0) + 1;
     });
   });
-  // 今天的統計：依學生目前的固定不進班設定重新計算（管理員當天修改設定也會立即反映）
-  if (byDate[today]) {
-    var wdToday = weekdayOf(today), todayRec = {};
-    attendance.forEach(function (a) { if (String(a.date) === today) todayRec[a.studentId] = effectiveStatus_(a); });
-    var schoolStudents = {};
-    sheetToObjects(SHEET_STUDENTS).forEach(function (st) {
-      if (isActive_(st.active)) (schoolStudents[st.schoolId] = schoolStudents[st.schoolId] || []).push(st);
-    });
-    Object.keys(byDate[today]).forEach(function (sid) {
-      var b = { present: 0, selfDrop: 0, selfWalk: 0, leave: 0, fixedOff: 0, marked: 0 };
-      (schoolStudents[sid] || []).forEach(function (st) {
-        var stt = todayStatus_(todayRec[st.id] || '', parseDays_(st.fixedOffDays).indexOf(wdToday) !== -1);
-        if (stt) { b[stt] = (b[stt] || 0) + 1; b.marked++; }
-      });
-      byDate[today][sid] = b;
-    });
-  }
   byDate[today] = byDate[today] || {};
 
   var dates = Object.keys(byDate).sort(function (a, b) { return b.localeCompare(a); });
@@ -1277,7 +1444,7 @@ function overviewData_(schoolFilter, cutoff) {
       var subs = subIdx[date + '|' + sid] || [];
       var last = subs[subs.length - 1] || null;
       var item = {
-        schoolId: sid, schoolName: schoolMap[sid] || '(已移除的學校)', total: total, submitted: !!b,
+        schoolId: sid, schoolName: schoolMap[sid] || '(已移除的學校)', total: total, submitted: !!hasRec[date + '|' + sid],
         present: 0, selfDrop: 0, selfWalk: 0, leave: 0, fixedOff: 0, attended: 0,
         unmarked: total, submitters: subs, submittedAt: last ? last.at : null, submittedBy: last ? last.name : null,
         longLeave: longLeave[date + '|' + sid] || 0
@@ -1293,7 +1460,7 @@ function overviewData_(schoolFilter, cutoff) {
     schools.sort(function (a, b) { return String(a.schoolName).localeCompare(String(b.schoolName), 'zh-Hant'); });
     return { date: date, schools: schools };
   });
-  return { today: today, dates: result, attendance: attendance, schoolMap: schoolMap };
+  return { today: today, dates: result, attendance: attendance, schoolMap: schoolMap, ctx: ctx };
 }
 
 function actionGetOverview(body) {
@@ -1312,20 +1479,34 @@ function actionGetDayLeaves(body) {
   var schoolFilter = body.schoolId || null;
   var d = overviewData_(schoolFilter, date);
   var day = d.dates.filter(function (x) { return x.date === date; })[0] || { date: date, schools: [] };
-  var stMap = {};
-  sheetToObjects(SHEET_STUDENTS).forEach(function (st) { stMap[st.id] = st; });
-  var leaves = d.attendance.filter(function (a) {
-    return String(a.date) === date && (!schoolFilter || a.schoolId === schoolFilter) && effectiveStatus_(a) === 'leave';
-  }).map(function (a) {
-    var st = stMap[a.studentId];
+  var ctx = d.ctx, stMap = ctx.stMap;
+  // 當天有紀錄的學生 + 預約請假的學生
+  var cand = {};
+  d.attendance.forEach(function (a) {
+    if (String(a.date) === date && (!schoolFilter || a.schoolId === schoolFilter)) cand[a.studentId] = a.schoolId;
+  });
+  Object.keys(ctx.bookings).forEach(function (sid) {
+    var st = stMap[sid];
+    if (st && isActive_(st.active) && (!schoolFilter || st.schoolId === schoolFilter) && ctx.bookingOn(sid, date)) cand[sid] = cand[sid] || st.schoolId;
+  });
+  if (date === d.today) {   // 今天：跟著學生目前的設定
+    Object.keys(stMap).forEach(function (sid) {
+      var st = stMap[sid];
+      if (isActive_(st.active) && (!schoolFilter || st.schoolId === schoolFilter)) cand[sid] = cand[sid] || st.schoolId;
+    });
+  }
+  var leaves = Object.keys(cand).filter(function (sid) { return ctx.status(sid, date) === 'leave'; }).map(function (sid) {
+    var st = stMap[sid], a = ctx.rec[date + '|' + sid];
     var so = st ? studentOut_(st) : { name: '(已刪除的學生)', grade: '', contacts: [], note: '' };
+    var mine = !!ctx.teacherSet(a);
+    var bk = mine ? null : ctx.bookingOn(sid, date);
     return {
-      schoolId: a.schoolId, schoolName: d.schoolMap[a.schoolId] || '(已移除的學校)',
-      id: a.studentId, name: so.name, grade: String(so.grade), contacts: so.contacts, note: so.note,
-      markedBy: a.teacherName, markedAt: String(a.submittedAt)
+      schoolId: cand[sid], schoolName: d.schoolMap[cand[sid]] || '(已移除的學校)',
+      id: sid, name: so.name, grade: String(so.grade), contacts: so.contacts, note: so.note,
+      markedBy: mine ? a.teacherName : '', markedAt: mine ? String(a.submittedAt) : '', booking: bk ? bookingBrief_(bk) : null
     };
   });
-  var streaks = leaveStreaks_(date, leaves.map(function (x) { return x.id; }));
+  var streaks = leaveStreaks_(date, leaves.map(function (x) { return x.id; }), ctx);
   leaves.forEach(function (x) { x.leaveStreak = streaks[x.id] || 0; });
   leaves.sort(function (a, b) {
     return String(a.schoolName).localeCompare(String(b.schoolName), 'zh-Hant') ||
@@ -1341,23 +1522,25 @@ function actionGetSchoolDayDetail(body) {
   sheetToObjects(SHEET_ATTENDANCE).forEach(function (a) {
     if (a.schoolId === body.schoolId && String(a.date) === String(body.date)) { attMap[a.studentId] = a; rows.push(a); }
   });
-  var wd = weekdayOf(String(body.date));
-  var isToday = String(body.date) === today_();
+  var date = String(body.date);
+  var wd = weekdayOf(date);
+  var isToday = date === today_();
+  var ctx = statusCtx_();
   var out = activeStudentsOf_(body.schoolId).map(function (st) {
     var a = attMap[st.id];
     var so = studentOut_(st);
-    var saved = a ? effectiveStatus_(a) : '';
     var fixedNow = so.fixedOffDays.indexOf(wd) !== -1;
-    // 今天：跟著學生目前的設定；過去的日子：照當天的紀錄
-    var status = isToday && (a || fixedNow) ? todayStatus_(saved, fixedNow) : saved;
+    var status = ctx.status(st.id, date);
     var fixed = isToday ? fixedNow : ((a && String(a.wasFixedOff) !== '') ? isTrue_(a.wasFixedOff) : fixedNow);
+    var mine = !!ctx.teacherSet(a);
+    var bk = !mine && status === 'leave' ? ctx.bookingOn(st.id, date) : null;
     return {
       id: st.id, name: st.name, grade: String(st.grade), status: status,
-      wasFixedOff: fixed, contacts: so.contacts, note: so.note,
-      markedBy: a && status && status === saved ? a.teacherName : '', markedAt: a && status && status === saved ? String(a.submittedAt) : ''
+      wasFixedOff: fixed, contacts: so.contacts, note: so.note, booking: bk ? bookingBrief_(bk) : null,
+      markedBy: mine ? a.teacherName : '', markedAt: mine ? String(a.submittedAt) : ''
     };
   });
-  var streaks = leaveStreaks_(String(body.date), out.map(function (x) { return x.id; }));
+  var streaks = leaveStreaks_(date, out.map(function (x) { return x.id; }), ctx);
   out.forEach(function (x) { x.leaveStreak = streaks[x.id] || 0; });
   sortStudents(out);
   var submitters = submittersIndex_(String(body.date), rows)[String(body.date) + '|' + body.schoolId] || [];
@@ -1391,6 +1574,9 @@ function cleanupOldRecords() {
     pruneByDate_(SHEET_ATTENDANCE, cutoff);
     pruneByDate_(SHEET_SUBMISSIONS, cutoff);
     pruneByDate_(SHEET_SPECIAL, cutoff);
+    // 預約請假：結束日超過保留期限才清除
+    var oldB = sheetToObjects(SHEET_BOOKINGS).filter(function (b) { return String(b.endDate) < cutoff; });
+    if (oldB.length) deleteRows_(SHEET_BOOKINGS, oldB);
   });
   cleanupExpiredSessions_();
 }
