@@ -1,6 +1,6 @@
 {
-  "name": "基翔點名-雲端系統",
-  "short_name": "基翔點名",
+  "name": "基翔雲點名｜基翔文理補習班",
+  "short_name": "基翔雲點名",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
