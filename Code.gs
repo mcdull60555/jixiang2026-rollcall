@@ -1042,6 +1042,17 @@ function actionListLeaveStreaks(body) {
   return { ok: true, today: today, oldest: oldest, from: from, to: to, minDays: minDays, items: out };
 }
 
+// 今天的狀態要跟著學生「目前」的固定不進班設定：
+// 還沒點名（含先送出部分名單時存下的空白）且今天固定不進班 → 固定不進班；
+// 存的是固定不進班（老師沒改過的預設值）但管理員已取消今天的設定 → 改回未點名
+// （老師端按鈕沒有「固定不進班」，所以存成 fixedOff 一定是系統預設值，可以安全調整）
+function todayStatus_(status, isFixedNow) {
+  status = status || '';
+  if (!status && isFixedNow) return 'fixedOff';
+  if (status === 'fixedOff' && !isFixedNow) return '';
+  return status;
+}
+
 function activeStudentsOf_(schoolId) {
   return sheetToObjects(SHEET_STUDENTS).filter(function (x) {
     return x.schoolId === schoolId && isActive_(x.active);
@@ -1096,11 +1107,13 @@ function actionGetRollCall(body) {
     var isFixedOff = so.fixedOffDays.indexOf(wd) !== -1;
     var existing = attMap[st.id];
     var primary = so.contacts.filter(function (c) { return c.primary; })[0] || null;
-    var status = existing ? effectiveStatus_(existing) : (isFixedOff ? 'fixedOff' : '');
+    var saved = existing ? effectiveStatus_(existing) : '';
+    var status = todayStatus_(saved, isFixedOff);
+    var byTeacher = existing && status && status === saved;   // 系統自動判斷的不顯示點名老師
     return {
       id: so.id, name: so.name, grade: so.grade, isFixedOff: isFixedOff, primaryContact: primary,
       contacts: so.contacts, note: so.note, status: status,
-      markedBy: existing && status ? existing.teacherName : '', markedAt: existing && status ? String(existing.submittedAt) : ''
+      markedBy: byTeacher ? existing.teacherName : '', markedAt: byTeacher ? String(existing.submittedAt) : ''
     };
   });
   sortStudents(out);
@@ -1231,6 +1244,23 @@ function overviewData_(schoolFilter, cutoff) {
       if (streaks[x.sid] >= LEAVE_STREAK_ALERT) longLeave[d + '|' + x.school] = (longLeave[d + '|' + x.school] || 0) + 1;
     });
   });
+  // 今天的統計：依學生目前的固定不進班設定重新計算（管理員當天修改設定也會立即反映）
+  if (byDate[today]) {
+    var wdToday = weekdayOf(today), todayRec = {};
+    attendance.forEach(function (a) { if (String(a.date) === today) todayRec[a.studentId] = effectiveStatus_(a); });
+    var schoolStudents = {};
+    sheetToObjects(SHEET_STUDENTS).forEach(function (st) {
+      if (isActive_(st.active)) (schoolStudents[st.schoolId] = schoolStudents[st.schoolId] || []).push(st);
+    });
+    Object.keys(byDate[today]).forEach(function (sid) {
+      var b = { present: 0, selfDrop: 0, selfWalk: 0, leave: 0, fixedOff: 0, marked: 0 };
+      (schoolStudents[sid] || []).forEach(function (st) {
+        var stt = todayStatus_(todayRec[st.id] || '', parseDays_(st.fixedOffDays).indexOf(wdToday) !== -1);
+        if (stt) { b[stt] = (b[stt] || 0) + 1; b.marked++; }
+      });
+      byDate[today][sid] = b;
+    });
+  }
   byDate[today] = byDate[today] || {};
 
   var dates = Object.keys(byDate).sort(function (a, b) { return b.localeCompare(a); });
@@ -1312,16 +1342,19 @@ function actionGetSchoolDayDetail(body) {
     if (a.schoolId === body.schoolId && String(a.date) === String(body.date)) { attMap[a.studentId] = a; rows.push(a); }
   });
   var wd = weekdayOf(String(body.date));
+  var isToday = String(body.date) === today_();
   var out = activeStudentsOf_(body.schoolId).map(function (st) {
     var a = attMap[st.id];
     var so = studentOut_(st);
-    var status = a ? effectiveStatus_(a) : '';
-    // 有記錄就用當天記錄；舊資料沒有這個欄位時，以學生目前的固定不進班設定推算
-    var fixed = (a && String(a.wasFixedOff) !== '') ? isTrue_(a.wasFixedOff) : so.fixedOffDays.indexOf(wd) !== -1;
+    var saved = a ? effectiveStatus_(a) : '';
+    var fixedNow = so.fixedOffDays.indexOf(wd) !== -1;
+    // 今天：跟著學生目前的設定；過去的日子：照當天的紀錄
+    var status = isToday && (a || fixedNow) ? todayStatus_(saved, fixedNow) : saved;
+    var fixed = isToday ? fixedNow : ((a && String(a.wasFixedOff) !== '') ? isTrue_(a.wasFixedOff) : fixedNow);
     return {
       id: st.id, name: st.name, grade: String(st.grade), status: status,
       wasFixedOff: fixed, contacts: so.contacts, note: so.note,
-      markedBy: a && status ? a.teacherName : '', markedAt: a && status ? String(a.submittedAt) : ''
+      markedBy: a && status && status === saved ? a.teacherName : '', markedAt: a && status && status === saved ? String(a.submittedAt) : ''
     };
   });
   var streaks = leaveStreaks_(String(body.date), out.map(function (x) { return x.id; }));
