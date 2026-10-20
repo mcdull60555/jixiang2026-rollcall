@@ -359,7 +359,7 @@ function route(body) {
     editStudent: actionEditStudent, deleteStudent: actionDeleteStudent, deleteStudentsBatch: actionDeleteStudentsBatch,
     listTeachers: actionListTeachers, addTeacher: actionAddTeacher, editTeacher: actionEditTeacher,
     deleteTeacher: actionDeleteTeacher, deleteTeachersBatch: actionDeleteTeachersBatch,
-    getRollCall: actionGetRollCall, submitAttendance: actionSubmitAttendance,
+    getRollCall: actionGetRollCall, submitAttendance: actionSubmitAttendance, saveMarks: actionSaveMarks, setPresence: actionSetPresence,
     getDayInfo: actionGetDayInfo, listSpecialDays: actionListSpecialDays,
     setSpecialDay: actionSetSpecialDay, deleteSpecialDay: actionDeleteSpecialDay,
     setSpecialDaysBatch: actionSetSpecialDaysBatch, editSpecialDay: actionEditSpecialDay,
@@ -370,7 +370,7 @@ function route(body) {
   // 會寫入試算表的動作：一律在全域鎖內執行（多人同時操作也不會互相覆蓋）
   var WRITES = ['login', 'logout', 'changePwd', 'addContactType', 'addSchool', 'addSchoolsBatch', 'editSchool', 'deleteSchool',
     'addStudent', 'addStudentsBatch', 'editStudent', 'deleteStudent', 'deleteStudentsBatch',
-    'addTeacher', 'editTeacher', 'deleteTeacher', 'deleteTeachersBatch', 'submitAttendance', 'setSpecialDay', 'deleteSpecialDay',
+    'addTeacher', 'editTeacher', 'deleteTeacher', 'deleteTeachersBatch', 'submitAttendance', 'saveMarks', 'setSpecialDay', 'deleteSpecialDay',
     'setSpecialDaysBatch', 'editSpecialDay', 'saveBooking', 'deleteBooking'];
   var fn = ACTIONS[action];
   if (!fn) return { ok: false, error: 'UNKNOWN_ACTION' };
@@ -400,6 +400,8 @@ function actionLogin(body) {
 
 function actionLogout(body) {
   if (!body.token) return { ok: true };
+  var sess = getSession(body.token);
+  if (sess) CacheService.getScriptCache().remove('pres_' + sess.userId);   // 登出後不再顯示「點名中」
   CacheService.getScriptCache().remove('sess_' + body.token);
   withLock_(function () {
     var sheet = sheet_(SHEET_SESSIONS);
@@ -458,6 +460,47 @@ function nextTeacherUsername_(activeTeachers) {
 
 function activeTeachers_() {
   return sheetToObjects(SHEET_TEACHERS).filter(function (t) { return isActive_(t.active); });
+}
+
+// ---------- 老師目前在哪間學校（只存在快取，不寫試算表）----------
+// 老師端畫面開著時每 30 秒回報一次，每次點名也會更新；超過 PRESENCE_TTL 秒沒有任何回報就視為離開
+// 關掉頁面、登出會立即清除
+var PRESENCE_TTL = 600;   // 最後一次操作後 10 分鐘內都算在這間學校（鎖螢幕等學生時不會消失）
+function presenceList_(excludeUserId) {
+  var cache = CacheService.getScriptCache();
+  var ids = activeTeachers_().map(function (t) { return t.id; });
+  if (!ids.length) return [];
+  var got = cache.getAll(ids.map(function (id) { return 'pres_' + id; })) || {};
+  var schoolMap = {};
+  sheetToObjects(SHEET_SCHOOLS).forEach(function (sc) { schoolMap[sc.id] = sc.name; });
+  var now = Date.now(), out = [];
+  Object.keys(got).forEach(function (k) {
+    try {
+      var p = JSON.parse(got[k]);
+      if (!p || p.teacherId === excludeUserId || now - p.at > PRESENCE_TTL * 1000) return;
+      p.schoolName = schoolMap[p.schoolId] || '';
+      p.ago = Math.max(0, Math.round((now - p.at) / 1000));
+      out.push(p);
+    } catch (e) { /* 壞掉的快取略過 */ }
+  });
+  out.sort(function (a, b) { return String(a.schoolName).localeCompare(String(b.schoolName), 'zh-Hant') || b.at - a.at; });
+  return out;
+}
+
+function putPresence_(s, schoolId, mode) {
+  CacheService.getScriptCache().put('pres_' + s.userId, JSON.stringify({
+    teacherId: s.userId, name: s.name, schoolId: String(schoolId), mode: mode === 'edit' ? 'edit' : 'view', at: Date.now()
+  }), PRESENCE_TTL);
+}
+// 老師回報目前所在學校與狀態（view=查看、edit=點名中）；schoolId 空白＝離開。回傳其他老師的狀態
+function actionSetPresence(body) {
+  var s = requireSession(body.token);
+  var cache = CacheService.getScriptCache();
+  if (s.role === 'teacher') {
+    if (body.schoolId) putPresence_(s, body.schoolId, body.mode);
+    else cache.remove('pres_' + s.userId);
+  }
+  return { ok: true, presence: presenceList_(s.userId) };
 }
 
 function actionListTeachers(body) {
@@ -1272,6 +1315,13 @@ function actionGetRollCall(body) {
   };
 }
 
+// 點一下就自動儲存：老師每點一位學生就送出（前端會把短時間內的多次點選合併成一次）
+function actionSaveMarks(body) {
+  var r = actionSubmitAttendance(Object.assign({}, body, { autosave: true }));
+  if (r && r.ok) { try { putPresence_(requireSession(body.token, 'teacher'), body.schoolId, 'edit'); } catch (e) {} }
+  return r;
+}
+
 function actionSubmitAttendance(body) {
   var s = requireSession(body.token, 'teacher');
   var date = today_();
@@ -1315,7 +1365,8 @@ function actionSubmitAttendance(body) {
     var subs = submittersIndex_(date, todays)[date + '|' + schoolId] || [];
     var last = subs[subs.length - 1];
     var latest = last ? last.at : '';
-    if (!body.force && latest !== String(body.baseSubmittedAt || '')) {
+    // 自動儲存：每位學生各自更新（最後點的為準），不做整校衝突檢查
+    if (!body.autosave && !body.force && latest !== String(body.baseSubmittedAt || '')) {
       return { ok: false, error: 'CONFLICT', submittedAt: latest, submittedBy: last ? last.name : '' };
     }
     // 只更新「狀態有變動」的學生：每位學生保留真正幫他點名的老師與時間
@@ -1353,7 +1404,21 @@ function actionSubmitAttendance(body) {
       sheet.getRange(2, 1, body2.length, headers.length).setNumberFormat('@').setValues(body2);
     }
     appendObjects(SHEET_ATTENDANCE, fresh);
-    appendObject(SHEET_SUBMISSIONS, { id: genId('L'), date: date, schoolId: schoolId, teacherId: s.userId, teacherName: s.name, submittedAt: now, count: n });
+    if (body.autosave) {
+      // 自動儲存：每天每校每位老師只保留一筆送出紀錄，更新時間與筆數（不讓紀錄表暴增）
+      if (n) {
+        var mine = sheetToObjects(SHEET_SUBMISSIONS).filter(function (l) {
+          return String(l.date) === date && l.schoolId === schoolId && l.teacherId === s.userId;
+        })[0];
+        if (mine) {
+          var upd = Object.assign({}, mine, { teacherName: s.name, submittedAt: now, count: Number(mine.count || 0) + n });
+          delete upd._row;
+          updateObjectByRow(SHEET_SUBMISSIONS, mine._row, upd);
+        } else appendObject(SHEET_SUBMISSIONS, { id: genId('L'), date: date, schoolId: schoolId, teacherId: s.userId, teacherName: s.name, submittedAt: now, count: n });
+      }
+    } else {
+      appendObject(SHEET_SUBMISSIONS, { id: genId('L'), date: date, schoolId: schoolId, teacherId: s.userId, teacherName: s.name, submittedAt: now, count: n });
+    }
     return { ok: true, submittedAt: now, count: n };
   });
   // 舊資料清理只交給每天凌晨 3 點的排程，不讓老師送出時等待
@@ -1469,7 +1534,7 @@ function actionGetOverview(body) {
   var sp = specialDays_();
   var special = {};
   sp.forEach(function (x) { special[x.date] = { type: x.type, reason: x.reason }; });
-  return { ok: true, today: d.today, todayInfo: dayInfo_(d.today, sp), special: special, dates: d.dates };
+  return { ok: true, today: d.today, todayInfo: dayInfo_(d.today, sp), special: special, dates: d.dates, presence: presenceList_(null) };
 }
 
 // 某一天的請假名單（全部學校或單一學校）＋ 當天各校摘要

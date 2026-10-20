@@ -514,6 +514,17 @@ tr.bk-past td:last-child{opacity:1;}
   .rc-bk-field{flex:1 1 100%;}
   .rc-bk-field .btn{width:100%;}
 }
+.presence-bar{margin:4px 0 10px;padding:9px 12px;border-radius:10px;background:#f0f9ff;border:1px solid #bae6fd;color:#075985;font-size:14px;line-height:1.6;}
+.presence-bar.editing{background:#fff7ed;border-color:#fdba74;color:#9a3412;}
+.presence-hint{font-size:13px;opacity:.9;}
+.presence-tag{display:inline-block;margin-top:4px;padding:2px 9px;border-radius:99px;background:#e0f2fe;color:#075985;font-size:12px;font-weight:700;}
+.savebar{margin:0 0 10px;padding:8px 12px;border-radius:10px;font-size:14px;background:#f8fafc;border:1px solid var(--border);color:var(--muted);display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.savebar.ok{background:#ecfdf5;border-color:#a7f3d0;color:#047857;font-weight:700;}
+.savebar.saving{background:#eff6ff;border-color:#bfdbfe;color:#1d4ed8;font-weight:700;}
+.savebar.warn{background:#fff7ed;border-color:#fdba74;color:#9a3412;}
+.savebar .spin{width:14px;height:14px;border-width:2px;}
+#save-chip{position:fixed;left:50%;bottom:18px;transform:translate(-50%,20px);opacity:0;pointer-events:none;z-index:60;max-width:calc(100vw - 32px);padding:10px 16px;border-radius:12px;background:#9a3412;color:#fff;font-weight:700;font-size:14px;box-shadow:0 8px 24px rgba(0,0,0,.25);transition:all .2s;text-align:center;}
+#save-chip.show{opacity:1;transform:translate(-50%,0);}
 </style>
 </head>
 <body>
@@ -732,6 +743,7 @@ tr.bk-past td:last-child{opacity:1;}
         </div>
         <div class="field rc-bk-field"><button type="button" class="btn btn-secondary hidden" id="rc-bk-btn" onclick="openTeacherBookings()">📅 預約請假</button></div>
       </div>
+      <div id="rc-presence"></div>
       <div id="rollcall-banner"></div>
       <div id="rollcall-container"><div class="empty">請先選擇學校</div></div>
       <div id="rollcall-submit-wrap" class="hidden" style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;"></div>
@@ -808,7 +820,8 @@ function hideBusy() { $('busyOverlay').classList.add('hidden'); }
 
 // 還有資料在同步時關閉/重新整理頁面，先跳出瀏覽器提醒
 window.addEventListener('beforeunload', e => {
-  if (STATE.pending > 0 || busyDepth > 0) { e.preventDefault(); e.returnValue = ''; }
+  // 自動儲存因斷線卡住時也提醒（一般情況下關閉頁面會自動把還沒存的送出）
+  if (STATE.pending > 0 || busyDepth > 0 || (SAVE.failed && SAVE.queue.size)) { e.preventDefault(); e.returnValue = ''; }
 });
 
 let doneTimer = null;
@@ -1000,6 +1013,7 @@ async function doLogin() {
     const r = await api('login', { username, password }, { pill: false, reportSync: true });
     STATE.token = r.token; STATE.role = r.role; STATE.name = r.name; STATE.today = r.today;
     STATE.lastActivity = Date.now();
+    saveSessionLS();
     $('login-password').value = '';
   } catch (e) {
     errEl.textContent = errMsg(e.message);
@@ -1018,7 +1032,20 @@ async function doLogin() {
   }
 }
 
+// 登入狀態記在瀏覽器：重新整理、手機背景重新載入都不用重新登入（閒置 60 分鐘仍會自動登出）
+const LS_SESSION = 'jx_session';
+function saveSessionLS() {
+  try { localStorage.setItem(LS_SESSION, JSON.stringify({ token: STATE.token, role: STATE.role, name: STATE.name, at: STATE.lastActivity || Date.now() })); } catch (e) {}
+}
+function loadSessionLS() {
+  try { const v = JSON.parse(localStorage.getItem(LS_SESSION) || 'null'); return v && v.token ? v : null; } catch (e) { return null; }
+}
+function clearSessionLS() { try { localStorage.removeItem(LS_SESSION); } catch (e) {} }
+function lastSchoolKey() { return 'jx_school_' + (STATE.role || '') + '_' + (STATE.name || ''); }
 function clearSession() {
+  clearSessionLS();
+  SAVE.queue.clear();
+  try { localStorage.removeItem(LS_PENDING); } catch (e) {}
   STATE.token = null; STATE.role = null; STATE.name = null;
   STATE.currentSchoolId = null; STATE.currentStudents = []; STATE.rollcall = null; STATE.rcMode = null;
   busyReset();
@@ -1039,18 +1066,35 @@ function fireLogout() {
   if (!STATE.token) return;
   try { fetch(CONFIG.API_URL, { method: 'POST', body: JSON.stringify({ action: 'logout', token: STATE.token }), keepalive: true }).catch(() => {}); } catch (e) {}
 }
-function doLogout() { fireLogout(); clearSession(); }
+async function doLogout() {
+  if (SAVE.queue.size) { try { await flushMarks(); } catch (e) {} }   // 先把還沒存的點名存好
+  fireLogout(); clearSession();
+}
 function forceLogout(msg) { fireLogout(); clearSession(); toast(msg, true); }
 
+let lastActivitySaved = 0;
 ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'click'].forEach(ev =>
-  window.addEventListener(ev, () => { STATE.lastActivity = Date.now(); }, { passive: true, capture: true }));
+  window.addEventListener(ev, () => {
+    STATE.lastActivity = Date.now();
+    if (STATE.token && STATE.lastActivity - lastActivitySaved > 15000) { lastActivitySaved = STATE.lastActivity; saveSessionLS(); }
+  }, { passive: true, capture: true }));
 function checkIdle() {
   if (STATE.token && Date.now() - STATE.lastActivity > CONFIG.IDLE_MS) forceLogout('閒置超過 60 分鐘，已自動登出');
 }
 setInterval(checkIdle, 15000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) checkIdle(); });
+// 關閉或重新整理頁面：不登出；把還沒存的點名送出，並清掉「點名中」狀態（重新開啟後會再回報）
+// 頁面關閉後仍會送達的請求（keepalive；不支援時改用 sendBeacon）
+function sendOnExit(payload) {
+  const body = JSON.stringify(payload);
+  try { fetch(CONFIG.API_URL, { method: 'POST', body, keepalive: true }).catch(() => {}); return; } catch (e) {}
+  try { if (navigator.sendBeacon) navigator.sendBeacon(CONFIG.API_URL, body); } catch (e) {}
+}
 window.addEventListener('pagehide', () => {
-  if (STATE.token && navigator.sendBeacon) navigator.sendBeacon(CONFIG.API_URL, JSON.stringify({ action: 'logout', token: STATE.token }));
+  if (!STATE.token) return;
+  saveSessionLS();
+  pendingBySchool().forEach((records, schoolId) => sendOnExit({ action: 'saveMarks', token: STATE.token, schoolId, records }));
+  if (STATE.role === 'teacher') sendOnExit({ action: 'setPresence', token: STATE.token, schoolId: '' });
 });
 
 /* ---------------- 進入系統 ---------------- */
@@ -1081,6 +1125,13 @@ async function enterApp() {
       r.schools.map(s => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('');
     STATE.dayInfo = di.day;
     renderTeacherDay();
+    // 上次還沒存好的點選：自動補存
+    restorePending();
+    if (SAVE.queue.size && di.day.open) { try { await flushMarks(); } catch (e) {} }
+    // 重新整理後回到原本的學校
+    let last = ''; try { last = localStorage.getItem(lastSchoolKey()) || ''; } catch (e) {}
+    if (last && di.day.open && r.schools.some(s => s.id === last)) { $('rollcall-school-select').value = last; await loadRollCall(); }
+    else sendPresence();
   }
 }
 
@@ -1574,7 +1625,12 @@ async function tick() {
       const di = await api('getDayInfo', {}, { pill: false, flash: false });
       if (di.day.open !== STATE.dayInfo.open) { STATE.dayInfo = di.day; renderTeacherDay(); }
     } else if (STATE.token && STATE.role === 'teacher' && STATE.rcMode === 'view' && !modalOpen) {
-      await loadRollCall(true);   // 檢視模式下，其他老師的更新會自動同步過來（修改中不會被打斷）
+      await loadRollCall(true);   // 檢視模式下，其他老師的更新會自動同步過來（修改中不會被打斷）；載入後會回報所在學校
+    } else if (STATE.token && STATE.role === 'teacher' && STATE.rcMode === 'edit' && !modalOpen) {
+      await syncRollCallEdit();    // 同步其他老師點的狀態
+      await sendPresence(true);
+    } else if (STATE.token && STATE.role === 'teacher') {
+      await sendPresence(true);   // 回報目前所在學校，並更新其他老師在哪裡點名
     } else {
       await api('ping', {}, { pill: false, flash: false });
     }
@@ -2110,6 +2166,7 @@ async function loadOverview(silent) {
   const todayEntry = r.dates.find(d => d.date === r.today);
   STATE.special = r.special || {};
   STATE.todayInfo = r.todayInfo;
+  STATE.presenceAll = r.presence || [];
   const closedNote = r.todayInfo && !r.todayInfo.open
     ? `<div class="banner-closed">📅 今天${dayReasonText(r.todayInfo)}，老師端不能點名</div>` : '';
   if (todayEntry && todayEntry.schools.length) {
@@ -2164,17 +2221,22 @@ function fmtClock(iso) {
 function submittersText(list) {
   return (list || []).map(x => `${esc(x.name)}（${esc(fmtClock(x.at))}）`).join('、') || '-';
 }
+function presenceTagHtml(s, date) {
+  if (date !== STATE.today) return '';
+  const here = (STATE.presenceAll || []).filter(p => p.schoolId === s.schoolId);
+  return here.length ? `<div class="presence-tag">👤 ${here.map(p => `${esc(p.name)} ${presenceLabel(p)}`).join('、')}</div>` : '';
+}
 function schoolDayCardHtml(s, date, fromLeaves) {
   if (!s.submitted && date === STATE.today && STATE.todayInfo && !STATE.todayInfo.open) {
     return `<div class="day-school pending" style="border-left-color:#94a3b8;background:#f8fafc;border-color:var(--border)"><div><div class="name">${esc(s.schoolName)}</div><div class="meta">${dayReasonText(STATE.todayInfo)}・總人數 ${s.total}</div></div>
       <span class="pill st-fixedOff">今日不點名</span></div>`;
   }
   if (!s.submitted) {
-    return `<div class="day-school pending"><div><div class="name">${esc(s.schoolName)}</div><div class="meta">尚未點名・總人數 ${s.total}</div></div>
+    return `<div class="day-school pending"><div><div class="name">${esc(s.schoolName)}</div><div class="meta">尚未點名・總人數 ${s.total}</div>${presenceTagHtml(s, date)}</div>
       <span class="pill st-unmarked">尚未點名</span></div>`;
   }
   return `<div class="day-school" tabindex="0" role="button" data-school="${esc(s.schoolId)}" onclick="openDayDetail('${esc(s.schoolId)}','${esc(date)}',${fromLeaves ? 'true' : 'false'})" onkeydown="if(event.key==='Enter')this.click()">
-    <div><div class="name">${esc(s.schoolName)}${s.longLeave ? `<span class="streak-tag" role="link" tabindex="0" title="查看連續請假名單" onclick="event.stopPropagation();openLeaveTab('${esc(s.schoolId)}')">⚠ 連續請假 ${s.longLeave} 人</span>` : ''}</div><div class="meta">送出：${submittersText(s.submitters)}</div></div>
+    <div><div class="name">${esc(s.schoolName)}${s.longLeave ? `<span class="streak-tag" role="link" tabindex="0" title="查看連續請假名單" onclick="event.stopPropagation();openLeaveTab('${esc(s.schoolId)}')">⚠ 連續請假 ${s.longLeave} 人</span>` : ''}</div><div class="meta">送出：${submittersText(s.submitters)}</div>${presenceTagHtml(s, date)}</div>
     <div class="stats">${statsHtml(s, true)}</div></div>`;
 }
 
@@ -2275,10 +2337,13 @@ async function loadRollCall(silent, opts) {
   const schoolId = $('rollcall-school-select').value;
   const container = $('rollcall-container');
   $('rc-bk-btn').classList.toggle('hidden', !schoolId);
+  try { localStorage.setItem(lastSchoolKey(), schoolId); } catch (e) {}
+  if (SAVE.queue.size) { try { await flushMarks(); } catch (e) {} }   // 換學校前先存好
   if (!schoolId) {
     container.innerHTML = '<div class="empty">請先選擇學校</div>';
     $('rollcall-submit-wrap').classList.add('hidden'); $('rollcall-banner').innerHTML = '';
     STATE.rollcall = null; STATE.rcMode = null;
+    sendPresence();
     return;
   }
   if (!silent) container.innerHTML = '<div class="empty">載入中…</div>';
@@ -2297,7 +2362,10 @@ async function loadRollCall(silent, opts) {
     $('rollcall-submit-wrap').classList.add('hidden'); STATE.rcMode = null;
     return;
   }
-  if (r.submitted && !opts.edit) renderRcView(); else renderRcEdit();
+  // 還有學生未點名 → 直接進入點名（學生陸續到、陸續點）；全部點完 → 顯示明細
+  const keepView = silent && STATE.rcMode === 'view';
+  const allDone = !r.students.some(st => !st.status);
+  if (opts.view || keepView || (!opts.edit && r.submitted && allDone)) renderRcView(); else renderRcEdit();
 }
 
 // 已送出：唯讀明細（未點名 → 請假 → 自走 → 自送 → … → 到班），含聯絡人與備註
@@ -2310,8 +2378,9 @@ function renderRcView() {
   $('rollcall-container').innerHTML = `<h3 style="margin:4px 0 8px;font-size:16px">已送出的點名明細</h3>
     <div class="rc-summary">${statsHtml(c, true)}</div>${statusTableHtml(rc.students, true)}`;
   const wrap = $('rollcall-submit-wrap');
-  wrap.innerHTML = '<button class="btn btn-edit" id="rollcall-edit-btn" onclick="loadRollCall(false, { edit: true })">修改點名單</button>';
+  wrap.innerHTML = '<button class="btn btn-edit" id="rollcall-edit-btn" onclick="startEditRollCall()">修改點名單</button>';
   wrap.classList.remove('hidden');
+  sendPresence();
 }
 
 function rcRowHtml(st) {
@@ -2330,20 +2399,21 @@ function rcRowHtml(st) {
 function renderRcEdit() {
   const rc = STATE.rollcall;
   STATE.rcMode = 'edit';
-  $('rollcall-banner').innerHTML = rc.submitted
-    ? `<div class="banner-edit">✎ 正在修改今日點名單（已送出：${submittersText(rc.submitters)}），改完請按「送出點名」</div>` : '';
+  $('rollcall-banner').innerHTML = `<div class="banner-edit">✎ 點選學生的出席狀態就會<b>自動儲存</b>，學生陸續到再陸續點即可${rc.submitted ? `（已點名：${submittersText(rc.submitters)}）` : ''}</div>`;
   const todo = rc.students.filter(st => !st.status);
   const done = sortedByStatus(rc.students.filter(st => st.status));
   let body = '';
   if (todo.length) body += `<tr class="sec sec-todo"><td colspan="3">未點名（請點選出席狀態）</td></tr>` + todo.map(rcRowHtml).join('');
   if (done.length) body += `<tr class="sec sec-done"><td colspan="3">已點名（如需更改可直接點選）</td></tr>` + done.map(rcRowHtml).join('');
-  $('rollcall-container').innerHTML = `<div class="rc-summary" id="rc-summary"></div>
+  $('rollcall-container').innerHTML = `<div class="savebar" id="rc-savebar" role="status" aria-live="polite"></div><div class="rc-summary" id="rc-summary"></div>
     <div class="table-wrap"><table class="card-table rc-table"><thead><tr><th>年級班級</th><th>姓名 / 聯絡人</th><th>出席狀態 / 備註</th></tr></thead><tbody>${body}</tbody></table></div>`;
   const wrap = $('rollcall-submit-wrap');
-  wrap.innerHTML = '<button class="btn btn-primary" id="rollcall-submit-btn" onclick="submitAttendance()">送出點名</button>' +
-    (rc.submitted ? '<button class="btn btn-secondary" id="rollcall-cancel-btn" onclick="loadRollCall(false)">取消修改</button>' : '');
+  wrap.innerHTML = '<button class="btn btn-primary" id="rollcall-submit-btn" onclick="finishRollCall()">完成點名</button>' +
+    '<span class="hint" style="margin:0;align-self:center">每點一位都已自動儲存；按「完成點名」會切換到明細</span>';
   wrap.classList.remove('hidden');
   updateRcSummary();
+  renderSaveState();
+  sendPresence();
 }
 
 function setRowStatus(tr, status) {
@@ -2371,6 +2441,7 @@ $('rollcall-container').addEventListener('click', async e => {
     if (!ok) return;
   }
   setRowStatus(tr, target);
+  queueMark(STATE.rollcall.schoolId, tr.dataset.sid, target);   // 點一下就自動儲存
 });
 
 function updateRcSummary() {
@@ -2408,6 +2479,193 @@ async function handleRcConflict(data) {
     '覆蓋送出', true);
   if (ok) submitAttendance(true);
   else loadRollCall(false);
+}
+
+/* ---------------- 點名自動儲存 ---------------- */
+// 每點一位學生就排進佇列；0.6 秒內連續點的合併成一次送出；失敗會自動重試，不會擋住畫面
+const SAVE = { queue: new Map(), sending: new Map(), inflight: null, timer: null, lastOk: 0, failed: false, error: '' };
+function queueMark(schoolId, studentId, status) {
+  SAVE.queue.set(schoolId + '|' + studentId, { schoolId, studentId, status: status || '' });
+  persistPending();
+  scheduleFlush(600);
+  renderSaveState();
+}
+// 還沒存到雲端的點選也先記在手機裡：就算瀏覽器在背景被關掉，下次打開會自動補存（只補同一位老師、同一天的）
+const LS_PENDING = 'jx_pending';
+function persistPending() {
+  try {
+    const items = [...SAVE.queue.values(), ...SAVE.sending.values()];
+    if (items.length) localStorage.setItem(LS_PENDING, JSON.stringify({ name: STATE.name, date: STATE.today, items }));
+    else localStorage.removeItem(LS_PENDING);
+  } catch (e) {}
+}
+function restorePending() {
+  try {
+    const v = JSON.parse(localStorage.getItem(LS_PENDING) || 'null');
+    if (!v) return;
+    if (v.name === STATE.name && v.date === STATE.today && Array.isArray(v.items)) {
+      v.items.forEach(it => { const k = it.schoolId + '|' + it.studentId; if (!SAVE.queue.has(k)) SAVE.queue.set(k, it); });
+    } else localStorage.removeItem(LS_PENDING);
+  } catch (e) {}
+}
+function scheduleFlush(ms) { clearTimeout(SAVE.timer); SAVE.timer = setTimeout(() => { flushMarks().catch(() => {}); }, ms); }
+function pendingBySchool() {
+  const m = new Map();
+  [...SAVE.queue.values(), ...SAVE.sending.values()].forEach(r => {
+    if (!m.has(r.schoolId)) m.set(r.schoolId, []);
+    m.get(r.schoolId).push({ studentId: r.studentId, status: r.status });
+  });
+  return m;
+}
+function pendingIds(schoolId) {
+  const ids = new Set();
+  [...SAVE.queue.values(), ...SAVE.sending.values()].forEach(r => { if (r.schoolId === schoolId) ids.add(r.studentId); });
+  return ids;
+}
+async function flushMarks() {
+  if (SAVE.inflight) { await SAVE.inflight; if (!SAVE.queue.size) return; }
+  if (!SAVE.queue.size || !STATE.token) return;
+  clearTimeout(SAVE.timer);
+  const items = [...SAVE.queue.entries()];
+  SAVE.queue.clear();
+  items.forEach(([k, v]) => SAVE.sending.set(k, v));
+  renderSaveState();
+  const bySchool = new Map();
+  items.forEach(([, v]) => { if (!bySchool.has(v.schoolId)) bySchool.set(v.schoolId, []); bySchool.get(v.schoolId).push({ studentId: v.studentId, status: v.status }); });
+  SAVE.inflight = (async () => {
+    try {
+      for (const [schoolId, records] of bySchool) {
+        await api('saveMarks', { schoolId, records }, { pill: false, flash: false });
+      }
+      SAVE.lastOk = Date.now(); SAVE.failed = false; SAVE.error = '';
+    } catch (e) {
+      // 沒存成功的放回佇列（若期間又點了同一位，以新的為準）
+      items.forEach(([k, v]) => { if (!SAVE.queue.has(k)) SAVE.queue.set(k, v); });
+      SAVE.failed = true; SAVE.error = e.message;
+      if (e.message === 'DAY_CLOSED') {
+        SAVE.queue.clear();
+        STATE.dayInfo = (e.data && e.data.day) || STATE.dayInfo;
+        toast('今天不能點名：' + (STATE.dayInfo ? STATE.dayInfo.label : ''), true);
+        renderTeacherDay();
+      }
+      throw e;
+    } finally {
+      SAVE.sending.clear();
+      SAVE.inflight = null;
+      persistPending();
+      renderSaveState();
+      if (SAVE.queue.size && STATE.token) scheduleFlush(SAVE.failed ? 5000 : 300);
+    }
+  })();
+  return SAVE.inflight;
+}
+function renderSaveState() {
+  const n = SAVE.queue.size + SAVE.sending.size;
+  // 斷線時畫面下方固定顯示提醒（往下捲也看得到）
+  let chip = $('save-chip');
+  if (!chip) { chip = document.createElement('div'); chip.id = 'save-chip'; chip.setAttribute('role', 'alert'); document.body.appendChild(chip); }
+  if (SAVE.failed && n && STATE.token) { chip.innerHTML = `⚠ ${n} 位學生尚未儲存，連線恢復後會自動儲存`; chip.className = 'show'; }
+  else chip.className = '';
+  const el = $('rc-savebar');
+  if (!el) return;
+  if (SAVE.failed && n) {
+    el.className = 'savebar warn';
+    el.innerHTML = `⚠ 有 <b>${n}</b> 位學生的點名<b>尚未儲存</b>（${esc(errMsg(SAVE.error) || '網路不穩')}），連線恢復後會自動儲存，請不要關閉頁面`;
+  } else if (n) {
+    el.className = 'savebar saving';
+    el.innerHTML = '<span class="spin" aria-hidden="true"></span> 自動儲存中…';
+  } else if (SAVE.lastOk) {
+    el.className = 'savebar ok';
+    el.innerHTML = `✓ 已自動儲存（${esc(fmtClock(new Date(SAVE.lastOk).toISOString()))}）`;
+  } else {
+    el.className = 'savebar';
+    el.innerHTML = '點選出席狀態後會自動儲存';
+  }
+}
+// 「完成點名」：確認全部已儲存後切到明細
+async function finishRollCall() {
+  const rc = STATE.rollcall;
+  if (!rc || STATE.rcMode !== 'edit') return;
+  busyStart('儲存中，請稍候…');
+  try { await flushMarks(); } catch (e) {}
+  if (SAVE.queue.size) {
+    busyEnd(false);
+    toast(`還有 ${SAVE.queue.size} 位學生尚未儲存，請確認網路後再按一次`, true);
+    return;
+  }
+  const unmarked = [...document.querySelectorAll('#rollcall-container .rc-row')].filter(tr => !tr.dataset.status).length;
+  try { await loadRollCall(true, { view: true }); } catch (e) {}
+  busyEnd(true, '點名已儲存' + (unmarked ? `（尚有 ${unmarked} 位未點名，可再按「修改點名單」補點）` : ''));
+}
+// 點名中：每 30 秒同步其他老師點的狀態（自己還沒存好的不會被覆蓋）
+async function syncRollCallEdit() {
+  const rc = STATE.rollcall;
+  if (!rc || STATE.rcMode !== 'edit') return;
+  if (SAVE.queue.size) { try { await flushMarks(); } catch (e) {} }
+  const r = await api('getRollCall', { schoolId: rc.schoolId }, { pill: false, flash: false });
+  if (STATE.rcMode !== 'edit' || !STATE.rollcall || STATE.rollcall.schoolId !== rc.schoolId) return;
+  if (r.day && !r.day.open) { STATE.dayInfo = r.day; renderTeacherDay(); return; }
+  const rows = new Map([...document.querySelectorAll('#rollcall-container .rc-row')].map(tr => [tr.dataset.sid, tr]));
+  const pend = pendingIds(rc.schoolId);
+  const sameSet = r.students.length === rows.size && r.students.every(st => rows.has(st.id));
+  if (!sameSet) {   // 管理員新增/刪除了學生：重畫，保留自己還沒存的
+    const keep = {}; rows.forEach((tr, id) => { if (pend.has(id)) keep[id] = tr.dataset.status || ''; });
+    rc.students = r.students.map(st => Object.assign({}, st, keep[st.id] !== undefined ? { status: keep[st.id] } : {}));
+    rc.submitted = r.submitted; rc.submitters = r.submitters || [];
+    renderRcEdit();
+    return;
+  }
+  r.students.forEach(st => {
+    const tr = rows.get(st.id);
+    if (pend.has(st.id)) return;
+    if ((tr.dataset.status || '') !== (st.status || '')) setRowStatus(tr, st.status || '');
+  });
+  rc.students = r.students.map(st => pend.has(st.id) ? Object.assign({}, st, { status: rows.get(st.id).dataset.status || '' }) : st);
+  rc.submitted = r.submitted; rc.submitters = r.submitters || []; rc.submittedAt = r.submittedAt || '';
+}
+
+/* ---------------- 誰正在點哪間學校 ---------------- */
+// 老師回報目前所在學校；同時取得其他老師的狀態，顯示在學校選單與提示列，避免兩人重複點同一間
+async function sendPresence(throwErr) {
+  if (!STATE.token || STATE.role !== 'teacher') return;
+  const schoolId = (STATE.dayInfo && !STATE.dayInfo.open) ? '' : $('rollcall-school-select').value;
+  try {
+    const r = await api('setPresence', { schoolId, mode: STATE.rcMode === 'edit' ? 'edit' : 'view' }, { pill: false, flash: false });
+    STATE.presence = r.presence || [];
+    renderPresence();
+  } catch (e) { if (throwErr) throw e; }
+}
+function presenceLabel(p) { return p.mode === 'edit' ? '點名中' : '查看中'; }
+function renderPresence() {
+  const list = STATE.presence || [];
+  // 學校選單：在學校名稱後面標示誰在
+  const sel = $('rollcall-school-select');
+  [...sel.options].forEach(o => {
+    if (!o.value) return;
+    if (!o.dataset.name) o.dataset.name = o.textContent;
+    const here = list.filter(p => p.schoolId === o.value);
+    o.textContent = o.dataset.name + (here.length ? `（${here.map(p => p.name + ' ' + presenceLabel(p)).join('、')}）` : '');
+  });
+  // 目前學校的提示列
+  const cur = sel.value;
+  const here = cur ? list.filter(p => p.schoolId === cur) : [];
+  const box = $('rc-presence');
+  if (!here.length) { box.innerHTML = ''; return; }
+  const editing = here.some(p => p.mode === 'edit');
+  box.innerHTML = `<div class="presence-bar${editing ? ' editing' : ''}" role="status">👥 ${here.map(p => `<b>${esc(p.name)}</b> ${presenceLabel(p)}`).join('、')}
+    <span class="presence-hint">${editing ? '— 目前也在點這間學校，請先協調分工，避免重複點名' : '— 也正在看這間學校'}</span></div>`;
+}
+// 按「修改點名單」：先確認有沒有其他老師正在點同一間
+async function startEditRollCall() {
+  await sendPresence();
+  const cur = $('rollcall-school-select').value;
+  const others = (STATE.presence || []).filter(p => p.schoolId === cur && p.mode === 'edit');
+  if (others.length) {
+    const ok = await confirmBox('其他老師正在點名',
+      `<b>${others.map(p => esc(p.name)).join('、')}</b> 正在點這間學校。<br>兩人同時修改可能會重複點名，建議先協調由誰負責。<br>確定也要進入修改嗎？`, '仍要修改');
+    if (!ok) return;
+  }
+  loadRollCall(false, { edit: true });
 }
 
 /* ---------------- 修改密碼 ---------------- */
@@ -2451,12 +2709,30 @@ function buildModal(title, bodyHtml, onConfirm, opts) {
 
 /* ---------------- Init ---------------- */
 
-try { ['rc_token', 'rc_role', 'rc_name'].forEach(k => localStorage.removeItem(k)); } catch (e) {}
+try { ['rc_token', 'rc_role', 'rc_name'].forEach(k => localStorage.removeItem(k)); } catch (e) {}   // 舊版留下的資料
 $('login-password').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
 (async function init() {
   setConn('connecting');
   renderAccounts();
   loadLoginAccounts();
+  // 重新整理：還在 60 分鐘內就直接回到系統
+  const saved = loadSessionLS();
+  if (saved && Date.now() - (saved.at || 0) <= CONFIG.IDLE_MS) {
+    STATE.token = saved.token; STATE.role = saved.role; STATE.name = saved.name; STATE.lastActivity = saved.at || Date.now();
+    busyStart('登入中，請稍候…');
+    let ok = false;
+    try {
+      const r = await api('bootstrap', {}, { pill: false, flash: false });
+      STATE.role = r.role; STATE.name = r.name; STATE.today = r.today;
+      saveSessionLS();
+      await enterApp();
+      ok = true;
+    } catch (e) {
+      if (e.message !== 'AUTH_EXPIRED' && STATE.token) { toast('無法恢復登入，請重新登入', true); clearSession(); }
+    } finally { busyEnd(ok, '已恢復登入'); }
+    return;
+  }
+  if (saved) clearSessionLS();   // 超過 60 分鐘：需要重新登入
   try { await api('ping', {}, { pill: false, flash: false }); } catch (e) {}
 })();
 </script>
