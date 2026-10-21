@@ -642,14 +642,14 @@ tr.bk-past td:last-child{opacity:1;}
         <button class="btn btn-secondary btn-sm" id="school-edit-btn" onclick="openEditSchool()">✏️ 修改校名</button>
         <button class="btn btn-danger btn-sm" id="school-del-btn" onclick="deleteSchool()">🗑️ 刪除學校</button>
       </div>
-      <p class="hint">姓名、年級班級（例如 306）、聯絡人與聯絡方式、固定不進班星期</p>
+      <p class="hint">姓名、年級班級（例如 306）、聯絡人與聯絡電話、固定不進班星期</p>
       <div class="bulk-bar">
         <span id="bulk-st-count">已選 0 位學生</span>
         <button class="btn btn-danger btn-sm" id="bulk-st-del" onclick="deleteSelectedStudents()" disabled>刪除所選學生</button>
       </div>
       <div class="table-wrap">
         <table class="stu-table">
-          <thead><tr><th class="sel"><input type="checkbox" class="sel-box" id="sel-all-st" aria-label="全選學生"></th><th>年級班級</th><th>姓名</th><th>聯絡人 / 聯絡方式</th><th>固定不進班</th><th>備註</th><th><span style="position:absolute;left:-9999px">操作</span></th></tr></thead>
+          <thead><tr><th class="sel"><input type="checkbox" class="sel-box" id="sel-all-st" aria-label="全選學生"></th><th>年級班級</th><th>姓名</th><th>聯絡人 / 聯絡電話</th><th>固定不進班</th><th>備註</th><th><span style="position:absolute;left:-9999px">操作</span></th></tr></thead>
           <tbody id="students-tbody"></tbody>
         </table>
       </div>
@@ -879,7 +879,7 @@ function errMsg(code) {
     USERNAME_TAKEN: '此帳號已被使用', WRONG_OLD_PASSWORD: '原密碼不正確', PASSWORD_REQUIRED: '請輸入新密碼',
     NAME_REQUIRED: '請輸入名稱', NAME_TOO_LONG: '名稱太長（最多 12 字）', SCHOOL_EXISTS: '已有同名學校',
     STUDENT_NOT_FOUND: '找不到該學生', TEACHER_NOT_FOUND: '找不到該老師', UNKNOWN_ACTION: '後端版本過舊，請重新部署 Code.gs',
-    BUSY: '目前多人同時操作中，請稍後再試一次', DATE_REQUIRED: '請選擇日期', NOT_WEEKEND: '補班補課只能設定在星期六或星期日', NOT_WEEKDAY: '星期六、日本來就放假，不需要設定國定假日', DAY_NOT_FOUND: '這天沒有特別設定（可能已被取消）', DAY_EXISTS: '新的日期已經有設定了，請先取消那天的設定或改選其他日期', INVALID_DAYS: '有日期設定不正確，請檢查後再送出', DAY_CLOSED: '今天不能點名', BOOKING_PAST: '老師只能登記今天（含）以後的預約請假', BOOKING_STARTED: '這筆預約已經開始，如需修改或取消請聯絡管理員', BOOKING_OVERLAP: '這位學生在這段期間已經有預約請假', BOOKING_NO_DAYS: '這段期間沒有上課日（都是例假日、國定假日或學生固定不進班的日子）', BOOKING_RANGE: '結束日期不能早於開始日期', BOOKING_TOO_OLD: '只能補登 40 天內的預約請假', BOOKING_TOO_LONG: '一次最多登記 120 天', BOOKING_NOT_FOUND: '找不到這筆預約（可能已被取消）', EXTRA_NOT_FIXED: '這位學生沒有設定固定不進班，不需要登記臨時進班', EXTRA_OVERLAP: '這位學生在這段期間已經有臨時進班登記', EXTRA_NO_DAYS: '這段期間沒有這位學生固定不進班的上課日，不需要登記', BATCH_EMPTY: '請至少填寫一列', BATCH_TOO_MANY: '一次最多登記 100 列', SCHOOL_NOT_FOUND: '找不到這間學校（可能已被刪除）', GRADE_REQUIRED: '請填寫年級班級', CONTACT_REQUIRED: '請至少填寫一組聯絡人與聯絡方式', INVALID_ROWS: '有學生資料不完整（姓名、年級班級、聯絡人與聯絡方式為必填）', USERNAME_REQUIRED: '請填寫登入帳號', CONFLICT: '這間學校的點名剛被其他老師更新', INCOMPLETE: '還有學生尚未點名'
+    BUSY: '目前多人同時操作中，請稍後再試一次', DATE_REQUIRED: '請選擇日期', NOT_WEEKEND: '補班補課只能設定在星期六或星期日', NOT_WEEKDAY: '星期六、日本來就放假，不需要設定國定假日', DAY_NOT_FOUND: '這天沒有特別設定（可能已被取消）', DAY_EXISTS: '新的日期已經有設定了，請先取消那天的設定或改選其他日期', INVALID_DAYS: '有日期設定不正確，請檢查後再送出', DAY_CLOSED: '今天不能點名', BOOKING_PAST: '老師只能登記今天（含）以後的預約請假', BOOKING_STARTED: '這筆預約已經開始，如需修改或取消請聯絡管理員', BOOKING_OVERLAP: '這位學生在這段期間已經有預約請假', BOOKING_NO_DAYS: '這段期間沒有上課日（都是例假日、國定假日或學生固定不進班的日子）', BOOKING_RANGE: '結束日期不能早於開始日期', BOOKING_TOO_OLD: '只能補登 40 天內的預約請假', BOOKING_TOO_LONG: '一次最多登記 120 天', BOOKING_NOT_FOUND: '找不到這筆預約（可能已被取消）', EXTRA_NOT_FIXED: '這位學生沒有設定固定不進班，不需要登記臨時進班', EXTRA_OVERLAP: '這位學生在這段期間已經有臨時進班登記', EXTRA_NO_DAYS: '這段期間沒有這位學生固定不進班的上課日，不需要登記', BATCH_EMPTY: '請至少填寫一列', BATCH_TOO_MANY: '一次最多登記 100 列', SCHOOL_NOT_FOUND: '找不到這間學校（可能已被刪除）', GRADE_REQUIRED: '請填寫年級班級', CONTACT_REQUIRED: '請至少填寫一組聯絡人與聯絡電話', INVALID_ROWS: '有學生資料不完整（姓名、年級班級、聯絡人與聯絡電話為必填）', USERNAME_REQUIRED: '請填寫登入帳號', CONFLICT: '這間學校的點名剛被其他老師更新', INCOMPLETE: '還有學生尚未點名'
   };
   return map[code] || ('發生錯誤（' + code + '）');
 }
@@ -2146,7 +2146,7 @@ function contactGroupHtml(idx, c, radioName, removable) {
   const n = ['', '第一組', '第二組', '第三組'][idx];
   return `<div class="cg" data-idx="${idx}">
     <select class="ct-select cg-rel" aria-label="${n}聯絡人">${ctOptionsHtml(c.rel)}</select>
-    <input class="ph cg-phone" aria-label="${n}聯絡方式" placeholder="聯絡方式（電話）" inputmode="tel" value="${esc(c.phone)}">
+    <input class="ph cg-phone" aria-label="${n}聯絡電話" placeholder="聯絡電話" inputmode="tel" value="${esc(c.phone)}">
     <label class="pr"><input type="radio" name="${radioName}" value="${idx}"${c.primary ? ' checked' : ''}> 主要</label>
     ${removable ? '<button type="button" class="icon-btn" aria-label="移除這組聯絡人" onclick="removeContactGroup(this)">✕</button>' : ''}
   </div>`;
@@ -2183,10 +2183,10 @@ function openStudentModal(studentId) {
   const isEdit = !!student;
   const contacts = isEdit && student.contacts.length ? student.contacts : [{ rel: '', phone: '', primary: true }];
   const modal = buildModal(isEdit ? '編輯學生' : '新增學生', `
-    <p class="hint" style="margin-top:-6px"><span class="req">*</span> 為必填：姓名、年級班級、至少一組聯絡人與聯絡方式</p>
+    <p class="hint" style="margin-top:-6px"><span class="req">*</span> 為必填：姓名、年級班級、至少一組聯絡人與聯絡電話</p>
     <div class="field"><label for="m-st-name">姓名 <span class="req">*</span></label><input id="m-st-name" value="${isEdit ? esc(student.name) : ''}"></div>
     <div class="field"><label for="m-st-grade">年級班級（例如 306） <span class="req">*</span></label><input id="m-st-grade" inputmode="numeric" maxlength="4" value="${isEdit ? esc(student.grade) : ''}" placeholder="306"></div>
-    <div class="field"><span class="field-label-text" id="m-st-ct-label">聯絡人與聯絡方式 <span class="req">*</span>（圓鈕選擇主要聯絡對象）</span>
+    <div class="field"><span class="field-label-text" id="m-st-ct-label">聯絡人與聯絡電話 <span class="req">*</span>（圓鈕選擇主要聯絡對象）</span>
       <div id="m-st-contacts" role="group" aria-labelledby="m-st-ct-label">${contacts.map((c, i) => contactGroupHtml(i + 1, c, 'm-primary', i > 0)).join('')}</div>
       <button type="button" class="btn btn-secondary btn-sm" id="m-st-addgroup" onclick="addContactGroup()">+ 新增第二組聯絡人</button>
     </div>
@@ -2213,7 +2213,7 @@ function openStudentModal(studentId) {
       if (!c.rel && !c.phone && i > 0) return;
       if (!c.rel) g.querySelector('.cg-rel').classList.add('invalid');
       if (!c.phone) g.querySelector('.cg-phone').classList.add('invalid');
-      if (!c.rel || !c.phone) missing.push(`第${['一', '二', '三'][i]}組聯絡人${!c.rel && !c.phone ? '' : (!c.rel ? '的稱呼' : '的聯絡方式')}`);
+      if (!c.rel || !c.phone) missing.push(`第${['一', '二', '三'][i]}組聯絡人${!c.rel && !c.phone ? '' : (!c.rel ? '的稱呼' : '的聯絡電話')}`);
     });
     if (missing.length) { toast('請填寫：' + missing.join('、'), true); return false; }
     const payload = {
@@ -2240,7 +2240,7 @@ function bsRowHtml() {
   const rid = 'bs' + (++bsSeq);
   const groups = [1, 2, 3].map(g => `
     <td class="g${g}"><select class="ct-select bs-rel cell-input" data-g="${g}" aria-label="聯絡人${g}">${ctOptionsHtml('')}</select></td>
-    <td class="g${g}"><input class="bs-phone cell-input" data-g="${g}" aria-label="聯絡方式${g}" placeholder="0912-345-678" inputmode="tel" style="min-width:130px"></td>
+    <td class="g${g}"><input class="bs-phone cell-input" data-g="${g}" aria-label="聯絡電話${g}" placeholder="0912-345-678" inputmode="tel" style="min-width:130px"></td>
     <td class="g${g} c"><input type="radio" name="pr-${rid}" value="${g}"${g === 1 ? ' checked' : ''} aria-label="第${g}組為主要聯絡人"></td>`).join('');
   return `<tr>
     <td class="idx"></td>
@@ -2274,9 +2274,9 @@ function openBatchStudentModal() {
     </div>
     <div class="batch-scroll"><table class="batch-table no-g2 no-g3" id="bs-table">
       <thead><tr><th>#</th><th>姓名 <span class="req">*</span></th><th>年級班級 <span class="req">*</span></th>
-        <th class="g1">聯絡人1 <span class="req">*</span></th><th class="g1">聯絡方式1 <span class="req">*</span></th><th class="g1">主要</th>
-        <th class="g2">聯絡人2</th><th class="g2">聯絡方式2</th><th class="g2">主要</th>
-        <th class="g3">聯絡人3</th><th class="g3">聯絡方式3</th><th class="g3">主要</th>
+        <th class="g1">聯絡人1 <span class="req">*</span></th><th class="g1">聯絡電話1 <span class="req">*</span></th><th class="g1">主要</th>
+        <th class="g2">聯絡人2</th><th class="g2">聯絡電話2</th><th class="g2">主要</th>
+        <th class="g3">聯絡人3</th><th class="g3">聯絡電話3</th><th class="g3">主要</th>
         <th>不進班星期</th><th>備註</th><th></th></tr></thead>
       <tbody id="bs-body"></tbody></table></div>
     <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
@@ -2301,14 +2301,14 @@ function openBatchStudentModal() {
       }));
       const anyData = name || grade || note || days.length || groups.some(c => c.rel || c.phone);
       if (!anyData) return;   // 完全空白的列略過
-      // 必填：姓名、年級班級、第一組聯絡人+聯絡方式；其他組若有填就要成對
+      // 必填：姓名、年級班級、第一組聯絡人+聯絡電話；其他組若有填就要成對
       const missing = [];
       if (!name) { missing.push('姓名'); nameEl.classList.add('invalid'); }
       if (!grade) { missing.push('年級班級'); gradeEl.classList.add('invalid'); }
       groups.forEach(c => {
         if (c.g > 1 && !c.rel && !c.phone) return;
         if (!c.rel) { c.relEl.classList.add('invalid'); missing.push(`聯絡人${c.g}`); }
-        if (!c.phone) { c.phoneEl.classList.add('invalid'); missing.push(`聯絡方式${c.g}`); }
+        if (!c.phone) { c.phoneEl.classList.add('invalid'); missing.push(`聯絡電話${c.g}`); }
       });
       if (missing.length) { if (!firstBad) firstBad = `第 ${i + 1} 列缺少：${missing.join('、')}`; return; }
       const pr = Number((tr.querySelector('input[type=radio]:checked') || {}).value || 1);
