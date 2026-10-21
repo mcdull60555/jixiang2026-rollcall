@@ -491,6 +491,10 @@ tr.day-past td:last-child{opacity:1;}
 .bb-table td.bb-days b{color:var(--text);}
 .bb-table td.bb-days.bad{color:var(--rose);}
 .bb-table tr.bb-err td{background:#fff1f2;}
+.bb-pick{display:flex;flex-wrap:wrap;max-height:150px;overflow:auto;padding:6px;border:1px solid #fde68a;border-radius:8px;background:#fff;margin:4px 0 8px;}
+.bb-pick .chip span{min-width:0;}
+.bb-pick-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13.5px;font-weight:600;}
+.bb-pick-bar .link-btn{background:none;border:none;padding:0;color:var(--accent);font-weight:600;font-size:13px;cursor:pointer;text-decoration:underline;}
 .bb-msg{font-size:12.5px;color:var(--rose);margin-top:3px;white-space:normal;}
 .bk-est{margin:2px 0 10px;padding:8px 12px;border-radius:10px;background:#f0f9ff;border:1px solid #bae6fd;font-size:14px;}
 .bk-est:empty{display:none;}
@@ -1640,14 +1644,18 @@ async function openBookingBatch(kind, opts) {
     ${isAdmin ? `<div class="field"><label for="bb-school">學校</label><select id="bb-school">${(STATE.schools || []).map(s => `<option value="${esc(s.id)}"${s.id === schoolId ? ' selected' : ''}>${esc(s.name)}</option>`).join('')}</select></div>`
       : `<div class="hint" style="margin-top:0">學校：<b>${esc(schoolName(schoolId))}</b>（老師只能登記今天以後的日期）</div>`}
     <div class="bd-range">
-      <div class="bd-range-title">快速填入（多位學生同一段期間時使用，填完仍可逐列修改）</div>
+      <div class="bd-range-title">快速填入：勾選多位學生＋同一段期間，一次加入表格（加入後仍可逐列修改）</div>
+      <div class="bb-pick-bar">學生（可複選）<span id="bb-pick-n" style="color:var(--muted);font-weight:400"></span>
+        <button type="button" class="link-btn" id="bb-pick-all">全選</button><button type="button" class="link-btn" id="bb-pick-none">清除</button></div>
+      <div class="bb-pick" id="bb-pick"></div>
       <div class="row">
         <div class="field"><label for="bb-q-start">開始</label><input type="date" id="bb-q-start"${minAttr}></div>
         <div class="field"><label for="bb-q-end">結束</label><input type="date" id="bb-q-end"${minAttr}></div>
         <div class="field"><label for="bb-q-reason">原因</label><input id="bb-q-reason" maxlength="30" placeholder="${k.placeholder}"></div>
       </div>
-      <button type="button" class="btn btn-secondary btn-sm" id="bb-q-apply">套用到期間空白的列</button>
-      <button type="button" class="btn btn-secondary btn-sm" id="bb-q-all">套用到全部列</button>
+      <button type="button" class="btn btn-primary btn-sm" id="bb-q-add">加入表格</button>
+      <button type="button" class="btn btn-secondary btn-sm" id="bb-q-apply">期間套用到空白列</button>
+      <button type="button" class="btn btn-secondary btn-sm" id="bb-q-all">期間套用到全部列</button>
     </div>
     <div class="batch-scroll"><table class="batch-table bb-table">
       <thead><tr><th>#</th><th>學生 <span class="req">*</span></th><th>開始 <span class="req">*</span></th><th>結束</th><th>天數</th><th>原因（選填）</th><th></th></tr></thead>
@@ -1744,6 +1752,34 @@ async function openBookingBatch(kind, opts) {
     });
     toast(n ? `已套用到 ${n} 列` : '沒有可以套用的列（期間都已填寫）', !n);
   };
+  const pickHtml = () => pool().length ? pool().map(s => `<label class="chip"><input type="checkbox" class="bb-pick-st" value="${esc(s.id)}"><span>${esc(s.grade)} ${esc(s.name)}${isAttend ? `（${esc(dayNames(s))}）` : ''}</span></label>`).join('')
+    : `<span class="hint" style="margin:2px 4px">${isAttend ? '此校沒有設定固定不進班的學生' : '此校尚無學生'}</span>`;
+  const pickCount = () => { const n = modal.querySelectorAll('.bb-pick-st:checked').length; $('bb-pick-n').textContent = n ? `已選 ${n} 位` : ''; $('bb-q-add').textContent = n ? `加入表格（${n} 位）` : '加入表格'; };
+  const renderPick = () => { $('bb-pick').innerHTML = pickHtml(); pickCount(); };
+  $('bb-pick').addEventListener('change', pickCount);
+  $('bb-pick-all').onclick = () => { modal.querySelectorAll('.bb-pick-st').forEach(el => { el.checked = true; }); pickCount(); };
+  $('bb-pick-none').onclick = () => { modal.querySelectorAll('.bb-pick-st').forEach(el => { el.checked = false; }); pickCount(); };
+  // 勾選的學生各加一列（先補空白列，不夠再新增），帶入快速填入的期間與原因
+  $('bb-q-add').onclick = () => {
+    const ids = [...modal.querySelectorAll('.bb-pick-st:checked')].map(el => el.value);
+    const q0 = $('bb-q-start').value, q1 = $('bb-q-end').value || q0, qr = $('bb-q-reason').value.trim();
+    if (!ids.length) { toast('請先勾選學生', true); return; }
+    if (!q0) { toast('請選擇開始日期', true); return; }
+    if (q1 < q0) { toast(errMsg('BOOKING_RANGE'), true); return; }
+    const blanks = [...body.querySelectorAll('tr')].filter(tr => !tr.querySelector('.bb-st').value && !tr.querySelector('.bb-start').value && !tr.querySelector('.bb-reason').value.trim());
+    const need = ids.length - blanks.length;
+    if (need > 0) addRows(need);
+    const targets = [...body.querySelectorAll('tr')].filter(tr => !tr.querySelector('.bb-st').value && !tr.querySelector('.bb-start').value && !tr.querySelector('.bb-reason').value.trim());
+    ids.forEach((id, i) => {
+      const tr = targets[i];
+      tr.querySelector('.bb-st').value = id; tr.querySelector('.bb-start').value = q0; tr.querySelector('.bb-end').value = q1; tr.querySelector('.bb-reason').value = qr;
+      tr.querySelectorAll('.invalid').forEach(el => el.classList.remove('invalid'));
+      updateRow(tr);
+    });
+    $('bb-pick-none').onclick();
+    toast(`已加入 ${ids.length} 位學生，可在下方逐列修改日期`);
+    targets[0].scrollIntoView({ block: 'nearest' });
+  };
   $('bb-q-start').addEventListener('change', () => { if (!$('bb-q-end').value || $('bb-q-end').value < $('bb-q-start').value) $('bb-q-end').value = $('bb-q-start').value; });
   $('bb-q-apply').onclick = () => applyQuick(false);
   $('bb-q-all').onclick = () => applyQuick(true);
@@ -1756,9 +1792,11 @@ async function openBookingBatch(kind, opts) {
     schoolId = next;
     students = await loadStudents(schoolId);
     body.querySelectorAll('tr').forEach(tr => { tr.querySelector('.bb-st').innerHTML = stOpts(''); updateRow(tr); });
+    renderPick();
   });
+  renderPick();
   addRows(5);
-  modal.querySelector('.bb-st').focus();
+  ($('bb-pick').querySelector('input') || modal.querySelector('.bb-st')).focus();
 }
 
 // 登記／取消後重新載入點名表：正在修改中的狀態保留（只有被登記的那位學生更新）
