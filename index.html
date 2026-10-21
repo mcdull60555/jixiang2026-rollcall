@@ -485,6 +485,13 @@ tr.day-past td:last-child{opacity:1;}
 .rc-row.extra td{background:#f3fdf6;}
 .bk-est.ex{background:#f0fdf4;border-color:#bbf7d0;}
 .rc-bk-field .btn + .btn{margin-left:6px;}
+.bb-table select.cell-input{min-width:150px;}
+.bb-table input[type=date]{min-width:132px;}
+.bb-table td.bb-days{white-space:nowrap;font-size:13px;color:var(--muted);}
+.bb-table td.bb-days b{color:var(--text);}
+.bb-table td.bb-days.bad{color:var(--rose);}
+.bb-table tr.bb-err td{background:#fff1f2;}
+.bb-msg{font-size:12.5px;color:var(--rose);margin-top:3px;white-space:normal;}
 .bk-est{margin:2px 0 10px;padding:8px 12px;border-radius:10px;background:#f0f9ff;border:1px solid #bae6fd;font-size:14px;}
 .bk-est:empty{display:none;}
 tr.bk-past td{opacity:.6;}
@@ -678,6 +685,7 @@ tr.bk-past td:last-child{opacity:1;}
       </div>
       <div class="lv-quick bk-tools">
         <button type="button" class="btn btn-primary btn-sm" id="bk-add" onclick="openBookingForm()">+ 新增預約請假</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="bk-batch" onclick="openBookingBatch('leave')">批次登記</button>
         <label class="chk-inline" for="bk-past"><input type="checkbox" id="bk-past" onchange="loadBookings()">顯示已結束的預約</label>
       </div>
       <div class="table-wrap"><table class="bk-table">
@@ -689,6 +697,7 @@ tr.bk-past td:last-child{opacity:1;}
       <p class="hint">固定不進班的學生因臨時需要或考前加強要來上課時，先在這裡登記。期間內原本「固定不進班」的日子會改為正常進班：老師點名時看到的是一般學生（未點名）並標示「📌 臨時進班」，不會再以為他今天不用來。只影響固定不進班的那幾天，其他日子照常。上方的學校篩選與「顯示已結束」也套用在這裡。</p>
       <div class="lv-quick bk-tools">
         <button type="button" class="btn btn-teal btn-sm" id="ex-add" onclick="openBookingForm(null,{kind:'attend'})">+ 新增臨時進班</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="ex-batch" onclick="openBookingBatch('attend')">批次登記</button>
       </div>
       <div class="table-wrap"><table class="bk-table">
         <thead><tr><th>學校</th><th>年級班級</th><th>學生姓名</th><th>進班期間</th><th>天數</th><th>原因</th><th>登記者</th><th>狀態</th><th></th></tr></thead>
@@ -866,7 +875,7 @@ function errMsg(code) {
     USERNAME_TAKEN: '此帳號已被使用', WRONG_OLD_PASSWORD: '原密碼不正確', PASSWORD_REQUIRED: '請輸入新密碼',
     NAME_REQUIRED: '請輸入名稱', NAME_TOO_LONG: '名稱太長（最多 12 字）', SCHOOL_EXISTS: '已有同名學校',
     STUDENT_NOT_FOUND: '找不到該學生', TEACHER_NOT_FOUND: '找不到該老師', UNKNOWN_ACTION: '後端版本過舊，請重新部署 Code.gs',
-    BUSY: '目前多人同時操作中，請稍後再試一次', DATE_REQUIRED: '請選擇日期', NOT_WEEKEND: '補班補課只能設定在星期六或星期日', NOT_WEEKDAY: '星期六、日本來就放假，不需要設定國定假日', DAY_NOT_FOUND: '這天沒有特別設定（可能已被取消）', DAY_EXISTS: '新的日期已經有設定了，請先取消那天的設定或改選其他日期', INVALID_DAYS: '有日期設定不正確，請檢查後再送出', DAY_CLOSED: '今天不能點名', BOOKING_PAST: '老師只能登記今天（含）以後的預約請假', BOOKING_STARTED: '這筆預約已經開始，如需修改或取消請聯絡管理員', BOOKING_OVERLAP: '這位學生在這段期間已經有預約請假', BOOKING_NO_DAYS: '這段期間沒有上課日（都是例假日、國定假日或學生固定不進班的日子）', BOOKING_RANGE: '結束日期不能早於開始日期', BOOKING_TOO_OLD: '只能補登 40 天內的預約請假', BOOKING_TOO_LONG: '一次最多登記 120 天', BOOKING_NOT_FOUND: '找不到這筆預約（可能已被取消）', EXTRA_NOT_FIXED: '這位學生沒有設定固定不進班，不需要登記臨時進班', EXTRA_OVERLAP: '這位學生在這段期間已經有臨時進班登記', EXTRA_NO_DAYS: '這段期間沒有這位學生固定不進班的上課日，不需要登記', SCHOOL_NOT_FOUND: '找不到這間學校（可能已被刪除）', GRADE_REQUIRED: '請填寫年級班級', CONTACT_REQUIRED: '請至少填寫一組聯絡人與聯絡方式', INVALID_ROWS: '有學生資料不完整（姓名、年級班級、聯絡人與聯絡方式為必填）', USERNAME_REQUIRED: '請填寫登入帳號', CONFLICT: '這間學校的點名剛被其他老師更新', INCOMPLETE: '還有學生尚未點名'
+    BUSY: '目前多人同時操作中，請稍後再試一次', DATE_REQUIRED: '請選擇日期', NOT_WEEKEND: '補班補課只能設定在星期六或星期日', NOT_WEEKDAY: '星期六、日本來就放假，不需要設定國定假日', DAY_NOT_FOUND: '這天沒有特別設定（可能已被取消）', DAY_EXISTS: '新的日期已經有設定了，請先取消那天的設定或改選其他日期', INVALID_DAYS: '有日期設定不正確，請檢查後再送出', DAY_CLOSED: '今天不能點名', BOOKING_PAST: '老師只能登記今天（含）以後的預約請假', BOOKING_STARTED: '這筆預約已經開始，如需修改或取消請聯絡管理員', BOOKING_OVERLAP: '這位學生在這段期間已經有預約請假', BOOKING_NO_DAYS: '這段期間沒有上課日（都是例假日、國定假日或學生固定不進班的日子）', BOOKING_RANGE: '結束日期不能早於開始日期', BOOKING_TOO_OLD: '只能補登 40 天內的預約請假', BOOKING_TOO_LONG: '一次最多登記 120 天', BOOKING_NOT_FOUND: '找不到這筆預約（可能已被取消）', EXTRA_NOT_FIXED: '這位學生沒有設定固定不進班，不需要登記臨時進班', EXTRA_OVERLAP: '這位學生在這段期間已經有臨時進班登記', EXTRA_NO_DAYS: '這段期間沒有這位學生固定不進班的上課日，不需要登記', BATCH_EMPTY: '請至少填寫一列', BATCH_TOO_MANY: '一次最多登記 100 列', SCHOOL_NOT_FOUND: '找不到這間學校（可能已被刪除）', GRADE_REQUIRED: '請填寫年級班級', CONTACT_REQUIRED: '請至少填寫一組聯絡人與聯絡方式', INVALID_ROWS: '有學生資料不完整（姓名、年級班級、聯絡人與聯絡方式為必填）', USERNAME_REQUIRED: '請填寫登入帳號', CONFLICT: '這間學校的點名剛被其他老師更新', INCOMPLETE: '還有學生尚未點名'
   };
   return map[code] || ('發生錯誤（' + code + '）');
 }
@@ -1590,6 +1599,168 @@ async function deleteBooking(id, opts) {
   if (!ok) return;
   await doWrite('deleteBooking', { kind, id }, async () => { if (opts.afterSave) await opts.afterSave(bk.studentId); else await loadBookings(true); }, `同步成功（已取消${k.name}）`);
 }
+// 批次登記：每一列各自選學生、期間與原因（可用上方「快速填入」一次套用相同期間）
+async function openBookingBatch(kind, opts) {
+  opts = opts || {};
+  kind = kind === 'attend' ? 'attend' : 'leave';
+  const isAttend = kind === 'attend';
+  const k = bkK(kind);
+  const isAdmin = STATE.role === 'admin';
+  const today = STATE.today;
+  if (isAdmin && !STATE.schools) await loadSchools(true);
+  let schoolId = isAdmin ? ($('bk-school').value || (STATE.schools[0] || {}).id || '') : STATE.rollcall.schoolId;
+  let students = [];
+  const loadStudents = async sid => {
+    if (!isAdmin) return STATE.rollcall.students.map(s => ({ id: s.id, name: s.name, grade: s.grade, fixedOffDays: s.fixedOffDays || [] }));
+    if (!sid) return [];
+    const r = await api('listStudents', { schoolId: sid }, { pill: false, flash: false });
+    return r.students;
+  };
+  students = await loadStudents(schoolId);
+  const dayNames = st => (st && st.fixedOffDays || []).map(d => '週' + DOW[d - 1]).join('、');
+  const pool = () => (isAttend ? students.filter(s => (s.fixedOffDays || []).length) : students).slice()
+    .sort((a, b) => String(a.grade).localeCompare(String(b.grade), 'zh-Hant', { numeric: true }));
+  const stOpts = sel => `<option value="">${isAttend && !pool().length ? '此校沒有固定不進班的學生' : '選擇學生…'}</option>` +
+    pool().map(s => `<option value="${esc(s.id)}"${s.id === sel ? ' selected' : ''}>${esc(s.grade)}　${esc(s.name)}${isAttend ? `（${esc(dayNames(s))}）` : ''}</option>`).join('');
+  const minAttr = isAdmin ? '' : ` min="${esc(today)}"`;
+  const rowHtml = it => `<tr>
+      <td class="idx"></td>
+      <td><select class="cell-input bb-st" aria-label="學生">${stOpts(it.studentId)}</select></td>
+      <td><input type="date" class="cell-input bb-start" aria-label="開始日期" value="${esc(it.startDate || '')}"${minAttr}></td>
+      <td><input type="date" class="cell-input bb-end" aria-label="結束日期" value="${esc(it.endDate || '')}"${minAttr}></td>
+      <td class="bb-days"></td>
+      <td><input class="cell-input bb-reason" maxlength="30" aria-label="原因" placeholder="${k.placeholder.replace('例如：', '')}" value="${esc(it.reason || '')}"></td>
+      <td class="c"><button type="button" class="btn btn-secondary btn-sm bb-del" aria-label="刪除這一列">✕</button></td>
+    </tr>`;
+  const schoolName = sid => ((STATE.schools || []).find(s => s.id === sid) || {}).name || '';
+  const modal = buildModal(`批次登記${k.name}`, `
+    <p class="hint" style="margin-top:0">每一列選一位學生，填上<b>這位學生自己的</b>開始與結束日期（只有一天就兩格填同一天）。${isAttend
+      ? '期間內學生原本固定不進班的日子會改為進班；學生選單只列出有固定不進班的學生。'
+      : '週六日、國定假日、學生固定不進班的日子不算天數。'}完全空白的列會略過。</p>
+    ${isAdmin ? `<div class="field"><label for="bb-school">學校</label><select id="bb-school">${(STATE.schools || []).map(s => `<option value="${esc(s.id)}"${s.id === schoolId ? ' selected' : ''}>${esc(s.name)}</option>`).join('')}</select></div>`
+      : `<div class="hint" style="margin-top:0">學校：<b>${esc(schoolName(schoolId))}</b>（老師只能登記今天以後的日期）</div>`}
+    <div class="bd-range">
+      <div class="bd-range-title">快速填入（多位學生同一段期間時使用，填完仍可逐列修改）</div>
+      <div class="row">
+        <div class="field"><label for="bb-q-start">開始</label><input type="date" id="bb-q-start"${minAttr}></div>
+        <div class="field"><label for="bb-q-end">結束</label><input type="date" id="bb-q-end"${minAttr}></div>
+        <div class="field"><label for="bb-q-reason">原因</label><input id="bb-q-reason" maxlength="30" placeholder="${k.placeholder}"></div>
+      </div>
+      <button type="button" class="btn btn-secondary btn-sm" id="bb-q-apply">套用到期間空白的列</button>
+      <button type="button" class="btn btn-secondary btn-sm" id="bb-q-all">套用到全部列</button>
+    </div>
+    <div class="batch-scroll"><table class="batch-table bb-table">
+      <thead><tr><th>#</th><th>學生 <span class="req">*</span></th><th>開始 <span class="req">*</span></th><th>結束</th><th>天數</th><th>原因（選填）</th><th></th></tr></thead>
+      <tbody id="bb-body"></tbody></table></div>
+    <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+      <button type="button" class="btn btn-secondary btn-sm" id="bb-add1">+ 新增一列</button>
+      <button type="button" class="btn btn-secondary btn-sm" id="bb-add5">+ 新增五列</button>
+    </div>
+  `, async () => {
+    const trs = [...modal.querySelectorAll('#bb-body tr')];
+    modal.querySelectorAll('#bb-body .invalid').forEach(el => el.classList.remove('invalid'));
+    trs.forEach(tr => { tr.classList.remove('bb-err'); const m = tr.querySelector('.bb-msg'); if (m) m.remove(); });
+    const items = [], rowOf = [];
+    let firstBad = null;
+    const mark = (tr, el, msg) => { el.classList.add('invalid'); if (!firstBad) firstBad = `第 ${tr.querySelector('.idx').textContent} 列${msg}`; };
+    trs.forEach(tr => {
+      const stEl = tr.querySelector('.bb-st'), sEl = tr.querySelector('.bb-start'), eEl = tr.querySelector('.bb-end');
+      const studentId = stEl.value, startDate = sEl.value, endDate = eEl.value || sEl.value, reason = tr.querySelector('.bb-reason').value.trim();
+      if (!studentId && !startDate && !eEl.value && !reason) return;
+      if (!studentId) return mark(tr, stEl, '沒有選學生');
+      if (!startDate) return mark(tr, sEl, '沒有選開始日期');
+      if (endDate < startDate) return mark(tr, eEl, '的結束日期早於開始日期');
+      items.push({ studentId, startDate, endDate, reason }); rowOf.push(tr);
+    });
+    if (firstBad) { toast(firstBad, true); return false; }
+    if (!items.length) { toast('請至少填寫一列', true); return false; }
+    const nameOf = id => (students.find(s => s.id === id) || {}).name || '';
+    const list = items.slice(0, 10).map(x => `${esc(nameOf(x.studentId))}：${esc(shortRange(x.startDate, x.endDate))}${x.reason ? '（' + esc(x.reason) + '）' : ''}`).join('<br>') + (items.length > 10 ? `<br>…等共 ${items.length} 筆` : '');
+    const ok = await confirmBox(`批次登記${k.name}`, `確定登記以下 <b>${items.length}</b> 筆${k.name}嗎？
+      <div style="margin-top:8px;font-size:13px;color:var(--muted);max-height:200px;overflow:auto">${list}</div>`, '確定登記');
+    if (!ok) return false;
+    const r = await doWrite('saveBookingsBatch', { kind, schoolId, items },
+      async () => { if (opts.afterSave) await opts.afterSave(items.map(x => x.studentId)); else await loadBookings(true); },
+      res => `同步成功（已登記 ${res.created} 筆${k.name}，共 ${res.days} ${isAttend ? '天改為進班' : '個上課日'}）`,
+      { onError: e => {
+        if (e.message !== 'INVALID_BOOKINGS' || !e.data || !e.data.bad) return false;
+        e.data.bad.forEach(b => {
+          const tr = rowOf[b.row - 1];
+          if (!tr) return;
+          tr.classList.add('bb-err');
+          let msg = errMsg(b.error);
+          if (b.clash) msg = b.inBatch ? `和本次批次中同一位學生的 ${shortRange(b.clash.startDate, b.clash.endDate)} 期間重疊`
+            : `這位學生在 ${shortRange(b.clash.startDate, b.clash.endDate)} 已經有${k.name}`;
+          tr.querySelector('.bb-st').insertAdjacentHTML('afterend', `<div class="bb-msg">${esc(msg)}</div>`);
+        });
+        const first = rowOf[e.data.bad[0].row - 1];
+        toast(`有 ${e.data.bad.length} 列無法登記（已標示紅色），請修正後再送出；這次沒有任何一筆被登記`, true);
+        if (first) first.scrollIntoView({ block: 'center' });
+        return true;
+      } });
+    return !!r;
+  }, { wide: true, confirmText: '送出並同步' });
+  const body = modal.querySelector('#bb-body');
+  const renumber = () => body.querySelectorAll('tr').forEach((tr, i) => { tr.querySelector('.idx').textContent = i + 1; });
+  const updateRow = tr => {
+    const st = students.find(s => s.id === tr.querySelector('.bb-st').value);
+    const s0 = tr.querySelector('.bb-start').value, s1 = tr.querySelector('.bb-end').value || s0;
+    const td = tr.querySelector('.bb-days');
+    td.classList.remove('bad');
+    if (!st || !s0) { td.innerHTML = ''; return; }
+    if (s1 < s0) { td.textContent = '日期錯誤'; td.classList.add('bad'); return; }
+    const n = bkEstimate(s0, s1, st.fixedOffDays, kind);
+    if (!n) { td.textContent = isAttend ? '沒有不進班日' : '沒有上課日'; td.classList.add('bad'); return; }
+    td.innerHTML = `${isAttend ? '' : '約 '}<b>${n}</b> 天`;
+  };
+  const addRows = n => { body.insertAdjacentHTML('beforeend', Array.from({ length: n }, () => rowHtml({})).join('')); renumber(); };
+  body.addEventListener('change', e => {
+    const tr = e.target.closest('tr');
+    if (!tr) return;
+    tr.classList.remove('bb-err'); const m = tr.querySelector('.bb-msg'); if (m) m.remove();
+    e.target.classList.remove('invalid');
+    if (e.target.classList.contains('bb-start')) { const en = tr.querySelector('.bb-end'); if (!en.value || en.value < e.target.value) en.value = e.target.value; }
+    updateRow(tr);
+  });
+  body.addEventListener('click', async e => {
+    const b = e.target.closest('.bb-del');
+    if (!b) return;
+    const tr = b.closest('tr');
+    const filled = tr.querySelector('.bb-st').value || tr.querySelector('.bb-start').value || tr.querySelector('.bb-reason').value.trim();
+    if (filled && !(await confirmBox('刪除這一列', `確定要刪除第 ${esc(tr.querySelector('.idx').textContent)} 列嗎？`, '刪除', true))) return;
+    tr.remove(); renumber();
+  });
+  const applyQuick = all => {
+    const q0 = $('bb-q-start').value, q1 = $('bb-q-end').value || q0, qr = $('bb-q-reason').value.trim();
+    if (!q0) { toast('請先選擇快速填入的開始日期', true); return; }
+    if (q1 < q0) { toast(errMsg('BOOKING_RANGE'), true); return; }
+    let n = 0;
+    body.querySelectorAll('tr').forEach(tr => {
+      const sEl = tr.querySelector('.bb-start'), eEl = tr.querySelector('.bb-end'), rEl = tr.querySelector('.bb-reason');
+      if (!all && sEl.value) return;
+      sEl.value = q0; eEl.value = q1; if (qr && (all || !rEl.value.trim())) rEl.value = qr;
+      sEl.classList.remove('invalid'); eEl.classList.remove('invalid');
+      updateRow(tr); n++;
+    });
+    toast(n ? `已套用到 ${n} 列` : '沒有可以套用的列（期間都已填寫）', !n);
+  };
+  $('bb-q-start').addEventListener('change', () => { if (!$('bb-q-end').value || $('bb-q-end').value < $('bb-q-start').value) $('bb-q-end').value = $('bb-q-start').value; });
+  $('bb-q-apply').onclick = () => applyQuick(false);
+  $('bb-q-all').onclick = () => applyQuick(true);
+  $('bb-add1').onclick = () => addRows(1);
+  $('bb-add5').onclick = () => addRows(5);
+  if (isAdmin) $('bb-school').addEventListener('change', async () => {
+    const filled = [...body.querySelectorAll('.bb-st')].some(el => el.value);
+    const next = $('bb-school').value;
+    if (filled && !(await confirmBox('切換學校', '切換學校後，已選的學生會清空（日期與原因保留）。確定切換嗎？', '確定切換'))) { $('bb-school').value = schoolId; return; }
+    schoolId = next;
+    students = await loadStudents(schoolId);
+    body.querySelectorAll('tr').forEach(tr => { tr.querySelector('.bb-st').innerHTML = stOpts(''); updateRow(tr); });
+  });
+  addRows(5);
+  modal.querySelector('.bb-st').focus();
+}
+
 // 登記／取消後重新載入點名表：正在修改中的狀態保留（只有被登記的那位學生更新）
 async function refreshRollCallKeepEdits(changedId) {
   if (STATE.rcMode !== 'edit') { await loadRollCall(true); return; }
@@ -1597,7 +1768,8 @@ async function refreshRollCallKeepEdits(changedId) {
   document.querySelectorAll('#rollcall-container .rc-row').forEach(tr => { keep[tr.dataset.sid] = tr.dataset.status || ''; });
   await loadRollCall(true, { edit: true });
   if (!STATE.rollcall) return;
-  STATE.rollcall.students.forEach(st => { if (st.id !== changedId && keep[st.id] !== undefined) st.status = keep[st.id]; });
+  const changed = [].concat(changedId);   // 可以是一位或多位（批次登記）學生
+  STATE.rollcall.students.forEach(st => { if (!changed.includes(st.id) && keep[st.id] !== undefined) st.status = keep[st.id]; });
   renderRcEdit();
 }
 // 老師端：查看並登記目前學校的預約請假 / 臨時進班
@@ -1615,6 +1787,7 @@ async function openTeacherBookings(kind) {
       ? '固定不進班的學生因臨時或考前加強要來上課時在這裡登記，那幾天就會變成一般進班，點名時不會再顯示固定不進班。'
       : '家長事先告知請假時在這裡登記，到了那幾天學生會自動算「請假」。'}</p>
     <button type="button" class="btn ${kind === 'attend' ? 'btn-teal' : 'btn-primary'} btn-sm" id="t-bk-add">+ 新增${k.name}</button>
+    <button type="button" class="btn btn-secondary btn-sm" id="t-bk-batch">批次登記</button>
     <div class="table-wrap" style="margin-top:12px"><table class="bk-table">
       <thead><tr><th>學校</th><th>年級班級</th><th>學生姓名</th><th>${k.range}</th><th>天數</th><th>原因</th><th>登記者</th><th>狀態</th><th></th></tr></thead>
       <tbody>${list.length ? bookingRowsHtml(list, false, r.today, kind) : `<tr><td colspan="9" class="empty">這間學校目前沒有${k.name}</td></tr>`}</tbody></table></div>
@@ -1623,6 +1796,7 @@ async function openTeacherBookings(kind) {
   modal.querySelectorAll('button[data-bk-edit]').forEach(b => { const id = b.dataset.bkEdit; b.onclick = () => openBookingForm(id, { kind, list, afterSave: after }); b.removeAttribute('onclick'); });
   modal.querySelectorAll('button[data-bk-del]').forEach(b => { const id = b.dataset.bkDel; b.onclick = () => deleteBooking(id, { kind, list, afterSave: after }); b.removeAttribute('onclick'); });
   modal.querySelector('#t-bk-add').onclick = () => openBookingForm(null, { kind, list, afterSave: after });
+  modal.querySelector('#t-bk-batch').onclick = () => openBookingBatch(kind, { afterSave: after });
 }
 
 function switchTab(tab) {

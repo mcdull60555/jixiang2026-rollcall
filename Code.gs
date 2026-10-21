@@ -366,7 +366,7 @@ function route(body) {
     getDayInfo: actionGetDayInfo, listSpecialDays: actionListSpecialDays,
     setSpecialDay: actionSetSpecialDay, deleteSpecialDay: actionDeleteSpecialDay,
     setSpecialDaysBatch: actionSetSpecialDaysBatch, editSpecialDay: actionEditSpecialDay,
-    listBookings: actionListBookings, saveBooking: actionSaveBooking, deleteBooking: actionDeleteBooking,
+    listBookings: actionListBookings, saveBooking: actionSaveBooking, saveBookingsBatch: actionSaveBookingsBatch, deleteBooking: actionDeleteBooking,
     getOverview: actionGetOverview, getSchoolDayDetail: actionGetSchoolDayDetail,
     listLeaveStreaks: actionListLeaveStreaks
   };
@@ -374,7 +374,7 @@ function route(body) {
   var WRITES = ['login', 'logout', 'changePwd', 'addContactType', 'addSchool', 'addSchoolsBatch', 'editSchool', 'deleteSchool',
     'addStudent', 'addStudentsBatch', 'editStudent', 'deleteStudent', 'deleteStudentsBatch',
     'addTeacher', 'editTeacher', 'deleteTeacher', 'deleteTeachersBatch', 'submitAttendance', 'saveMarks', 'setSpecialDay', 'deleteSpecialDay',
-    'setSpecialDaysBatch', 'editSpecialDay', 'saveBooking', 'deleteBooking'];
+    'setSpecialDaysBatch', 'editSpecialDay', 'saveBooking', 'saveBookingsBatch', 'deleteBooking'];
   var fn = ACTIONS[action];
   if (!fn) return { ok: false, error: 'UNKNOWN_ACTION' };
   if (WRITES.indexOf(action) !== -1) return withLock_(function () { return fn(body); });
@@ -1048,44 +1048,86 @@ function actionListBookings(body) {
   return { ok: true, kind: kind, today: ctx.today, oldest: dateStrDaysAgo_(RETENTION_DAYS), items: items };
 }
 
+// 檢查一筆預約請假 / 臨時進班；all = 同類型既有的登記（含本次批次已通過的）
+// 回傳 { error, clash? } 或 { st, start, end, reason, days, old }
+function checkBooking_(s, ctx, kind, input, all) {
+  var isAdmin = s.role === 'admin';
+  var today = ctx.today;
+  var start = String(input.startDate || ''), end = String(input.endDate || input.startDate || '');
+  if (!isDateStr_(start) || !isDateStr_(end)) return { error: 'DATE_REQUIRED' };
+  if (end < start) return { error: 'BOOKING_RANGE' };
+  var st = ctx.stMap[String(input.studentId || '')];
+  if (!st || !isActive_(st.active)) return { error: 'STUDENT_NOT_FOUND' };
+  if (!isAdmin && input.schoolId && st.schoolId !== input.schoolId) return { error: 'STUDENT_NOT_FOUND' };
+  if (kind === 'attend' && !parseDays_(st.fixedOffDays).length) return { error: 'EXTRA_NOT_FIXED' };
+  var old = input.id ? all.filter(function (b) { return b.id === String(input.id); })[0] : null;
+  if (input.id && !old) return { error: 'BOOKING_NOT_FOUND' };
+  if (!isAdmin) {
+    if (old && old.startDate < today) return { error: 'BOOKING_STARTED' };
+    if (start < today) return { error: 'BOOKING_PAST' };
+  } else if (start < dateStrDaysAgo_(RETENTION_DAYS)) return { error: 'BOOKING_TOO_OLD' };
+  if ((Date.parse(end) - Date.parse(start)) / 86400000 + 1 > BOOKING_MAX_DAYS) return { error: 'BOOKING_TOO_LONG' };
+  var clash = all.filter(function (b) {
+    return b.studentId === st.id && (!old || b.id !== old.id) && b.startDate <= end && start <= b.endDate;
+  })[0];
+  if (clash) return { error: kind === 'attend' ? 'EXTRA_OVERLAP' : 'BOOKING_OVERLAP', clash: bookingBrief_(clash) };
+  var days = bookingDays_(ctx, st.id, start, end, kind);
+  if (!days.length) return { error: kind === 'attend' ? 'EXTRA_NO_DAYS' : 'BOOKING_NO_DAYS' };
+  return { st: st, start: start, end: end, reason: String(input.reason || '').trim().slice(0, 30), days: days.length, old: old };
+}
+function bookingRow_(s, kind, c, now) {
+  var old = c.old;
+  return {
+    id: old ? old.id : genId(kind === 'attend' ? 'EX' : 'BK'), schoolId: c.st.schoolId, studentId: c.st.id, startDate: c.start, endDate: c.end,
+    reason: c.reason,
+    createdBy: old ? old.createdBy : s.name, createdRole: old ? old.createdRole : s.role, createdAt: old ? old.createdAt : now,
+    updatedBy: old ? s.name : '', updatedAt: old ? now : ''
+  };
+}
+
 // 新增或修改預約請假 / 臨時進班；body: { kind?, id?, studentId, startDate, endDate, reason }
 // 老師只能登記今天以後的日期，已經開始的預約要請管理員修改
 function actionSaveBooking(body) {
   var s = requireSession(body.token);
-  var isAdmin = s.role === 'admin';
   var kind = bkKind_(body.kind);
   var ctx = statusCtx_();
-  var today = ctx.today;
-  var start = String(body.startDate || ''), end = String(body.endDate || body.startDate || '');
-  if (!isDateStr_(start) || !isDateStr_(end)) return { ok: false, error: 'DATE_REQUIRED' };
-  if (end < start) return { ok: false, error: 'BOOKING_RANGE' };
-  var st = ctx.stMap[String(body.studentId || '')];
-  if (!st || !isActive_(st.active)) return { ok: false, error: 'STUDENT_NOT_FOUND' };
-  if (kind === 'attend' && !parseDays_(st.fixedOffDays).length) return { ok: false, error: 'EXTRA_NOT_FIXED' };
-  var all = bookings_(kind);
-  var old = body.id ? all.filter(function (b) { return b.id === String(body.id); })[0] : null;
-  if (body.id && !old) return { ok: false, error: 'BOOKING_NOT_FOUND' };
-  if (!isAdmin) {
-    if (old && old.startDate < today) return { ok: false, error: 'BOOKING_STARTED' };
-    if (start < today) return { ok: false, error: 'BOOKING_PAST' };
-  } else if (start < dateStrDaysAgo_(RETENTION_DAYS)) return { ok: false, error: 'BOOKING_TOO_OLD' };
-  if ((Date.parse(end) - Date.parse(start)) / 86400000 + 1 > BOOKING_MAX_DAYS) return { ok: false, error: 'BOOKING_TOO_LONG' };
-  var clash = all.filter(function (b) {
-    return b.studentId === st.id && (!old || b.id !== old.id) && b.startDate <= end && start <= b.endDate;
-  })[0];
-  if (clash) return { ok: false, error: kind === 'attend' ? 'EXTRA_OVERLAP' : 'BOOKING_OVERLAP', clash: bookingBrief_(clash) };
-  var days = bookingDays_(ctx, st.id, start, end, kind);
-  if (!days.length) return { ok: false, error: kind === 'attend' ? 'EXTRA_NO_DAYS' : 'BOOKING_NO_DAYS' };
-  var now = new Date().toISOString();
-  var row = {
-    id: old ? old.id : genId(kind === 'attend' ? 'EX' : 'BK'), schoolId: st.schoolId, studentId: st.id, startDate: start, endDate: end,
-    reason: String(body.reason || '').trim().slice(0, 30),
-    createdBy: old ? old.createdBy : s.name, createdRole: old ? old.createdRole : s.role, createdAt: old ? old.createdAt : now,
-    updatedBy: old ? s.name : '', updatedAt: old ? now : ''
-  };
-  if (old) updateObjectByRow(bkSheet_(kind), old._row, row);
+  var c = checkBooking_(s, ctx, kind, body, bookings_(kind));
+  if (c.error) return { ok: false, error: c.error, clash: c.clash };
+  var row = bookingRow_(s, kind, c, new Date().toISOString());
+  if (c.old) updateObjectByRow(bkSheet_(kind), c.old._row, row);
   else appendObject(bkSheet_(kind), row);
-  return { ok: true, id: row.id, days: days.length, startDate: start, endDate: end };
+  return { ok: true, id: row.id, days: c.days, startDate: c.start, endDate: c.end };
+}
+
+// 批次登記：每一列各自的學生與期間；body: { kind?, schoolId?(老師端限定學校), items: [{ studentId, startDate, endDate, reason }] }
+// 全部檢查通過才一起寫入；有問題的列回傳 bad: [{ row, error, clash? }]
+var BOOKING_BATCH_MAX = 100;
+function actionSaveBookingsBatch(body) {
+  var s = requireSession(body.token);
+  var kind = bkKind_(body.kind);
+  var items = Array.isArray(body.items) ? body.items : [];
+  if (!items.length) return { ok: false, error: 'BATCH_EMPTY' };
+  if (items.length > BOOKING_BATCH_MAX) return { ok: false, error: 'BATCH_TOO_MANY' };
+  var ctx = statusCtx_();
+  var all = bookings_(kind);
+  var now = new Date().toISOString();
+  var bad = [], rows = [], totalDays = 0;
+  items.forEach(function (it, i) {
+    var input = { studentId: it && it.studentId, startDate: it && it.startDate, endDate: it && it.endDate, reason: it && it.reason, schoolId: body.schoolId };
+    var c = checkBooking_(s, ctx, kind, input, all);
+    if (c.error) {
+      var inBatch = !!c.clash && rows.some(function (r) { return r.id === c.clash.id; });
+      bad.push({ row: i + 1, error: c.error, clash: c.clash || null, inBatch: inBatch });
+      return;
+    }
+    var row = bookingRow_(s, kind, c, now);
+    rows.push(row);
+    all.push(row);   // 同一批裡同一位學生的期間也不能重疊
+    totalDays += c.days;
+  });
+  if (bad.length) return { ok: false, error: 'INVALID_BOOKINGS', bad: bad };
+  appendObjects(bkSheet_(kind), rows);
+  return { ok: true, created: rows.length, days: totalDays };
 }
 
 function actionDeleteBooking(body) {
