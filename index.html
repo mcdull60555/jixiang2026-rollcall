@@ -523,7 +523,8 @@ tr.bk-past td:last-child{opacity:1;}
   .bk-table td:nth-child(7){grid-column:1 / -1;grid-row:5;font-size:12.5px;color:var(--muted);}
   .bk-table td:nth-child(7)::before{content:'登記：';}
   .bk-table td:nth-child(9){grid-column:1 / -1;grid-row:6;}
-  .bk-table td:nth-child(9) .day-actions{justify-content:flex-end;}
+  .bk-table td:nth-child(9) .day-actions{flex-direction:column;align-items:stretch;gap:8px;margin-top:4px;}
+  .bk-table td:nth-child(9) .day-actions .btn{width:100%;padding-top:10px;padding-bottom:10px;font-size:14.5px;}
   .bk-tools .chk-inline{margin-left:0;}
   .card-table tr.rc-row.booked{background:#f3faff;}
   .card-table tr.rc-row.booked td{background:none !important;}
@@ -1532,7 +1533,6 @@ function bookingRowsHtml(items, isAdmin, today, kind) {
   return items.map(x => {
     const st = BK_STATE[x.state];
     const canEdit = isAdmin || x.endDate >= today;   // 老師：尚未結束的都能改（已開始的只能調整結束日期）
-    const started = !isAdmin && x.startDate < today;
     const oc = (fn) => isAdmin ? ` onclick="${fn}"` : '';   // 老師端的按鈕由 openTeacherBookings 統一綁定
     return `<tr class="bk-${x.state}">
       <td>${esc(x.schoolName)}</td><td><b>${esc(x.grade) || '-'}</b></td><td class="p-name">${esc(x.name)}</td>
@@ -1540,7 +1540,7 @@ function bookingRowsHtml(items, isAdmin, today, kind) {
       <td>${esc(x.reason) || '-'}</td><td class="bk-by">${esc(x.createdBy || '-')}${x.createdRole === 'teacher' ? '（老師）' : ''}${x.updatedBy ? `<div class="marked-by">修改：${esc(x.updatedBy)}</div>` : ''}</td>
       <td><span class="pill ${st[1]}">${st[0]}</span></td>
       <td><div class="day-actions">${canEdit
-        ? `<button type="button" class="btn btn-secondary btn-sm" data-bk-edit="${esc(x.id)}"${oc(`openBookingForm('${esc(x.id)}',{kind:'${kind}'})`)}>${started ? '修改結束日' : '修改'}</button><button type="button" class="btn btn-secondary btn-sm" data-bk-del="${esc(x.id)}"${oc(`deleteBooking('${esc(x.id)}',{kind:'${kind}'})`)}>${started ? '今天起取消' : k.cancel}</button>`
+        ? `<button type="button" class="btn btn-secondary btn-sm" data-bk-edit="${esc(x.id)}"${oc(`openBookingForm('${esc(x.id)}',{kind:'${kind}'})`)}>修改</button><button type="button" class="btn btn-danger btn-sm" data-bk-del="${esc(x.id)}"${oc(`deleteBooking('${esc(x.id)}',{kind:'${kind}'})`)}>${k.cancel}</button>`
         : '<span class="hint" style="margin:0">已結束，請聯絡管理員</span>'}</div></td></tr>`;
   }).join('');
 }
@@ -1649,7 +1649,7 @@ async function deleteBooking(id, opts) {
   const partial = STATE.role !== 'admin' && bk.startDate < STATE.today;   // 老師取消已開始的預約：只停止今天起的部分
   const ok = await confirmBox(`取消${k.name}`, partial
     ? `<b>${esc(bk.name)}</b> 的${k.name}（<b>${esc(shortRange(bk.startDate, bk.endDate))}</b>${bk.reason ? '，' + esc(bk.reason) : ''}）已經開始。<br>確定從<b>今天起</b>取消嗎？<br><span style="color:var(--muted);font-size:13px">之前已過去的日子保持不變；老師已親自點名的狀態不受影響。</span>`
-    : `確定取消 <b>${esc(bk.name)}</b> 在 <b>${esc(shortRange(bk.startDate, bk.endDate))}</b> 的${k.name}${bk.reason ? '（' + esc(bk.reason) + '）' : ''}嗎？<br><span style="color:var(--muted);font-size:13px">${note}</span>`, partial ? '今天起取消' : k.cancel, true);
+    : `確定取消 <b>${esc(bk.name)}</b> 在 <b>${esc(shortRange(bk.startDate, bk.endDate))}</b> 的${k.name}${bk.reason ? '（' + esc(bk.reason) + '）' : ''}嗎？<br><span style="color:var(--muted);font-size:13px">${note}</span>`, k.cancel, true);
   if (!ok) return;
   await doWrite('deleteBooking', { kind, id }, async () => { if (opts.afterSave) await opts.afterSave(bk.studentId); else await loadBookings(true); }, `同步成功（已取消${k.name}）`);
 }
