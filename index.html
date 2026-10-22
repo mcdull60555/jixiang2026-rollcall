@@ -518,13 +518,14 @@ tr.bk-past td:last-child{opacity:1;}
   .bk-table td:nth-child(3){grid-column:2;grid-row:2;font-size:18px;}
   .bk-table td:nth-child(5){grid-column:3;grid-row:2;justify-self:end;}
   .bk-table td:nth-child(4){grid-column:1 / -1;grid-row:3;}
-  .bk-table td:nth-child(6){grid-column:1 / -1;grid-row:4;}
+  .bk-table td:nth-child(6){grid-column:1 / 3;grid-row:4;align-self:start;}
   .bk-table td:nth-child(6)::before{content:'原因：';color:var(--muted);}
-  .bk-table td:nth-child(7){grid-column:1 / -1;grid-row:5;font-size:12.5px;color:var(--muted);}
+  .bk-table td:nth-child(7){grid-column:1 / 3;grid-row:5;align-self:end;font-size:12.5px;color:var(--muted);}
   .bk-table td:nth-child(7)::before{content:'登記：';}
-  .bk-table td:nth-child(9){grid-column:1 / -1;grid-row:6;}
-  .bk-table td:nth-child(9) .day-actions{flex-direction:column;align-items:stretch;gap:8px;margin-top:4px;}
-  .bk-table td:nth-child(9) .day-actions .btn{width:100%;padding-top:10px;padding-bottom:10px;font-size:14.5px;}
+  /* 修改／取消預約：右下角直立兩排，底部與「登記」那行對齊 */
+  .bk-table td:nth-child(9){grid-column:3;grid-row:4 / 6;align-self:end;}
+  .bk-table td:nth-child(9) .day-actions{flex-direction:column;align-items:stretch;gap:6px;margin:0;}
+  .bk-table td:nth-child(9) .day-actions .btn{width:100%;min-width:96px;padding-top:8px;padding-bottom:8px;font-size:14px;}
   .bk-tools .chk-inline{margin-left:0;}
   .card-table tr.rc-row.booked{background:#f3faff;}
   .card-table tr.rc-row.booked td{background:none !important;}
