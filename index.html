@@ -527,8 +527,32 @@ tr.bk-past td:last-child{opacity:1;}
   .bk-tools .chk-inline{margin-left:0;}
   .card-table tr.rc-row.booked{background:#f3faff;}
   .card-table tr.rc-row.booked td{background:none !important;}
-  .rc-bk-field{flex:1 1 100%;}
+  .rc-bk-field{flex:1 1 100%;display:flex;flex-direction:column;justify-content:flex-start;gap:8px;}
   .rc-bk-field .btn{width:100%;}
+  .rc-bk-field .btn + .btn{margin-left:0;}
+  .bk-tag,.ex-tag,.streak-tag{white-space:normal;}
+  .card-table .ct-line{white-space:normal;word-break:break-word;}
+  .modal{overflow-x:hidden;}
+  .modal .table-wrap{max-width:100%;}
+  /* 批次登記預約：每一列變成一張卡片，不用左右捲動 */
+  .bb-scroll{overflow:visible;max-height:none;border:none;}
+  .bb-table,.bb-table tbody{display:block;width:100%;}
+  .bb-table thead{display:none;}
+  .bb-table tr{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px 8px;padding:10px 8px;margin-bottom:8px;border:1px solid var(--border);border-radius:10px;}
+  .bb-table td{display:block;min-width:0;padding:0;border:none;}
+  .bb-table td.idx{grid-column:1;grid-row:1;text-align:left;font-size:13px;font-weight:700;align-self:center;}
+  .bb-table td:nth-child(7){grid-column:2;grid-row:1;justify-self:end;}
+  .bb-table td:nth-child(2){grid-column:1 / -1;grid-row:2;}
+  .bb-table td:nth-child(3){grid-column:1;grid-row:3;}
+  .bb-table td:nth-child(4){grid-column:2;grid-row:3;}
+  .bb-table td:nth-child(3)::before,.bb-table td:nth-child(4)::before{display:block;font-size:12px;color:var(--muted);margin-bottom:2px;}
+  .bb-table td:nth-child(3)::before{content:'開始日期';}
+  .bb-table td:nth-child(4)::before{content:'結束日期';}
+  .bb-table td.bb-days{grid-column:1 / -1;grid-row:4;white-space:normal;}
+  .bb-table td:nth-child(6){grid-column:1 / -1;grid-row:5;}
+  .bb-table select.cell-input,.bb-table input.cell-input,.bb-table input[type=date]{min-width:0;width:100%;}
+  .bb-table tr.bb-err{background:#fff1f2;}
+  .bb-table tr.bb-err td{background:none;}
 }
 .presence-bar{margin:4px 0 10px;padding:9px 12px;border-radius:10px;background:#f0f9ff;border:1px solid #bae6fd;color:#075985;font-size:14px;line-height:1.6;}
 .presence-bar.editing{background:#fff7ed;border-color:#fdba74;color:#9a3412;}
@@ -1683,7 +1707,7 @@ async function openBookingBatch(kind, opts) {
       <button type="button" class="btn btn-secondary btn-sm" id="bb-q-apply">期間套用到空白列</button>
       <button type="button" class="btn btn-secondary btn-sm" id="bb-q-all">期間套用到全部列</button>
     </div>
-    <div class="batch-scroll"><table class="batch-table bb-table">
+    <div class="batch-scroll bb-scroll"><table class="batch-table bb-table">
       <thead><tr><th>#</th><th>學生 <span class="req">*</span></th><th>開始 <span class="req">*</span></th><th>結束</th><th>天數</th><th>原因（選填）</th><th></th></tr></thead>
       <tbody id="bb-body"></tbody></table></div>
     <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
