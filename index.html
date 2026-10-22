@@ -149,6 +149,7 @@
   #login-btn:hover{background:var(--indigo-d);}
   .btn-secondary{background:#e2e8f0;color:var(--text);}
   .btn-secondary:hover{background:#cbd5e1;}
+  .btn-secondary.bk-cancel{color:var(--rose);font-weight:700;}
   .btn-teal{background:var(--teal);color:#fff;}
   .btn-teal:hover{background:#0f766e;}
   .btn-block{width:100%;}
@@ -1541,7 +1542,7 @@ function bookingRowsHtml(items, isAdmin, today, kind) {
       <td>${esc(x.reason) || '-'}</td><td class="bk-by">${esc(x.createdBy || '-')}${x.createdRole === 'teacher' ? '（老師）' : ''}${x.updatedBy ? `<div class="marked-by">修改：${esc(x.updatedBy)}</div>` : ''}</td>
       <td><span class="pill ${st[1]}">${st[0]}</span></td>
       <td><div class="day-actions">${canEdit
-        ? `<button type="button" class="btn btn-secondary btn-sm" data-bk-edit="${esc(x.id)}"${oc(`openBookingForm('${esc(x.id)}',{kind:'${kind}'})`)}>修改</button><button type="button" class="btn btn-danger btn-sm" data-bk-del="${esc(x.id)}"${oc(`deleteBooking('${esc(x.id)}',{kind:'${kind}'})`)}>${k.cancel}</button>`
+        ? `<button type="button" class="btn btn-secondary btn-sm" data-bk-edit="${esc(x.id)}"${oc(`openBookingForm('${esc(x.id)}',{kind:'${kind}'})`)}>修改</button><button type="button" class="btn btn-secondary btn-sm bk-cancel" data-bk-del="${esc(x.id)}"${oc(`deleteBooking('${esc(x.id)}',{kind:'${kind}'})`)}>${k.cancel}</button>`
         : '<span class="hint" style="margin:0">已結束，請聯絡管理員</span>'}</div></td></tr>`;
   }).join('');
 }
