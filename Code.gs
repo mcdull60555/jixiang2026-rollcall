@@ -1436,7 +1436,7 @@ function actionSubmitAttendance(body) {
       return { ok: false, error: 'CONFLICT', submittedAt: latest, submittedBy: last ? last.name : '' };
     }
     // 只更新「狀態有變動」的學生：每位學生保留真正幫他點名的老師與時間
-    var changed = false, fresh = [], n = 0;
+    var changedRows = [], fresh = [], n = 0;
     Object.keys(latestOf).map(function (k) { return latestOf[k]; }).forEach(function (r) {
       if (!valid[r.studentId]) return;
       var status = VALID_STATUS.indexOf(r.status) === -1 ? '' : (r.status || '');
@@ -1457,17 +1457,28 @@ function actionSubmitAttendance(body) {
         if (effectiveStatus_(old) === status && isTrue_(old.auto) === rec.auto) return;
         rec.id = row[idx.id];
         headers.forEach(function (h, c) { row[c] = toCell_(rec[h]); });
-        changed = true;
+        changedRows.push(rowOf[r.studentId]);
       } else {
         rec.id = genId('R');
         fresh.push(rec);
       }
       n++;
     });
-    if (changed) {
+    // 只寫回有變動的列（相鄰的列合併成一段）：不再整張點名表重寫，資料越多也不會變慢
+    if (changedRows.length) {
       touch_(SHEET_ATTENDANCE);
-      var body2 = values.slice(1).map(function (row) { return plainRow_(headers, row); });
-      sheet.getRange(2, 1, body2.length, headers.length).setNumberFormat('@').setValues(body2);
+      changedRows.sort(function (a, b) { return a - b; });
+      var start = changedRows[0], prev = start;
+      var writeSeg = function (from, to) {
+        var seg = values.slice(from, to + 1).map(function (row) { return plainRow_(headers, row); });
+        sheet.getRange(from + 1, 1, seg.length, headers.length).setNumberFormat('@').setValues(seg);
+      };
+      for (var ci = 1; ci < changedRows.length; ci++) {
+        if (changedRows[ci] === prev + 1) { prev = changedRows[ci]; continue; }
+        writeSeg(start, prev);
+        start = prev = changedRows[ci];
+      }
+      writeSeg(start, prev);
     }
     appendObjects(SHEET_ATTENDANCE, fresh);
     if (body.autosave) {

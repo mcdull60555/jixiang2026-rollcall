@@ -885,6 +885,15 @@ function errMsg(code) {
 }
 
 /* ---------------- API ---------------- */
+// 與 Code.gs 的 WRITES 對應：會寫入試算表的動作
+const API_WRITES = new Set(['login', 'logout', 'changePwd', 'addContactType', 'addSchool', 'addSchoolsBatch', 'editSchool', 'deleteSchool',
+  'addStudent', 'addStudentsBatch', 'editStudent', 'deleteStudent', 'deleteStudentsBatch',
+  'addTeacher', 'editTeacher', 'deleteTeacher', 'deleteTeachersBatch', 'submitAttendance', 'saveMarks', 'setSpecialDay', 'deleteSpecialDay',
+  'setSpecialDaysBatch', 'editSpecialDay', 'saveBooking', 'saveBookingsBatch', 'deleteBooking']);
+// 重送也不會造成重複資料的寫入動作
+const API_IDEMPOTENT = new Set(['saveMarks', 'logout', 'editSchool', 'editStudent', 'editTeacher', 'deleteStudent', 'deleteStudentsBatch']);
+// 伺服器暫時性的錯誤（忙碌、Google 服務逾時等系統訊息）：可以自動重試
+function isTransient(code) { return code === 'BUSY' || !/^[A-Z_]+$/.test(String(code || '')); }
 // opts.pill=false：不顯示頂端「同步中」小提示；opts.flash=false：不讓連線燈閃「連線中」
 async function api(action, payload, opts) {
   opts = Object.assign({ pill: true, flash: true }, opts || {});
@@ -896,18 +905,29 @@ async function api(action, payload, opts) {
   if (opts.flash) setConn('connecting');
   const done = ok => { if (usePill && STATE.token) pillEnd(ok); };
 
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), CONFIG.TIMEOUT_MS);
-  let res, json;
-  try {
-    res = await fetch(CONFIG.API_URL, { method: 'POST', body: JSON.stringify(payload), signal: ctrl.signal });
-  } catch (e) {
-    clearTimeout(timer); setConn('failed'); done(false);
-    report('NETWORK_ERROR');
-    throw new Error('NETWORK_ERROR');
+  // 網路瞬斷、Google 伺服器暫時忙碌時自動重試，不要一失敗就跳「請重新整理」
+  // 會新增資料的動作只在「伺服器確定沒執行」（BUSY）時重試，避免重複新增；讀取與自動儲存點名可放心重試
+  const safeRetry = !API_WRITES.has(action) || API_IDEMPOTENT.has(action);
+  const t0 = Date.now();
+  let json, attempt = 0;
+  while (true) {
+    attempt++;
+    let code = null;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), CONFIG.TIMEOUT_MS);
+    try {
+      const res = await fetch(CONFIG.API_URL, { method: 'POST', body: JSON.stringify(payload), signal: ctrl.signal });
+      try { json = await res.json(); } catch (e) { code = 'BAD_RESPONSE'; }
+    } catch (e) { code = 'NETWORK_ERROR'; }
+    clearTimeout(timer);
+    if (!code && json && !json.ok && isTransient(json.error)) code = json.error;
+    const canRetry = attempt < 3 && Date.now() - t0 < 60000 && (code === 'BUSY' || (code && safeRetry));
+    if (code && canRetry) { await new Promise(r => setTimeout(r, attempt === 1 ? 1500 : 4000)); continue; }
+    if (code === 'NETWORK_ERROR' || code === 'BAD_RESPONSE') {
+      setConn('failed'); done(false); report(code); throw new Error(code);
+    }
+    break;
   }
-  clearTimeout(timer);
-  try { json = await res.json(); } catch (e) { setConn('failed'); done(false); report('BAD_RESPONSE'); throw new Error('BAD_RESPONSE'); }
   setConn('connected');
   if (!json.ok) {
     done(false);
