@@ -1063,8 +1063,12 @@ function checkBooking_(s, ctx, kind, input, all) {
   var old = input.id ? all.filter(function (b) { return b.id === String(input.id); })[0] : null;
   if (input.id && !old) return { error: 'BOOKING_NOT_FOUND' };
   if (!isAdmin) {
-    if (old && old.startDate < today) return { error: 'BOOKING_STARTED' };
-    if (start < today) return { error: 'BOOKING_PAST' };
+    if (old && old.startDate < today) {
+      // 已經開始、還沒結束的預約：老師可以調整結束日期與原因（開始日期與學生不能改，過去的紀錄要保留）
+      if (old.endDate < today) return { error: 'BOOKING_STARTED' };
+      if (start !== old.startDate || st.id !== old.studentId) return { error: 'BOOKING_STARTED' };
+      if (end < today) return { error: 'BOOKING_PAST' };
+    } else if (start < today) return { error: 'BOOKING_PAST' };
   } else if (start < dateStrDaysAgo_(RETENTION_DAYS)) return { error: 'BOOKING_TOO_OLD' };
   if ((Date.parse(end) - Date.parse(start)) / 86400000 + 1 > BOOKING_MAX_DAYS) return { error: 'BOOKING_TOO_LONG' };
   var clash = all.filter(function (b) {
@@ -1086,7 +1090,7 @@ function bookingRow_(s, kind, c, now) {
 }
 
 // 新增或修改預約請假 / 臨時進班；body: { kind?, id?, studentId, startDate, endDate, reason }
-// 老師只能登記今天以後的日期，已經開始的預約要請管理員修改
+// 老師只能登記今天以後的日期；已經開始但還沒結束的預約，老師可以修改結束日期與原因（開始日期不能動），已結束的要請管理員處理
 function actionSaveBooking(body) {
   var s = requireSession(body.token);
   var kind = bkKind_(body.kind);
@@ -1135,7 +1139,14 @@ function actionDeleteBooking(body) {
   var kind = bkKind_(body.kind);
   var b = bookings_(kind).filter(function (x) { return x.id === String(body.id || ''); })[0];
   if (!b) return { ok: false, error: 'BOOKING_NOT_FOUND' };
-  if (s.role !== 'admin' && b.startDate < today_()) return { ok: false, error: 'BOOKING_STARTED' };
+  var today = today_();
+  if (s.role !== 'admin' && b.startDate < today) {
+    // 已經開始的預約：老師「取消」＝ 從今天起不再請假（結束日期改為昨天），之前已過去的日子照舊保留
+    if (b.endDate < today) return { ok: false, error: 'BOOKING_STARTED' };
+    var row = bookingRow_(s, kind, { old: b, st: { id: b.studentId, schoolId: b.schoolId }, start: b.startDate, end: prevDate_(today), reason: b.reason }, new Date().toISOString());
+    updateObjectByRow(bkSheet_(kind), b._row, row);
+    return { ok: true, truncated: true };
+  }
   deleteRows_(bkSheet_(kind), [b]);
   return { ok: true };
 }

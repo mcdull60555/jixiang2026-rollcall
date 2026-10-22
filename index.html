@@ -879,7 +879,7 @@ function errMsg(code) {
     USERNAME_TAKEN: '此帳號已被使用', WRONG_OLD_PASSWORD: '原密碼不正確', PASSWORD_REQUIRED: '請輸入新密碼',
     NAME_REQUIRED: '請輸入名稱', NAME_TOO_LONG: '名稱太長（最多 12 字）', SCHOOL_EXISTS: '已有同名學校',
     STUDENT_NOT_FOUND: '找不到該學生', TEACHER_NOT_FOUND: '找不到該老師', UNKNOWN_ACTION: '後端版本過舊，請重新部署 Code.gs',
-    BUSY: '目前多人同時操作中，請稍後再試一次', DATE_REQUIRED: '請選擇日期', NOT_WEEKEND: '補班補課只能設定在星期六或星期日', NOT_WEEKDAY: '星期六、日本來就放假，不需要設定國定假日', DAY_NOT_FOUND: '這天沒有特別設定（可能已被取消）', DAY_EXISTS: '新的日期已經有設定了，請先取消那天的設定或改選其他日期', INVALID_DAYS: '有日期設定不正確，請檢查後再送出', DAY_CLOSED: '今天不能點名', BOOKING_PAST: '老師只能登記今天（含）以後的預約請假', BOOKING_STARTED: '這筆預約已經開始，如需修改或取消請聯絡管理員', BOOKING_OVERLAP: '這位學生在這段期間已經有預約請假', BOOKING_NO_DAYS: '這段期間沒有上課日（都是例假日、國定假日或學生固定不進班的日子）', BOOKING_RANGE: '結束日期不能早於開始日期', BOOKING_TOO_OLD: '只能補登 40 天內的預約請假', BOOKING_TOO_LONG: '一次最多登記 120 天', BOOKING_NOT_FOUND: '找不到這筆預約（可能已被取消）', EXTRA_NOT_FIXED: '這位學生沒有設定固定不進班，不需要登記臨時進班', EXTRA_OVERLAP: '這位學生在這段期間已經有臨時進班登記', EXTRA_NO_DAYS: '這段期間沒有這位學生固定不進班的上課日，不需要登記', BATCH_EMPTY: '請至少填寫一列', BATCH_TOO_MANY: '一次最多登記 100 列', SCHOOL_NOT_FOUND: '找不到這間學校（可能已被刪除）', GRADE_REQUIRED: '請填寫年級班級', CONTACT_REQUIRED: '請至少填寫一組聯絡人與聯絡電話', INVALID_ROWS: '有學生資料不完整（姓名、年級班級、聯絡人與聯絡電話為必填）', USERNAME_REQUIRED: '請填寫登入帳號', CONFLICT: '這間學校的點名剛被其他老師更新', INCOMPLETE: '還有學生尚未點名'
+    BUSY: '目前多人同時操作中，請稍後再試一次', DATE_REQUIRED: '請選擇日期', NOT_WEEKEND: '補班補課只能設定在星期六或星期日', NOT_WEEKDAY: '星期六、日本來就放假，不需要設定國定假日', DAY_NOT_FOUND: '這天沒有特別設定（可能已被取消）', DAY_EXISTS: '新的日期已經有設定了，請先取消那天的設定或改選其他日期', INVALID_DAYS: '有日期設定不正確，請檢查後再送出', DAY_CLOSED: '今天不能點名', BOOKING_PAST: '老師只能登記今天（含）以後的預約請假，結束日期不能早於今天', BOOKING_STARTED: '這筆預約已經結束（或要更改開始日期），請聯絡管理員處理', BOOKING_OVERLAP: '這位學生在這段期間已經有預約請假', BOOKING_NO_DAYS: '這段期間沒有上課日（都是例假日、國定假日或學生固定不進班的日子）', BOOKING_RANGE: '結束日期不能早於開始日期', BOOKING_TOO_OLD: '只能補登 40 天內的預約請假', BOOKING_TOO_LONG: '一次最多登記 120 天', BOOKING_NOT_FOUND: '找不到這筆預約（可能已被取消）', EXTRA_NOT_FIXED: '這位學生沒有設定固定不進班，不需要登記臨時進班', EXTRA_OVERLAP: '這位學生在這段期間已經有臨時進班登記', EXTRA_NO_DAYS: '這段期間沒有這位學生固定不進班的上課日，不需要登記', BATCH_EMPTY: '請至少填寫一列', BATCH_TOO_MANY: '一次最多登記 100 列', SCHOOL_NOT_FOUND: '找不到這間學校（可能已被刪除）', GRADE_REQUIRED: '請填寫年級班級', CONTACT_REQUIRED: '請至少填寫一組聯絡人與聯絡電話', INVALID_ROWS: '有學生資料不完整（姓名、年級班級、聯絡人與聯絡電話為必填）', USERNAME_REQUIRED: '請填寫登入帳號', CONFLICT: '這間學校的點名剛被其他老師更新', INCOMPLETE: '還有學生尚未點名'
   };
   return map[code] || ('發生錯誤（' + code + '）');
 }
@@ -1507,15 +1507,17 @@ function bookingRowsHtml(items, isAdmin, today, kind) {
   const k = bkK(kind);
   return items.map(x => {
     const st = BK_STATE[x.state];
-    const canEdit = isAdmin || x.startDate >= today;
+    const canEdit = isAdmin || x.endDate >= today;   // 老師：尚未結束的都能改（已開始的只能調整結束日期）
+    const started = !isAdmin && x.startDate < today;
+    const oc = (fn) => isAdmin ? ` onclick="${fn}"` : '';   // 老師端的按鈕由 openTeacherBookings 統一綁定
     return `<tr class="bk-${x.state}">
       <td>${esc(x.schoolName)}</td><td><b>${esc(x.grade) || '-'}</b></td><td class="p-name">${esc(x.name)}</td>
       <td><b>${esc(shortRange(x.startDate, x.endDate))}</b></td><td><span class="lv-days" style="color:${kind === 'attend' ? 'var(--teal)' : 'var(--sky)'}">${x.days}</span> 天</td>
       <td>${esc(x.reason) || '-'}</td><td class="bk-by">${esc(x.createdBy || '-')}${x.createdRole === 'teacher' ? '（老師）' : ''}${x.updatedBy ? `<div class="marked-by">修改：${esc(x.updatedBy)}</div>` : ''}</td>
       <td><span class="pill ${st[1]}">${st[0]}</span></td>
       <td><div class="day-actions">${canEdit
-        ? `<button class="btn btn-secondary btn-sm" data-bk-edit="${esc(x.id)}" onclick="openBookingForm('${esc(x.id)}',{kind:'${kind}'})">修改</button><button class="btn btn-secondary btn-sm" data-bk-del="${esc(x.id)}" onclick="deleteBooking('${esc(x.id)}',{kind:'${kind}'})">${k.cancel}</button>`
-        : '<span class="hint" style="margin:0">已開始，請聯絡管理員修改</span>'}</div></td></tr>`;
+        ? `<button type="button" class="btn btn-secondary btn-sm" data-bk-edit="${esc(x.id)}"${oc(`openBookingForm('${esc(x.id)}',{kind:'${kind}'})`)}>${started ? '修改結束日' : '修改'}</button><button type="button" class="btn btn-secondary btn-sm" data-bk-del="${esc(x.id)}"${oc(`deleteBooking('${esc(x.id)}',{kind:'${kind}'})`)}>${started ? '今天起取消' : k.cancel}</button>`
+        : '<span class="hint" style="margin:0">已結束，請聯絡管理員</span>'}</div></td></tr>`;
   }).join('');
 }
 // 管理端：同時載入預約請假與臨時進班（共用學校篩選與「顯示已結束」）
@@ -1543,6 +1545,7 @@ async function openBookingForm(bookingId, opts) {
   const list = (opts.list || (STATE[k.store] && STATE[k.store].items) || []);
   const bk = bookingId ? list.find(x => x.id === bookingId) : null;
   const today = STATE.today;
+  const startedLock = !isAdmin && !!bk && bk.startDate < today;   // 老師修改已開始的預約：開始日期不能動
   let students = [];
   const schoolId = bk ? bk.schoolId : (isAdmin ? ($('bk-school').value || (STATE.schools[0] || {}).id || '') : STATE.rollcall.schoolId);
   const loadStudents = async sid => {
@@ -1566,12 +1569,12 @@ async function openBookingForm(bookingId, opts) {
       : `<div class="hint" style="margin-top:0">學校：<b>${esc(schoolName(schoolId))}</b></div>`}
     <div class="field"><label for="m-bk-student">學生</label><select id="m-bk-student"${bk ? ' disabled' : ''}>${stOpts()}</select></div>
     <div class="row">
-      <div class="field"><label for="m-bk-start">開始日期</label><input type="date" id="m-bk-start" value="${esc(bk ? bk.startDate : today)}"${isAdmin ? '' : ` min="${esc(today)}"`}></div>
+      <div class="field"><label for="m-bk-start">開始日期</label><input type="date" id="m-bk-start" value="${esc(bk ? bk.startDate : today)}"${startedLock ? ' disabled' : (isAdmin ? '' : ` min="${esc(today)}"`)}></div>
       <div class="field"><label for="m-bk-end">結束日期</label><input type="date" id="m-bk-end" value="${esc(bk ? bk.endDate : today)}"${isAdmin ? '' : ` min="${esc(today)}"`}></div>
     </div>
     <div class="bk-est${isAttend ? ' ex' : ''}" id="m-bk-est"></div>
     <div class="field"><label for="m-bk-reason">原因（選填，老師點名時會看到）</label><input id="m-bk-reason" maxlength="30" value="${esc(bk ? bk.reason : '')}" placeholder="${k.placeholder}"></div>
-    ${isAdmin ? '' : `<p class="hint" style="margin:6px 0 0">老師只能登記今天（含）以後的日期；已經開始的${k.name}，請聯絡管理員修改。</p>`}
+    ${isAdmin ? '' : `<p class="hint" style="margin:6px 0 0">${startedLock ? `這筆${k.name}已經開始，開始日期不能更改，可以調整結束日期與原因。` : `老師只能登記今天（含）以後的日期。`}</p>`}
   `, async () => {
     const studentId = $('m-bk-student').value, startDate = $('m-bk-start').value, endDate = $('m-bk-end').value || startDate;
     if (!studentId) { toast('請選擇學生', true); return false; }
@@ -1619,7 +1622,10 @@ async function deleteBooking(id, opts) {
   const bk = list.find(x => x.id === id);
   if (!bk) return;
   const note = kind === 'attend' ? '取消後這幾天恢復為固定不進班；老師已親自點名的狀態不受影響。' : '取消後這幾天不再自動算請假；老師已親自點名的狀態不受影響。';
-  const ok = await confirmBox(`取消${k.name}`, `確定取消 <b>${esc(bk.name)}</b> 在 <b>${esc(shortRange(bk.startDate, bk.endDate))}</b> 的${k.name}${bk.reason ? '（' + esc(bk.reason) + '）' : ''}嗎？<br><span style="color:var(--muted);font-size:13px">${note}</span>`, k.cancel, true);
+  const partial = STATE.role !== 'admin' && bk.startDate < STATE.today;   // 老師取消已開始的預約：只停止今天起的部分
+  const ok = await confirmBox(`取消${k.name}`, partial
+    ? `<b>${esc(bk.name)}</b> 的${k.name}（<b>${esc(shortRange(bk.startDate, bk.endDate))}</b>${bk.reason ? '，' + esc(bk.reason) : ''}）已經開始。<br>確定從<b>今天起</b>取消嗎？<br><span style="color:var(--muted);font-size:13px">之前已過去的日子保持不變；老師已親自點名的狀態不受影響。</span>`
+    : `確定取消 <b>${esc(bk.name)}</b> 在 <b>${esc(shortRange(bk.startDate, bk.endDate))}</b> 的${k.name}${bk.reason ? '（' + esc(bk.reason) + '）' : ''}嗎？<br><span style="color:var(--muted);font-size:13px">${note}</span>`, partial ? '今天起取消' : k.cancel, true);
   if (!ok) return;
   await doWrite('deleteBooking', { kind, id }, async () => { if (opts.afterSave) await opts.afterSave(bk.studentId); else await loadBookings(true); }, `同步成功（已取消${k.name}）`);
 }
@@ -1851,8 +1857,8 @@ async function openTeacherBookings(kind) {
       <tbody>${list.length ? bookingRowsHtml(list, false, r.today, kind) : `<tr><td colspan="9" class="empty">這間學校目前沒有${k.name}</td></tr>`}</tbody></table></div>
   `, null, { hideConfirm: true, wide: true });
   // 清單內的按鈕改成老師端版本
-  modal.querySelectorAll('button[data-bk-edit]').forEach(b => { const id = b.dataset.bkEdit; b.onclick = () => openBookingForm(id, { kind, list, afterSave: after }); b.removeAttribute('onclick'); });
-  modal.querySelectorAll('button[data-bk-del]').forEach(b => { const id = b.dataset.bkDel; b.onclick = () => deleteBooking(id, { kind, list, afterSave: after }); b.removeAttribute('onclick'); });
+  modal.querySelectorAll('button[data-bk-edit]').forEach(b => { const id = b.dataset.bkEdit; b.addEventListener('click', () => openBookingForm(id, { kind, list, afterSave: after })); });
+  modal.querySelectorAll('button[data-bk-del]').forEach(b => { const id = b.dataset.bkDel; b.addEventListener('click', () => deleteBooking(id, { kind, list, afterSave: after })); });
   modal.querySelector('#t-bk-add').onclick = () => openBookingForm(null, { kind, list, afterSave: after });
   modal.querySelector('#t-bk-batch').onclick = () => openBookingBatch(kind, { afterSave: after });
 }
