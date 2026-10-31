@@ -18,7 +18,7 @@ var SPREADSHEET_ID = '1Xk5mxGTzRDmsLlbag6dkHn6420n6ZLUP59z6QefTjKo';      // 試
 var RETENTION_DAYS = 40;      // 點名紀錄保留天數：超過 40 天的舊資料於每天凌晨 3 點自動清除
 var SESSION_HOURS = 12;       // 登入 token 最長有效時數 (前端另外有閒置 60 分鐘自動登出)
 var TZ = 'Asia/Taipei';
-var SCHEMA_VERSION = 'schema_v8';
+var SCHEMA_VERSION = 'schema_v9';
 var DEFAULT_CONTACT_TYPES = ['爸爸', '媽媽', '住家'];
 var VALID_STATUS = ['present', 'selfDrop', 'selfWalk', 'leave', 'fixedOff', ''];
 
@@ -38,7 +38,8 @@ var HEADERS = {
   Admins: ['id', 'username', 'password', 'name'],
   Teachers: ['id', 'username', 'password', 'name', 'active', 'createdAt'],
   Schools: ['id', 'name', 'createdAt', 'active'],
-  Students: ['id', 'schoolId', 'name', 'grade', 'contacts', 'fixedOffDays', 'active', 'createdAt', 'note'],
+  // fixedOffDays 固定不進班 / selfDropDays 固定自送 / selfWalkDays 固定自走：星期一到五（1–5），同一天只會出現在其中一個
+  Students: ['id', 'schoolId', 'name', 'grade', 'contacts', 'fixedOffDays', 'active', 'createdAt', 'note', 'selfDropDays', 'selfWalkDays'],
   // auto=true：這筆狀態是系統預設值（預約請假 / 固定不進班），老師沒有改過
   Attendance: ['id', 'date', 'schoolId', 'studentId', 'status', 'selfDrop', 'selfWalk', 'teacherId', 'teacherName', 'submittedAt', 'wasFixedOff', 'auto'],
   Sessions: ['token', 'userId', 'role', 'name', 'username', 'createdAt', 'expiresAt'],
@@ -783,10 +784,20 @@ function parseDays_(v) {
 }
 
 function studentOut_(x) {
+  var m = weekModes_({ off: parseDays_(x.fixedOffDays), drop: parseDays_(x.selfDropDays), walk: parseDays_(x.selfWalkDays) });
   return {
     id: x.id, name: x.name, grade: String(x.grade), gradeNum: gradeNum_(x.grade),
-    contacts: parseContacts(x), fixedOffDays: parseDays_(x.fixedOffDays), note: String(x.note || '')
+    contacts: parseContacts(x), fixedOffDays: m.off, selfDropDays: m.drop, selfWalkDays: m.walk, note: String(x.note || '')
   };
+}
+
+// 每週固定設定：星期一到五每天只會有一種（不進班 / 自送 / 自走 / 預設進班需要接）。
+// 若資料出現同一天重複設定，依「固定不進班 > 自送 > 自走」保留一個
+function weekModes_(raw) {
+  var off = normalizeDays_(raw.off);
+  var drop = normalizeDays_(raw.drop).filter(function (d) { return off.indexOf(d) === -1; });
+  var walk = normalizeDays_(raw.walk).filter(function (d) { return off.indexOf(d) === -1 && drop.indexOf(d) === -1; });
+  return { off: off, drop: drop, walk: walk };
 }
 
 // 學生必填：姓名、年級班級、至少一組「聯絡人 + 聯絡方式」
@@ -799,41 +810,21 @@ function validateStudent_(name, grade, contacts) {
 }
 
 function actionListStudents(body) {
-  var s = requireSession(body.token);
+  requireSession(body.token);
   var students = sheetToObjects(SHEET_STUDENTS).filter(function (x) {
     return x.schoolId === body.schoolId && isActive_(x.active);
   }).map(studentOut_);
   sortStudents(students);
-  var res = { ok: true, students: students };
-  // 管理員要求時：附上「未來 7 天（今天起）」每位學生的進班狀況
-  // 每格狀態：in 進班 / fixedOff 固定不進班 / leave 預約請假 / extra 臨時進班 / closed 當天不點名（例假日、國定假日）
-  if (body.withWeek && s.role === 'admin') {
-    var ctx = statusCtx_();
-    var dates = [], d = ctx.today;
-    for (var i = 0; i < 7; i++) { dates.push(d); d = nextDate_(d); }
-    var sp = specialDays_();
-    res.weekDates = dates.map(function (x) {
-      var info = dayInfo_(x, sp);
-      return { date: x, weekday: info.weekday, open: info.open, label: info.label };
-    });
-    students.forEach(function (st) {
-      st.week = dates.map(function (x) {
-        if (!ctx.isOpen(x)) return 'closed';
-        if (x === ctx.today && ctx.status(st.id, x) === 'leave') return 'leave';   // 今天老師已點請假
-        if (ctx.bookingOn(st.id, x)) return 'leave';
-        if (ctx.extraOn(st.id, x)) return 'extra';
-        return ctx.isFixed(st.id, x) ? 'fixedOff' : 'in';
-      });
-    });
-  }
-  return res;
+  return { ok: true, students: students };
 }
 
 function studentRow_(schoolId, st) {
+  var m = weekModes_({ off: st.fixedOffDays, drop: st.selfDropDays, walk: st.selfWalkDays });
   return {
     id: genId('T'), schoolId: schoolId, name: String(st.name || '').trim(), grade: String(st.grade || '').trim(),
     contacts: JSON.stringify(normalizeContacts(st.contacts)),
-    fixedOffDays: normalizeDays_(st.fixedOffDays).join('|'), active: true, createdAt: new Date().toISOString(),
+    fixedOffDays: m.off.join('|'), selfDropDays: m.drop.join('|'), selfWalkDays: m.walk.join('|'),
+    active: true, createdAt: new Date().toISOString(),
     note: String(st.note || '').trim()
   };
 }
@@ -889,7 +880,15 @@ function actionEditStudent(body) {
       u.name = name;
       u.grade = grade;
       u.contacts = JSON.stringify(normalizeContacts(contacts));
-      if (body.fixedOffDays !== undefined) u.fixedOffDays = normalizeDays_(body.fixedOffDays).join('|');
+      if (body.fixedOffDays !== undefined || body.selfDropDays !== undefined || body.selfWalkDays !== undefined) {
+        var cur = studentOut_(u);   // 沒傳的欄位沿用原本的設定
+        var m = weekModes_({
+          off: body.fixedOffDays !== undefined ? body.fixedOffDays : cur.fixedOffDays,
+          drop: body.selfDropDays !== undefined ? body.selfDropDays : cur.selfDropDays,
+          walk: body.selfWalkDays !== undefined ? body.selfWalkDays : cur.selfWalkDays
+        });
+        u.fixedOffDays = m.off.join('|'); u.selfDropDays = m.drop.join('|'); u.selfWalkDays = m.walk.join('|');
+      }
       if (body.note !== undefined) u.note = String(body.note || '').trim();
       updateObjectByRow(SHEET_STUDENTS, u._row, u);
       return { ok: true };
@@ -1415,6 +1414,8 @@ function actionGetRollCall(body) {
     return {
       id: so.id, name: so.name, grade: so.grade, isFixedOff: isFixedOff, primaryContact: primary,
       contacts: so.contacts, note: so.note, status: status, defaultStatus: ctx.defaultOf(st.id, date), fixedOffDays: so.fixedOffDays,
+      // 今天是這位學生固定的自送／自走日：只當提示，不自動預填狀態（要老師確認到班後再點）
+      fixedMode: so.selfDropDays.indexOf(wd) !== -1 ? 'selfDrop' : (so.selfWalkDays.indexOf(wd) !== -1 ? 'selfWalk' : ''),
       booking: bk ? bookingBrief_(bk) : null, extra: exb ? bookingBrief_(exb) : null,
       markedBy: byTeacher ? existing.teacherName : '', markedAt: byTeacher ? String(existing.submittedAt) : ''
     };

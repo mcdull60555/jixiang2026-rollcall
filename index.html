@@ -197,19 +197,40 @@
   .pill[class*="st-"]{background:var(--cl);color:var(--c);}
   .pill-primary{background:var(--amber-l);color:#92400e;font-size:11px;padding:1px 7px;border-radius:99px;font-weight:700;margin-right:5px;}
 
-  /* 學生名單：每週固定進班／未來一週 */
+  /* 每週固定接送設定：每位學生週一～週五各一種（進班需要接／自走／自送／固定不進班） */
   .wk{display:inline-flex;gap:3px;vertical-align:middle;}
-  .wk-d{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;min-width:30px;padding:3px 2px;border-radius:7px;font-size:13px;font-weight:700;line-height:1.25;font-style:normal;}
-  .wk-d small{font-size:10px;font-weight:600;opacity:.8;}
-  .wk-d.today{outline:2px solid var(--accent,#0d9488);outline-offset:1px;}
+  .wk-d{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;min-width:34px;padding:3px 2px;border-radius:7px;font-size:12.5px;font-weight:700;line-height:1.25;font-style:normal;}
+  .wk-d small{font-size:11px;font-weight:700;}
   .wk-in{background:var(--emerald-l);color:var(--emerald);}
+  .wk-selfWalk{background:#ede9fe;color:#7c3aed;}
+  .wk-selfDrop{background:var(--amber-l);color:#92400e;}
   .wk-fixedOff{background:var(--slate-l);color:#475569;}
-  .wk-leave{background:var(--rose-l);color:var(--rose);}
-  .wk-extra{background:var(--sky-l);color:#075985;}
-  .wk-closed{background:transparent;color:#94a3b8;border:1px dashed #cbd5e1;}
-  .wk-legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12.5px;color:var(--muted);margin:2px 0 10px;}
-  .wk-legend span{display:inline-flex;align-items:center;gap:5px;}
-  .wk-legend .wk-d{min-width:22px;padding:1px 4px;font-size:12px;}
+  /* 單筆新增／編輯視窗：每個星期四選一 */
+  .wkp{display:grid;gap:6px;margin-top:4px;}
+  .wkp-row{display:flex;align-items:center;gap:10px;}
+  .wkp-day{width:34px;flex:none;font-weight:700;font-size:13.5px;}
+  .wkp-opts{display:flex;gap:4px;flex-wrap:wrap;}
+  .wkp-opt{position:relative;display:inline-block;cursor:pointer;}
+  .wkp-opt input{position:absolute;opacity:0;width:0;height:0;}
+  .wkp-opt span{display:inline-block;min-width:54px;text-align:center;padding:5px 8px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:13px;font-weight:600;background:#fff;color:var(--muted);}
+  .wkp-opt input:focus-visible + span{outline:2px solid var(--accent);outline-offset:1px;}
+  .wkp-opt.o-in input:checked + span{background:var(--emerald-l);border-color:var(--emerald);color:var(--emerald);}
+  .wkp-opt.o-selfWalk input:checked + span{background:#ede9fe;border-color:#7c3aed;color:#7c3aed;}
+  .wkp-opt.o-selfDrop input:checked + span{background:var(--amber-l);border-color:var(--amber);color:#92400e;}
+  .wkp-opt.o-fixedOff input:checked + span{background:var(--slate-l);border-color:#64748b;color:#475569;}
+  /* 批次新增：每個星期一個下拉 */
+  .bs-wkcell{display:flex;gap:4px;}
+  .bs-wkcell label{display:flex;flex-direction:column;align-items:center;font-size:11.5px;font-weight:700;color:var(--muted);gap:2px;}
+  .bs-wkcell select{padding:4px 2px;border:1px solid #cbd5e1;border-radius:7px;background:#fff;font-size:13px;font-weight:700;min-width:46px;}
+  /* 每校每週人數統計 */
+  .wk-sum{margin:6px 0 14px;}
+  .wk-sum h4{margin:0 0 6px;font-size:13.5px;color:var(--text);}
+  .wk-sum h4 small{font-weight:500;color:var(--muted);margin-left:6px;}
+  .wk-sum table{width:auto;min-width:min(100%,420px);font-size:13.5px;}
+  .wk-sum th,.wk-sum td{text-align:center;padding:6px 12px;}
+  .wk-sum th:first-child,.wk-sum td:first-child{text-align:left;}
+  .wk-sum td.n{font-weight:700;font-variant-numeric:tabular-nums;}
+  .wk-sum td.n.zero{color:#94a3b8;font-weight:500;}
 
   .school-list{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;}
   .school-chip{padding:8px 16px;border-radius:99px;border:1.5px solid var(--border);background:#fff;font-weight:700;font-size:14px;color:var(--text);}
@@ -257,6 +278,10 @@
   .st-btn:hover{border-color:var(--c);color:var(--c);}
   .st-btn.on{background:var(--c);border-color:var(--c);color:#fff;}
   .rc-row.fixed td:nth-child(2){color:var(--muted);}
+  .fm-wrap{margin-top:3px;}
+  .fm-tag{display:inline-block;font-size:12px;padding:1px 9px;border-radius:99px;font-weight:700;}
+  .fm-selfWalk{background:#ede9fe;color:#7c3aed;}
+  .fm-selfDrop{background:var(--amber-l);color:#92400e;}
   .fixed-tag{display:inline-block;margin-left:6px;font-size:11.5px;background:var(--slate-l);color:#475569;padding:1px 8px;border-radius:99px;font-weight:700;}
   .primary-ct{font-size:12px;color:var(--muted);margin-top:2px;}
   .primary-ct a{color:var(--sky);text-decoration:none;font-weight:600;}
@@ -432,9 +457,10 @@
     .stu-table td.c-name{font-weight:700;font-size:16px;}
     .stu-table td.c-act{grid-column:4;grid-row:1;}
     .stu-table td.c-sel,.stu-table td.sel{grid-row:1;}
-    .stu-table td.c-contacts,.stu-table td.c-days,.stu-table td.c-week,.stu-table td.c-note{grid-column:2 / -1;}
-    .stu-table td.c-days::before,.stu-table td.c-week::before,.stu-table td.c-note::before{content:attr(data-label) "：";color:var(--muted);font-size:12.5px;font-weight:600;display:block;margin-bottom:2px;}
-    .stu-table td.c-days .wk,.stu-table td.c-week .wk{flex-wrap:wrap;}
+    .stu-table td.c-contacts,.stu-table td.c-days,.stu-table td.c-note{grid-column:2 / -1;}
+    .stu-table td.c-days::before,.stu-table td.c-note::before{content:attr(data-label) "：";color:var(--muted);font-size:12.5px;font-weight:600;}
+    .stu-table td.c-days::before{display:block;margin-bottom:2px;}
+    .wk-sum th,.wk-sum td{padding:6px 8px;}
     .stu-table td.is-empty{display:none;}
     .stu-table td.empty{grid-column:1 / -1;}
     .stu-table .ct-line{white-space:normal;}
@@ -684,21 +710,15 @@ tr.bk-past td:last-child{opacity:1;}
         <button class="btn btn-secondary btn-sm" id="school-edit-btn" onclick="openEditSchool()">✏️ 修改校名</button>
         <button class="btn btn-danger btn-sm" id="school-del-btn" onclick="deleteSchool()">🗑️ 刪除學校</button>
       </div>
-      <p class="hint">姓名、年級班級（例如 306）、聯絡人與聯絡電話、固定不進班星期</p>
-      <div class="wk-legend" aria-label="進班狀況圖例">
-        <span><i class="wk-d wk-in">進</i> 進班</span>
-        <span><i class="wk-d wk-fixedOff">休</i> 固定不進班</span>
-        <span><i class="wk-d wk-leave">假</i> 預約請假</span>
-        <span><i class="wk-d wk-extra">臨</i> 臨時進班</span>
-        <span><i class="wk-d wk-closed">放</i> 當天不點名（假日）</span>
-      </div>
+      <p class="hint">姓名、年級班級（例如 306）、聯絡人與聯絡電話、每週固定接送（進班需接／自走／自送／不進班）</p>
+      <div class="wk-sum hidden" id="week-summary"></div>
       <div class="bulk-bar">
         <span id="bulk-st-count">已選 0 位學生</span>
         <button class="btn btn-danger btn-sm" id="bulk-st-del" onclick="deleteSelectedStudents()" disabled>刪除所選學生</button>
       </div>
       <div class="table-wrap">
         <table class="stu-table">
-          <thead><tr><th class="sel"><input type="checkbox" class="sel-box" id="sel-all-st" aria-label="全選學生"></th><th>年級班級</th><th>姓名</th><th>聯絡人 / 聯絡電話</th><th>每週固定進班</th><th>未來一週（今天起）</th><th>備註</th><th><span style="position:absolute;left:-9999px">操作</span></th></tr></thead>
+          <thead><tr><th class="sel"><input type="checkbox" class="sel-box" id="sel-all-st" aria-label="全選學生"></th><th>年級班級</th><th>姓名</th><th>聯絡人 / 聯絡電話</th><th>每週接送（接／走／送／休）</th><th>備註</th><th><span style="position:absolute;left:-9999px">操作</span></th></tr></thead>
           <tbody id="students-tbody"></tbody>
         </table>
       </div>
@@ -2165,25 +2185,28 @@ document.addEventListener('focusout', e => {
 });
 
 /* ---------------- 學生 ---------------- */
+/* 每校每週人數統計：週一～週五各有幾位「進班(需要接)／自走／自送／固定不進班」 */
+function renderWeekSummary(students) {
+  const box = $('week-summary');
+  if (!students.length) { box.classList.add('hidden'); box.innerHTML = ''; return; }
+  const cnt = {};
+  WK_MODES.forEach(m => { cnt[m.k] = [0, 0, 0, 0, 0]; });
+  students.forEach(st => { for (let d = 1; d <= 5; d++) cnt[studentWeekMode(st, d)][d - 1]++; });
+  box.innerHTML = `<h4>每週固定接送人數<small>共 ${students.length} 位學生（只依每週固定設定統計，不含臨時請假）</small></h4>
+    <div class="table-wrap"><table><thead><tr><th></th>${[1, 2, 3, 4, 5].map(d => `<th>週${DOW[d - 1]}</th>`).join('')}</tr></thead><tbody>` +
+    WK_MODES.map(m => `<tr><td><span class="pill wk-${m.k}" style="padding:2px 10px">${m.desc}</span></td>` +
+      cnt[m.k].map(n => `<td class="n${n ? '' : ' zero'}">${n}</td>`).join('') + '</tr>').join('') +
+    '</tbody></table></div>';
+  box.classList.remove('hidden');
+}
+
 async function loadStudents(silent) {
   if (!STATE.currentSchoolId) return;
-  const r = await api('listStudents', { schoolId: STATE.currentSchoolId, withWeek: true }, { pill: !silent, flash: !silent });
+  const r = await api('listStudents', { schoolId: STATE.currentSchoolId }, { pill: !silent, flash: !silent });
   STATE.currentStudents = r.students;
+  renderWeekSummary(r.students);
   const tbody = $('students-tbody');
-  if (!r.students.length) { tbody.innerHTML = '<tr><td colspan="8" class="empty">尚無學生</td></tr>'; STATE.selStudents.clear(); updateBulk('st'); return; }
-  // 每週固定進班：週一～週五，固定不進班的星期顯示「休」
-  const WK_LABEL = { in: '進', fixedOff: '休', leave: '假', extra: '臨', closed: '放' };
-  const weeklyHtml = st => '<span class="wk">' + [1, 2, 3, 4, 5].map(d => {
-    const off = st.fixedOffDays.includes(d);
-    return `<span class="wk-d ${off ? 'wk-fixedOff' : 'wk-in'}" title="週${DOW[d - 1]}${off ? '固定不進班' : '進班'}">週${DOW[d - 1]}<small>${off ? '休' : '進'}</small></span>`;
-  }).join('') + '</span>';
-  const wd = r.weekDates || [];
-  const nextWeekHtml = st => !st.week ? '-' : '<span class="wk">' + st.week.map((state, i) => {
-    const w = wd[i] || {};
-    const md = w.date ? Number(w.date.slice(5, 7)) + '/' + Number(w.date.slice(8, 10)) : '';
-    const tip = `${md} 週${DOW[(w.weekday || 1) - 1]}：${{ in: '進班', fixedOff: '固定不進班', leave: '預約請假', extra: '臨時進班', closed: w.label || '當天不點名' }[state]}`;
-    return `<span class="wk-d wk-${state}${i === 0 ? ' today' : ''}" title="${esc(tip)}">週${DOW[(w.weekday || 1) - 1]}<small>${md}</small><small>${WK_LABEL[state]}</small></span>`;
-  }).join('') + '</span>';
+  if (!r.students.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty">尚無學生</td></tr>'; STATE.selStudents.clear(); updateBulk('st'); return; }
   const ids = new Set(r.students.map(s => s.id));
   STATE.selStudents.forEach(id => { if (!ids.has(id)) STATE.selStudents.delete(id); });   // 背景同步後保留勾選
   tbody.innerHTML = r.students.map(st => `
@@ -2192,8 +2215,7 @@ async function loadStudents(silent) {
       <td class="c-grade"><b>${esc(st.grade) || '-'}</b></td>
       <td class="c-name">${esc(st.name)}</td>
       <td class="c-contacts">${contactsHtml(st.contacts)}</td>
-      <td class="c-days" data-label="每週固定進班">${weeklyHtml(st)}</td>
-      <td class="c-week" data-label="未來一週">${nextWeekHtml(st)}</td>
+      <td class="c-days" data-label="每週接送">${weekChipsHtml(st)}</td>
       <td class="note-cell c-note${st.note ? '' : ' is-empty'}" data-label="備註">${st.note ? esc(st.note) : '-'}</td>
       <td class="c-act" style="white-space:nowrap">
         <button class="icon-btn" title="編輯" aria-label="編輯 ${esc(st.name)}" onclick="openStudentModal('${esc(st.id)}')">✏️</button>
@@ -2251,9 +2273,44 @@ function contactsHtml(contacts) {
   return primaryFirst(contacts).map(c => `<div class="ct-line">${c.primary ? '<span class="pill-primary">主要</span>' : ''}${esc(c.rel || '聯絡人')}　${esc(c.phone)}</div>`).join('');
 }
 
-function daysChips(selected, cls) {
-  return [1, 2, 3, 4, 5].map(d =>   // 只有星期一到星期五
-    `<label class="chip"><input type="checkbox" class="${cls}" value="${d}"${selected.includes(d) ? ' checked' : ''}><span>${cls === 'bs-day' ? DOW[d - 1] : '週' + DOW[d - 1]}</span></label>`).join('');
+/* ---- 每週固定接送設定：週一～週五，每天四選一 ---- */
+const WK_MODES = [
+  { k: 'in', label: '進班(接)', short: '接', desc: '進班（需要接）' },
+  { k: 'selfWalk', label: '自走', short: '走', desc: '自走' },
+  { k: 'selfDrop', label: '自送', short: '送', desc: '自送' },
+  { k: 'fixedOff', label: '不進班', short: '休', desc: '固定不進班' }
+];
+function studentWeekMode(st, d) {
+  if ((st.fixedOffDays || []).includes(d)) return 'fixedOff';
+  if ((st.selfDropDays || []).includes(d)) return 'selfDrop';
+  if ((st.selfWalkDays || []).includes(d)) return 'selfWalk';
+  return 'in';
+}
+// 單筆新增／編輯視窗：每個星期一排四個選項
+function weekPickerHtml(st, name) {
+  return '<div class="wkp">' + [1, 2, 3, 4, 5].map(d => {
+    const cur = st ? studentWeekMode(st, d) : 'in';
+    return `<div class="wkp-row" role="radiogroup" aria-label="週${DOW[d - 1]}"><span class="wkp-day">週${DOW[d - 1]}</span><span class="wkp-opts">` +
+      WK_MODES.map(m => `<label class="wkp-opt o-${m.k}" title="${m.desc}"><input type="radio" name="${name}-${d}" class="m-wk" data-day="${d}" value="${m.k}"${cur === m.k ? ' checked' : ''}><span>${m.label}</span></label>`).join('') +
+      '</span></div>';
+  }).join('') + '</div>';
+}
+// 把選好的結果整理成三組星期（進班需要接是預設，不用另外存）
+function collectWeek(modes) {   // modes: [{day, mode}]
+  const out = { fixedOffDays: [], selfDropDays: [], selfWalkDays: [] };
+  modes.forEach(({ day, mode }) => {
+    if (mode === 'fixedOff') out.fixedOffDays.push(day);
+    else if (mode === 'selfDrop') out.selfDropDays.push(day);
+    else if (mode === 'selfWalk') out.selfWalkDays.push(day);
+  });
+  return out;
+}
+// 學生名單裡每位學生的一週設定：週一～週五各一格
+function weekChipsHtml(st) {
+  return '<span class="wk">' + [1, 2, 3, 4, 5].map(d => {
+    const m = WK_MODES.find(x => x.k === studentWeekMode(st, d));
+    return `<span class="wk-d wk-${m.k}" title="週${DOW[d - 1]}：${m.desc}">週${DOW[d - 1]}<small>${m.short}</small></span>`;
+  }).join('') + '</span>';
 }
 
 function contactGroupHtml(idx, c, radioName, removable) {
@@ -2305,8 +2362,9 @@ function openStudentModal(studentId) {
       <div id="m-st-contacts" role="group" aria-labelledby="m-st-ct-label">${contacts.map((c, i) => contactGroupHtml(i + 1, c, 'm-primary', i > 0)).join('')}</div>
       <button type="button" class="btn btn-secondary btn-sm" id="m-st-addgroup" onclick="addContactGroup()">+ 新增第二組聯絡人</button>
     </div>
-    <div class="field"><span class="field-label-text" id="m-st-off-label">固定不進班星期</span>
-      <div role="group" aria-labelledby="m-st-off-label">${daysChips(isEdit ? student.fixedOffDays : [], 'm-day')}</div></div>
+    <div class="field"><span class="field-label-text" id="m-st-off-label">每週固定接送（週一到週五各選一種）</span>
+      <p class="hint" style="margin:2px 0 4px">進班(接)＝要去學校接；自走、自送＝老師點名時會提示；不進班＝當天不用點名</p>
+      <div role="group" aria-labelledby="m-st-off-label">${weekPickerHtml(student, 'm-wk')}</div></div>
     <div class="field"><label for="m-st-note">備註（老師點名時會看到）</label>
       <textarea id="m-st-note" rows="2" placeholder="例如：週三下午由阿嬤接、對花生過敏">${isEdit ? esc(student.note) : ''}</textarea></div>
   `, async () => {
@@ -2331,10 +2389,9 @@ function openStudentModal(studentId) {
       if (!c.rel || !c.phone) missing.push(`第${['一', '二', '三'][i]}組聯絡人${!c.rel && !c.phone ? '' : (!c.rel ? '的稱呼' : '的聯絡電話')}`);
     });
     if (missing.length) { toast('請填寫：' + missing.join('、'), true); return false; }
-    const payload = {
-      name, grade, contacts: cs, note: $('m-st-note').value.trim(),
-      fixedOffDays: [...modal.querySelectorAll('.m-day:checked')].map(el => Number(el.value))
-    };
+    const payload = Object.assign({
+      name, grade, contacts: cs, note: $('m-st-note').value.trim()
+    }, collectWeek([...modal.querySelectorAll('.m-wk:checked')].map(el => ({ day: Number(el.dataset.day), mode: el.value }))));
     const r = isEdit
       ? await doWrite('editStudent', Object.assign({ studentId }, payload), () => Promise.all([loadStudents(true), loadSchools(true)]))
       : await doWrite('addStudent', Object.assign({ schoolId: STATE.currentSchoolId }, payload), () => Promise.all([loadStudents(true), loadSchools(true)]));
@@ -2362,7 +2419,8 @@ function bsRowHtml() {
     <td><input class="bs-name cell-input" aria-label="姓名" placeholder="王小明" style="min-width:90px"></td>
     <td><input class="bs-grade cell-input" aria-label="年級班級" placeholder="306" inputmode="numeric" maxlength="4" style="width:72px"></td>
     ${groups}
-    <td class="days">${daysChips([], 'bs-day')}</td>
+    <td class="days"><div class="bs-wkcell">${[1, 2, 3, 4, 5].map(d =>
+      `<label>${DOW[d - 1]}<select class="bs-wk" data-day="${d}" aria-label="週${DOW[d - 1]}接送">${WK_MODES.map(m => `<option value="${m.k}">${m.short}</option>`).join('')}</select></label>`).join('')}</div></td>
     <td><input class="bs-note cell-input" aria-label="備註" placeholder="例如：中午接" style="min-width:150px"></td>
     <td><button type="button" class="icon-btn" aria-label="刪除此列" onclick="bsRemoveRow(this)">✕</button></td></tr>`;
 }
@@ -2370,7 +2428,7 @@ function bsRowHtml() {
 async function bsRemoveRow(btn) {
   const tr = btn.closest('tr');
   const name = tr.querySelector('.bs-name').value.trim();
-  const hasData = [...tr.querySelectorAll('input.cell-input, select')].some(el => el.value && el.value !== '__custom__') || tr.querySelector('.bs-day:checked');
+  const hasData = [...tr.querySelectorAll('input.cell-input, select:not(.bs-wk)')].some(el => el.value && el.value !== '__custom__') || [...tr.querySelectorAll('.bs-wk')].some(el => el.value !== 'in');
   if (hasData && !(await confirmBox('刪除這一列', `確定要刪除第 ${esc(tr.querySelector('.idx').textContent)} 列${name ? '「' + esc(name) + '」' : ''}嗎？<br><span style="color:var(--muted);font-size:13px">這一列已填的資料會清除。</span>`, '刪除', true))) return;
   tr.remove();
   bsRenumber();
@@ -2392,7 +2450,7 @@ function openBatchStudentModal() {
         <th class="g1">聯絡人1 <span class="req">*</span></th><th class="g1">聯絡電話1 <span class="req">*</span></th><th class="g1">主要</th>
         <th class="g2">聯絡人2</th><th class="g2">聯絡電話2</th><th class="g2">主要</th>
         <th class="g3">聯絡人3</th><th class="g3">聯絡電話3</th><th class="g3">主要</th>
-        <th>不進班星期</th><th>備註</th><th></th></tr></thead>
+        <th>每週接送 <span style="font-weight:500">（接＝進班需接、走＝自走、送＝自送、休＝不進班）</span></th><th>備註</th><th></th></tr></thead>
       <tbody id="bs-body"></tbody></table></div>
     <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
       <button type="button" class="btn btn-secondary btn-sm" onclick="bsAddRows(1)">+ 新增一列</button>
@@ -2408,13 +2466,14 @@ function openBatchStudentModal() {
       const name = nameEl.value.trim();
       const grade = gradeEl.value.trim();
       const note = tr.querySelector('.bs-note').value.trim();
-      const days = [...tr.querySelectorAll('.bs-day:checked')].map(el => Number(el.value));
+      const week = collectWeek([...tr.querySelectorAll('.bs-wk')].map(el => ({ day: Number(el.dataset.day), mode: el.value })));
+      const hasWeek = week.fixedOffDays.length || week.selfDropDays.length || week.selfWalkDays.length;   // 預設全部「接」不算有填資料
       const groups = [1, 2, 3].filter(g => g === 1 || (g === 2 && g2) || (g === 3 && g3)).map(g => ({
         g, relEl: tr.querySelector(`.bs-rel[data-g="${g}"]`), phoneEl: tr.querySelector(`.bs-phone[data-g="${g}"]`),
         rel: (v => v === '__custom__' ? '' : v)(tr.querySelector(`.bs-rel[data-g="${g}"]`).value),
         phone: tr.querySelector(`.bs-phone[data-g="${g}"]`).value.trim()
       }));
-      const anyData = name || grade || note || days.length || groups.some(c => c.rel || c.phone);
+      const anyData = name || grade || note || hasWeek || groups.some(c => c.rel || c.phone);
       if (!anyData) return;   // 完全空白的列略過
       // 必填：姓名、年級班級、第一組聯絡人+聯絡電話；其他組若有填就要成對
       const missing = [];
@@ -2427,10 +2486,10 @@ function openBatchStudentModal() {
       });
       if (missing.length) { if (!firstBad) firstBad = `第 ${i + 1} 列缺少：${missing.join('、')}`; return; }
       const pr = Number((tr.querySelector('input[type=radio]:checked') || {}).value || 1);
-      students.push({
-        name, grade, note, fixedOffDays: days,
+      students.push(Object.assign({
+        name, grade, note,
         contacts: groups.map(c => ({ rel: c.rel, phone: c.phone, primary: c.g === pr }))
-      });
+      }, week));
     });
     if (firstBad) { toast(firstBad, true); return false; }
     if (!students.length) { toast('請至少填寫一位學生', true); return false; }
@@ -2768,12 +2827,18 @@ function renderRcView() {
   sendPresence();
 }
 
+// 今天是這位學生固定的自走／自送日：只是提示，狀態仍是未點名，老師確認學生到了再點
+function fixedModeTagHtml(mode) {
+  return mode === 'selfWalk' || mode === 'selfDrop'
+    ? `<div class="fm-wrap"><span class="fm-tag fm-${mode}">📌 固定${mode === 'selfWalk' ? '自走' : '自送'}</span></div>` : '';
+}
+
 function rcRowHtml(st) {
   const s = st.status || '';
   return `
       <tr class="rc-row${st.isFixedOff ? ' fixed' : ''}${st.booking ? ' booked' : ''}${st.extra && !st.booking ? ' extra' : ''}" data-sid="${esc(st.id)}" data-name="${esc(st.name)}" data-fixed="${st.isFixedOff ? 1 : 0}" data-default="${esc(st.defaultStatus || (st.isFixedOff ? 'fixedOff' : ''))}" data-booked="${st.booking ? 1 : 0}" data-bkreason="${esc(st.booking ? st.booking.reason : '')}" data-status="${esc(s)}">
         <td><b>${esc(st.grade) || '-'}</b></td>
-        <td>${personCellHtml(st, st.isFixedOff, true, true)}${st.extra ? bookingTagHtml(st.extra, true, 'attend') : ''}${st.booking ? bookingTagHtml(st.booking, true) : ''}</td>
+        <td>${personCellHtml(st, st.isFixedOff, true, true)}${fixedModeTagHtml(st.fixedMode)}${st.extra ? bookingTagHtml(st.extra, true, 'attend') : ''}${st.booking ? bookingTagHtml(st.booking, true) : ''}</td>
         <td><div class="st-group" role="group" aria-label="${esc(st.name)} 出席狀態">
           ${PICK.map(k => `<button type="button" class="st-btn st-${k}${s === k ? ' on' : ''}" data-st="${k}" aria-pressed="${s === k}">${STATUS[k].label}</button>`).join('')}
         </div>${noteHtml(st)}</td>
