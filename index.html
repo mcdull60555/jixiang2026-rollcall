@@ -197,6 +197,20 @@
   .pill[class*="st-"]{background:var(--cl);color:var(--c);}
   .pill-primary{background:var(--amber-l);color:#92400e;font-size:11px;padding:1px 7px;border-radius:99px;font-weight:700;margin-right:5px;}
 
+  /* 學生名單：每週固定進班／未來一週 */
+  .wk{display:inline-flex;gap:3px;vertical-align:middle;}
+  .wk-d{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;min-width:30px;padding:3px 2px;border-radius:7px;font-size:13px;font-weight:700;line-height:1.25;font-style:normal;}
+  .wk-d small{font-size:10px;font-weight:600;opacity:.8;}
+  .wk-d.today{outline:2px solid var(--accent,#0d9488);outline-offset:1px;}
+  .wk-in{background:var(--emerald-l);color:var(--emerald);}
+  .wk-fixedOff{background:var(--slate-l);color:#475569;}
+  .wk-leave{background:var(--rose-l);color:var(--rose);}
+  .wk-extra{background:var(--sky-l);color:#075985;}
+  .wk-closed{background:transparent;color:#94a3b8;border:1px dashed #cbd5e1;}
+  .wk-legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12.5px;color:var(--muted);margin:2px 0 10px;}
+  .wk-legend span{display:inline-flex;align-items:center;gap:5px;}
+  .wk-legend .wk-d{min-width:22px;padding:1px 4px;font-size:12px;}
+
   .school-list{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;}
   .school-chip{padding:8px 16px;border-radius:99px;border:1.5px solid var(--border);background:#fff;font-weight:700;font-size:14px;color:var(--text);}
   .school-chip:hover{border-color:var(--teal);}
@@ -418,8 +432,9 @@
     .stu-table td.c-name{font-weight:700;font-size:16px;}
     .stu-table td.c-act{grid-column:4;grid-row:1;}
     .stu-table td.c-sel,.stu-table td.sel{grid-row:1;}
-    .stu-table td.c-contacts,.stu-table td.c-days,.stu-table td.c-note{grid-column:2 / -1;}
-    .stu-table td.c-days::before,.stu-table td.c-note::before{content:attr(data-label) "：";color:var(--muted);font-size:12.5px;font-weight:600;}
+    .stu-table td.c-contacts,.stu-table td.c-days,.stu-table td.c-week,.stu-table td.c-note{grid-column:2 / -1;}
+    .stu-table td.c-days::before,.stu-table td.c-week::before,.stu-table td.c-note::before{content:attr(data-label) "：";color:var(--muted);font-size:12.5px;font-weight:600;display:block;margin-bottom:2px;}
+    .stu-table td.c-days .wk,.stu-table td.c-week .wk{flex-wrap:wrap;}
     .stu-table td.is-empty{display:none;}
     .stu-table td.empty{grid-column:1 / -1;}
     .stu-table .ct-line{white-space:normal;}
@@ -670,13 +685,20 @@ tr.bk-past td:last-child{opacity:1;}
         <button class="btn btn-danger btn-sm" id="school-del-btn" onclick="deleteSchool()">🗑️ 刪除學校</button>
       </div>
       <p class="hint">姓名、年級班級（例如 306）、聯絡人與聯絡電話、固定不進班星期</p>
+      <div class="wk-legend" aria-label="進班狀況圖例">
+        <span><i class="wk-d wk-in">進</i> 進班</span>
+        <span><i class="wk-d wk-fixedOff">休</i> 固定不進班</span>
+        <span><i class="wk-d wk-leave">假</i> 預約請假</span>
+        <span><i class="wk-d wk-extra">臨</i> 臨時進班</span>
+        <span><i class="wk-d wk-closed">放</i> 當天不點名（假日）</span>
+      </div>
       <div class="bulk-bar">
         <span id="bulk-st-count">已選 0 位學生</span>
         <button class="btn btn-danger btn-sm" id="bulk-st-del" onclick="deleteSelectedStudents()" disabled>刪除所選學生</button>
       </div>
       <div class="table-wrap">
         <table class="stu-table">
-          <thead><tr><th class="sel"><input type="checkbox" class="sel-box" id="sel-all-st" aria-label="全選學生"></th><th>年級班級</th><th>姓名</th><th>聯絡人 / 聯絡電話</th><th>固定不進班</th><th>備註</th><th><span style="position:absolute;left:-9999px">操作</span></th></tr></thead>
+          <thead><tr><th class="sel"><input type="checkbox" class="sel-box" id="sel-all-st" aria-label="全選學生"></th><th>年級班級</th><th>姓名</th><th>聯絡人 / 聯絡電話</th><th>每週固定進班</th><th>未來一週（今天起）</th><th>備註</th><th><span style="position:absolute;left:-9999px">操作</span></th></tr></thead>
           <tbody id="students-tbody"></tbody>
         </table>
       </div>
@@ -2118,10 +2140,23 @@ function askText(title, label) {
 /* ---------------- 學生 ---------------- */
 async function loadStudents(silent) {
   if (!STATE.currentSchoolId) return;
-  const r = await api('listStudents', { schoolId: STATE.currentSchoolId }, { pill: !silent, flash: !silent });
+  const r = await api('listStudents', { schoolId: STATE.currentSchoolId, withWeek: true }, { pill: !silent, flash: !silent });
   STATE.currentStudents = r.students;
   const tbody = $('students-tbody');
-  if (!r.students.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty">尚無學生</td></tr>'; STATE.selStudents.clear(); updateBulk('st'); return; }
+  if (!r.students.length) { tbody.innerHTML = '<tr><td colspan="8" class="empty">尚無學生</td></tr>'; STATE.selStudents.clear(); updateBulk('st'); return; }
+  // 每週固定進班：週一～週五，固定不進班的星期顯示「休」
+  const WK_LABEL = { in: '進', fixedOff: '休', leave: '假', extra: '臨', closed: '放' };
+  const weeklyHtml = st => '<span class="wk">' + [1, 2, 3, 4, 5].map(d => {
+    const off = st.fixedOffDays.includes(d);
+    return `<span class="wk-d ${off ? 'wk-fixedOff' : 'wk-in'}" title="週${DOW[d - 1]}${off ? '固定不進班' : '進班'}">週${DOW[d - 1]}<small>${off ? '休' : '進'}</small></span>`;
+  }).join('') + '</span>';
+  const wd = r.weekDates || [];
+  const nextWeekHtml = st => !st.week ? '-' : '<span class="wk">' + st.week.map((state, i) => {
+    const w = wd[i] || {};
+    const md = w.date ? Number(w.date.slice(5, 7)) + '/' + Number(w.date.slice(8, 10)) : '';
+    const tip = `${md} 週${DOW[(w.weekday || 1) - 1]}：${{ in: '進班', fixedOff: '固定不進班', leave: '預約請假', extra: '臨時進班', closed: w.label || '當天不點名' }[state]}`;
+    return `<span class="wk-d wk-${state}${i === 0 ? ' today' : ''}" title="${esc(tip)}">週${DOW[(w.weekday || 1) - 1]}<small>${md}</small><small>${WK_LABEL[state]}</small></span>`;
+  }).join('') + '</span>';
   const ids = new Set(r.students.map(s => s.id));
   STATE.selStudents.forEach(id => { if (!ids.has(id)) STATE.selStudents.delete(id); });   // 背景同步後保留勾選
   tbody.innerHTML = r.students.map(st => `
@@ -2130,7 +2165,8 @@ async function loadStudents(silent) {
       <td class="c-grade"><b>${esc(st.grade) || '-'}</b></td>
       <td class="c-name">${esc(st.name)}</td>
       <td class="c-contacts">${contactsHtml(st.contacts)}</td>
-      <td class="c-days${st.fixedOffDays.length ? '' : ' is-empty'}" data-label="固定不進班">${st.fixedOffDays.length ? st.fixedOffDays.map(d => `<span class="pill st-fixedOff" style="margin-right:3px">週${DOW[d - 1]}</span>`).join('') : '-'}</td>
+      <td class="c-days" data-label="每週固定進班">${weeklyHtml(st)}</td>
+      <td class="c-week" data-label="未來一週">${nextWeekHtml(st)}</td>
       <td class="note-cell c-note${st.note ? '' : ' is-empty'}" data-label="備註">${st.note ? esc(st.note) : '-'}</td>
       <td class="c-act" style="white-space:nowrap">
         <button class="icon-btn" title="編輯" aria-label="編輯 ${esc(st.name)}" onclick="openStudentModal('${esc(st.id)}')">✏️</button>

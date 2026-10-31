@@ -799,12 +799,34 @@ function validateStudent_(name, grade, contacts) {
 }
 
 function actionListStudents(body) {
-  requireSession(body.token);
+  var s = requireSession(body.token);
   var students = sheetToObjects(SHEET_STUDENTS).filter(function (x) {
     return x.schoolId === body.schoolId && isActive_(x.active);
   }).map(studentOut_);
   sortStudents(students);
-  return { ok: true, students: students };
+  var res = { ok: true, students: students };
+  // 管理員要求時：附上「未來 7 天（今天起）」每位學生的進班狀況
+  // 每格狀態：in 進班 / fixedOff 固定不進班 / leave 預約請假 / extra 臨時進班 / closed 當天不點名（例假日、國定假日）
+  if (body.withWeek && s.role === 'admin') {
+    var ctx = statusCtx_();
+    var dates = [], d = ctx.today;
+    for (var i = 0; i < 7; i++) { dates.push(d); d = nextDate_(d); }
+    var sp = specialDays_();
+    res.weekDates = dates.map(function (x) {
+      var info = dayInfo_(x, sp);
+      return { date: x, weekday: info.weekday, open: info.open, label: info.label };
+    });
+    students.forEach(function (st) {
+      st.week = dates.map(function (x) {
+        if (!ctx.isOpen(x)) return 'closed';
+        if (x === ctx.today && ctx.status(st.id, x) === 'leave') return 'leave';   // 今天老師已點請假
+        if (ctx.bookingOn(st.id, x)) return 'leave';
+        if (ctx.extraOn(st.id, x)) return 'extra';
+        return ctx.isFixed(st.id, x) ? 'fixedOff' : 'in';
+      });
+    });
+  }
+  return res;
 }
 
 function studentRow_(schoolId, st) {
