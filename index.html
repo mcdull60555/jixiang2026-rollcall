@@ -2137,6 +2137,33 @@ function askText(title, label) {
   });
 }
 
+/* ---------------- 電話欄位：自動補「-」 ----------------
+   手機的電話鍵盤沒有「-」，只輸入數字時自動排成 0987-654-321（手機）／02-2345-6789（台北、新北市話）。
+   其他號碼、含分機或括號的內容、自己打了「-」的內容都不亂動。 */
+function fmtPhone(v) {
+  v = String(v || '');
+  if (/[^\d\-\s]/.test(v)) return v;                     // 含其他符號（分機、括號、＋ 等）→ 不處理
+  const d = v.replace(/\D/g, '');
+  const join = parts => parts.filter(Boolean).join('-');
+  if (/^09/.test(d) && d.length <= 10) return join([d.slice(0, 4), d.slice(4, 7), d.slice(7)]);   // 0987-654-321
+  if (/^02/.test(d) && d.length <= 10) return join([d.slice(0, 2), d.slice(2, 6), d.slice(6)]);   // 02-2345-6789
+  return v;
+}
+document.addEventListener('input', e => {
+  const t = e.target;
+  if (!(t.matches && t.matches('.cg-phone, .bs-phone'))) return;
+  // 只在游標位於最後面時即時排版（在中間修改時等離開欄位再處理，避免游標亂跳）
+  if (t.selectionStart !== null && t.selectionStart !== t.value.length) return;
+  const f = fmtPhone(t.value);
+  if (f !== t.value) t.value = f;
+});
+document.addEventListener('focusout', e => {
+  const t = e.target;
+  if (!(t.matches && t.matches('.cg-phone, .bs-phone'))) return;
+  const f = fmtPhone(t.value);
+  if (f !== t.value) t.value = f;
+});
+
 /* ---------------- 學生 ---------------- */
 async function loadStudents(silent) {
   if (!STATE.currentSchoolId) return;
