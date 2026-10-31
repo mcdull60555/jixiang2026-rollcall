@@ -164,6 +164,20 @@ function withLock_(fn) {
 
 function today_() { return Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd'); }
 
+// 學生建立日（台北時區的 yyyy-MM-dd）；舊資料沒有建立時間 → 回傳空字串（視為一直都在）
+function createdDateOf_(st) {
+  var c = st && st.createdAt;
+  if (!c) return '';
+  var t = c instanceof Date ? c : new Date(String(c));
+  if (isNaN(t.getTime())) return '';
+  return Utilities.formatDate(t, TZ, 'yyyy-MM-dd');
+}
+// 這位學生在 date 那天是否已經在名單內：新增日之後才算；舊日期不補列之後才新增的學生
+function studentExistsOn_(st, date) {
+  var c = createdDateOf_(st);
+  return !c || c <= String(date);
+}
+
 function dateStrDaysAgo_(n) {
   return Utilities.formatDate(new Date(Date.now() - n * 86400000), TZ, 'yyyy-MM-dd');
 }
@@ -1521,10 +1535,19 @@ function overviewData_(schoolFilter, cutoff) {
     schoolMap[sc.id] = sc.name;
     if (isActive_(sc.active)) activeIds.push(sc.id);
   });
-  var totals = {};
+  var totals = {}, activeStudents = [];
   sheetToObjects(SHEET_STUDENTS).forEach(function (st) {
-    if (isActive_(st.active)) totals[st.schoolId] = (totals[st.schoolId] || 0) + 1;
+    if (!isActive_(st.active)) return;
+    totals[st.schoolId] = (totals[st.schoolId] || 0) + 1;
+    activeStudents.push(st);
   });
+  // 某天某校的「總人數」：過去的日子不算之後才新增的學生（今天一律用目前人數）
+  var totalOn = function (sid, d) {
+    if (d === today) return totals[sid] || 0;
+    var n = 0;
+    activeStudents.forEach(function (st) { if (st.schoolId === sid && studentExistsOn_(st, d)) n++; });
+    return n;
+  };
   var attendance = sheetToObjects(SHEET_ATTENDANCE);
   var subIdx = submittersIndex_(cutoff, attendance);
 
@@ -1593,7 +1616,7 @@ function overviewData_(schoolFilter, cutoff) {
     }
     var schools = ids.map(function (sid) {
       var b = byDate[date][sid];
-      var total = totals[sid] || 0;
+      var total = totalOn(sid, date);
       var subs = subIdx[date + '|' + sid] || [];
       var last = subs[subs.length - 1] || null;
       var item = {
@@ -1679,7 +1702,10 @@ function actionGetSchoolDayDetail(body) {
   var wd = weekdayOf(date);
   var isToday = date === today_();
   var ctx = statusCtx_();
-  var out = activeStudentsOf_(body.schoolId).map(function (st) {
+  var out = activeStudentsOf_(body.schoolId).filter(function (st) {
+    // 過去的日子不列出「之後才新增」的學生（當天已有點名紀錄的一律保留）
+    return isToday || attMap[st.id] || studentExistsOn_(st, date);
+  }).map(function (st) {
     var a = attMap[st.id];
     var so = studentOut_(st);
     var fixedNow = ctx.isFixed(st.id, date);
