@@ -1512,6 +1512,25 @@ function actionSubmitAttendance(body) {
       }
       n++;
     });
+    // 這次真的有存到學生 → 順便把該校「今天固定不進班」、還沒有紀錄（或只有空白）的學生補寫成固定不進班（系統預設值），
+    // 這樣隔天回頭看歷史時不會變成未點名；不算進送出筆數，也不會被當成老師點的
+    if (n) {
+      students.forEach(function (st) {
+        if (!fixedToday[st.id] || latestOf[st.id]) return;   // 這次有送出的學生已經在上面處理過
+        var ri = rowOf[st.id];
+        var fx = {
+          date: date, schoolId: schoolId, studentId: st.id, status: 'fixedOff', selfDrop: false, selfWalk: false,
+          teacherId: s.userId, teacherName: s.name, submittedAt: now, wasFixedOff: true, auto: true
+        };
+        if (ri === undefined) { fx.id = genId('R'); fresh.push(fx); return; }
+        var frow = values[ri], fold = {};
+        headers.forEach(function (h, c) { fold[h] = frow[c]; });
+        if (effectiveStatus_(fold)) return;   // 已經有狀態就不動
+        fx.id = frow[idx.id];
+        headers.forEach(function (h, c) { frow[c] = toCell_(fx[h]); });
+        changedRows.push(ri);
+      });
+    }
     // 只寫回有變動的列（相鄰的列合併成一段）：不再整張點名表重寫，資料越多也不會變慢
     if (changedRows.length) {
       touch_(SHEET_ATTENDANCE);
