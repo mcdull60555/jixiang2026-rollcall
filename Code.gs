@@ -1607,7 +1607,7 @@ function overviewData_(schoolFilter, cutoff) {
     var d = String(a.date);
     if (d < cutoff || d > today) return;
     if (schoolFilter && a.schoolId !== schoolFilter) return;
-    hasRec[d + '|' + a.schoolId] = true;
+    if (String(a.teacherId) !== 'system') hasRec[d + '|' + a.schoolId] = true;   // 系統補寫的固定不進班不算「已送出」
     count(bucket(d, a.schoolId), d, a.studentId, a.schoolId, ctx.status(a.studentId, d));
   });
   // 預約請假：當天沒有點名紀錄也算請假
@@ -1788,9 +1788,54 @@ function pruneByDate_(sheetName, cutoff) {
   }
 }
 
+// 把 fromDate～toDate（含）每個「可以點名」的日子，補寫還沒有紀錄（或只有空白）的固定不進班學生為「固定不進班」。
+// 系統補寫的列 teacherId 是 'system'、老師姓名留空：不算老師點的，也不會讓該校顯示成「已送出」。
+// 只補過去的日子（今天仍然即時依設定計算）；依「執行當下」學生的固定不進班設定與新增日期判斷。
+function backfillFixedOff_(fromDate, toDate) {
+  var today = today_();
+  if (toDate >= today) toDate = prevDate_(today);
+  if (fromDate > toDate) return 0;
+  return withLock_(function () {
+    var ctx = statusCtx_();
+    var now = new Date().toISOString();
+    var students = sheetToObjects(SHEET_STUDENTS).filter(function (st) { return isActive_(st.active); });
+    var fresh = [], n = 0;
+    for (var d = fromDate; d <= toDate; d = nextDate_(d)) {
+      if (!ctx.isOpen(d)) continue;
+      students.forEach(function (st) {
+        if (!studentExistsOn_(st, d) || !ctx.isFixed(st.id, d)) return;
+        var cur = ctx.rec[d + '|' + st.id];
+        if (cur && effectiveStatus_(cur)) return;   // 已經有狀態就不動
+        var fx = {
+          date: d, schoolId: st.schoolId, studentId: st.id, status: 'fixedOff', selfDrop: false, selfWalk: false,
+          teacherId: 'system', teacherName: '', submittedAt: now, wasFixedOff: true, auto: true
+        };
+        if (cur) {
+          var upd = Object.assign({}, cur, fx, { id: cur.id });
+          delete upd._row;
+          updateObjectByRow(SHEET_ATTENDANCE, cur._row, upd);
+        } else {
+          fx.id = genId('R');
+          fresh.push(fx);
+        }
+        n++;
+      });
+    }
+    if (fresh.length) appendObjects(SHEET_ATTENDANCE, fresh);
+    return n;
+  });
+}
+// 一次性：補回保留期限內（40 天）到昨天所有缺少的固定不進班紀錄。在 Apps Script 編輯器手動執行一次即可
+function backfillFixedOffHistory() {
+  var n = backfillFixedOff_(dateStrDaysAgo_(RETENTION_DAYS), prevDate_(today_()));
+  return 'backfilled ' + n;
+}
+
 function cleanupOldRecords() {
   // 每天凌晨 3 點：順便整理所有分頁格式（設成純文字，避免日期、數字被試算表自動轉換），不影響白天使用速度
   try { ensureSchema_(true); } catch (e) { /* 格式整理失敗不影響清理 */ }
+  // 先補寫昨天固定不進班的學生（沒人點名的學校也不會漏），再清舊資料
+  try { backfillFixedOff_(prevDate_(today_()), prevDate_(today_())); } catch (e) { /* 補寫失敗不影響清理 */ }
   withLock_(function () {
     var cutoff = dateStrDaysAgo_(RETENTION_DAYS);
     pruneByDate_(SHEET_ATTENDANCE, cutoff);
