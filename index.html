@@ -1165,6 +1165,7 @@ function clearSession() {
   try { localStorage.removeItem(LS_PENDING); } catch (e) {}
   STATE.token = null; STATE.role = null; STATE.name = null;
   STATE.currentSchoolId = null; STATE.currentStudents = []; STATE.rollcall = null; STATE.rcMode = null;
+  STATE.rcMarkSchool = null; STATE.rcMarkAt = 0;
   busyReset();
   STATE.selStudents.clear(); STATE.selTeachers.clear();
   STATE.dayInfo = null; $('rollcall-dayinfo').innerHTML = ''; $('rollcall-school-row').classList.remove('hidden');
@@ -2816,6 +2817,7 @@ async function loadRollCall(silent, opts) {
 function renderRcView() {
   const rc = STATE.rollcall;
   STATE.rcMode = 'view';
+  STATE.rcMarkSchool = null; STATE.rcMarkAt = 0;   // 回到明細：不再算點名中
   const c = countStatuses(rc.students);
   $('rollcall-banner').innerHTML = `<div class="banner-ok">✔ 今日已送出點名：${submittersText(rc.submitters)}` +
     (c.unmarked ? `　<span class="pill st-unmarked">尚有 ${c.unmarked} 位未點名</span>` : '') + '</div>';
@@ -2892,6 +2894,8 @@ $('rollcall-container').addEventListener('click', async e => {
   }
   setRowStatus(tr, target);
   queueMark(STATE.rollcall.schoolId, tr.dataset.sid, target);   // 點一下就自動儲存
+  STATE.rcMarkSchool = STATE.rollcall.schoolId; STATE.rcMarkAt = Date.now();   // 真的點了學生才算「點名中」
+  sendPresence();
 });
 
 function updateRcSummary() {
@@ -3080,7 +3084,9 @@ async function sendPresence(throwErr) {
   if (!STATE.token || STATE.role !== 'teacher') return;
   const schoolId = (STATE.dayInfo && !STATE.dayInfo.open) ? '' : $('rollcall-school-select').value;
   try {
-    const r = await api('setPresence', { schoolId, mode: STATE.rcMode === 'edit' ? 'edit' : 'view' }, { pill: false, flash: false });
+    // 只有「在點名畫面，且最近 10 分鐘內真的點過這間學校的學生」才算點名中；光是打開點名畫面只算查看中
+    const marking = STATE.rcMode === 'edit' && !!schoolId && STATE.rcMarkSchool === schoolId && Date.now() - (STATE.rcMarkAt || 0) < 10 * 60 * 1000;
+    const r = await api('setPresence', { schoolId, mode: marking ? 'edit' : 'view' }, { pill: false, flash: false });
     STATE.presence = r.presence || [];
     renderPresence();
   } catch (e) { if (throwErr) throw e; }
