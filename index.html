@@ -273,6 +273,16 @@
   .rc-summary{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 14px;}
   .stat{border-radius:10px;padding:7px 12px;min-width:72px;text-align:center;font-size:12px;font-weight:700;background:var(--cl,#f1f5f9);color:var(--c,var(--text));}
   .stat b{display:block;font-size:20px;line-height:1.2;}
+  /* 點名中：點「未點名」方塊會捲到第一位還沒點的學生 */
+  .stat.stat-jump{cursor:pointer;user-select:none;}
+  .stat.stat-jump:hover{filter:brightness(.96);}
+  .stat.stat-jump:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+  /* 只剩 5 位以內沒點名：姓名前面的鈴鐺閃爍提醒 */
+  @keyframes bell-blink{0%,100%{opacity:1;transform:rotate(0);}25%{transform:rotate(-14deg);}50%{opacity:.2;transform:rotate(0);}75%{transform:rotate(14deg);}}
+  .rc-row.rc-alert .p-name::before{content:"🔔";display:inline-block;margin-right:4px;animation:bell-blink 1.1s ease-in-out infinite;}
+  @keyframes rc-flash{0%,100%{background:transparent;}30%{background:#fef3c7;}}
+  .rc-row.rc-flash td{animation:rc-flash 1.6s ease;}
+  @media (prefers-reduced-motion:reduce){.rc-row.rc-alert .p-name::before{animation:none;}.rc-row.rc-flash td{animation:none;background:#fef3c7;}}
   .st-group{display:flex;gap:6px;flex-wrap:wrap;}
   .st-btn{padding:8px 14px;border-radius:9px;border:1.5px solid #cbd5e1;background:#fff;color:var(--muted);font-weight:700;font-size:14px;min-width:58px;}
   .st-btn:hover{border-color:var(--c);color:var(--c);}
@@ -2582,10 +2592,12 @@ function openEditTeacherModal(id) {
 }
 
 /* ---------------- 點名總覽（管理員） ---------------- */
-function statsHtml(s, withTotal) {
+function statsHtml(s, withTotal, jumpUnmarked) {
   const chip = (cls, label, n) => `<div class="stat ${cls}"><b>${n}</b>${label}</div>`;
+  // 點名畫面：未點名方塊可以點，會捲到第一位還沒點的學生
+  const jump = `<div class="stat st-unmarked stat-jump" role="button" tabindex="0" title="點一下跳到第一位還沒點名的學生"><b>${s.unmarked}</b>未點名</div>`;
   return chip('st-present', '到班', s.present) + chip('st-selfDrop', '自送', s.selfDrop) + chip('st-selfWalk', '自走', s.selfWalk) +
-    chip('st-leave', '請假', s.leave) + chip('st-fixedOff', '固定不進班', s.fixedOff) + chip('st-unmarked', '未點名', s.unmarked) +
+    chip('st-leave', '請假', s.leave) + chip('st-fixedOff', '固定不進班', s.fixedOff) + (jumpUnmarked ? jump : chip('st-unmarked', '未點名', s.unmarked)) +
     (withTotal ? chip('st-total', '總人數', s.total) : '');
 }
 function sumSchools(schools) {
@@ -2898,10 +2910,29 @@ $('rollcall-container').addEventListener('click', async e => {
   sendPresence();
 });
 
+const RC_ALERT_MAX = 5;   // 剩下幾位以內沒點名，就讓鈴鐺閃爍提醒
 function updateRcSummary() {
-  const list = [...document.querySelectorAll('#rollcall-container .rc-row')].map(tr => ({ status: tr.dataset.status }));
-  $('rc-summary').innerHTML = statsHtml(countStatuses(list), true);
+  const rows = [...document.querySelectorAll('#rollcall-container .rc-row')];
+  const list = rows.map(tr => ({ status: tr.dataset.status }));
+  $('rc-summary').innerHTML = statsHtml(countStatuses(list), true, true);
+  // 已經點過至少一位、而且只剩 5 位以內沒點名 → 這幾位姓名前面的鈴鐺閃爍
+  const left = rows.filter(tr => !tr.dataset.status);
+  const alertOn = left.length > 0 && left.length <= RC_ALERT_MAX && left.length < rows.length;
+  rows.forEach(tr => tr.classList.toggle('rc-alert', alertOn && !tr.dataset.status));
 }
+// 點「未點名」方塊：捲到第一位還沒點名的學生並稍微標示
+function jumpToFirstUnmarked() {
+  const tr = [...document.querySelectorAll('#rollcall-container .rc-row')].find(r => !r.dataset.status);
+  if (!tr) { toast('所有學生都點完名了'); return; }
+  const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  tr.scrollIntoView({ block: 'center', behavior: reduce ? 'auto' : 'smooth' });
+  tr.classList.remove('rc-flash'); void tr.offsetWidth; tr.classList.add('rc-flash');
+  setTimeout(() => tr.classList.remove('rc-flash'), 1700);
+}
+$('rollcall-container').addEventListener('click', e => { if (e.target.closest('#rc-summary .stat-jump')) jumpToFirstUnmarked(); });
+$('rollcall-container').addEventListener('keydown', e => {
+  if ((e.key === 'Enter' || e.key === ' ') && e.target.closest('#rc-summary .stat-jump')) { e.preventDefault(); jumpToFirstUnmarked(); }
+});
 
 // 可以先送出部分名單（有的學生中午接、有的下午接），未點名的之後按「修改點名單」再補
 async function submitAttendance(force) {
