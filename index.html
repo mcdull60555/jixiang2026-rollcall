@@ -608,6 +608,18 @@ tr.bk-past td:last-child{opacity:1;}
   .bb-table tr.bb-err{background:#fff1f2;}
   .bb-table tr.bb-err td{background:none;}
 }
+/* 老師點名：所有學校直接列出，一眼看完不漏接 */
+.school-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin:0 0 10px;}
+.school-card{display:flex;flex-direction:column;gap:2px;align-items:flex-start;text-align:left;padding:10px 12px;border-radius:12px;border:1.5px solid var(--border);background:#fff;color:var(--text);font:inherit;cursor:pointer;min-height:56px;transition:border-color .15s,background .15s,box-shadow .15s;}
+.school-card:hover{border-color:var(--sky);background:#f0f9ff;}
+.school-card:focus-visible{outline:3px solid #7dd3fc;outline-offset:2px;}
+.school-card .sc-name{font-size:16px;font-weight:700;line-height:1.3;word-break:break-all;}
+.school-card .sc-meta{font-size:12.5px;color:var(--muted);}
+.school-card .sc-pres{font-size:12px;font-weight:700;color:#075985;background:#e0f2fe;border-radius:99px;padding:1px 8px;margin-top:2px;}
+.school-card .sc-pres.edit{color:#9a3412;background:#ffedd5;}
+.school-card.on{border-color:var(--sky);background:var(--sky-l);box-shadow:0 0 0 2px #bae6fd;}
+.school-card.on .sc-name{color:#075985;}
+@media (max-width:600px){ .school-grid{grid-template-columns:repeat(2,1fr);} }
 .presence-bar{margin:4px 0 10px;padding:9px 12px;border-radius:10px;background:#f0f9ff;border:1px solid #bae6fd;color:#075985;font-size:14px;line-height:1.6;}
 .presence-bar.editing{background:#fff7ed;border-color:#fdba74;color:#9a3412;}
 .presence-hint{font-size:13px;opacity:.9;}
@@ -843,12 +855,11 @@ tr.bk-past td:last-child{opacity:1;}
     <div class="card accent-sky">
       <h2 id="rollcall-date-title"></h2>
       <div id="rollcall-dayinfo"></div>
-      <div class="row" id="rollcall-school-row" style="margin:8px 0 6px;">
-        <div class="field">
-          <label for="rollcall-school-select">選擇學校</label>
-          <select id="rollcall-school-select" onchange="loadRollCall()"><option value="">請選擇學校…</option></select>
-        </div>
-        <div class="field rc-bk-field"><button type="button" class="btn btn-secondary hidden" id="rc-bk-btn" onclick="openTeacherBookings()">📅 預約請假</button><button type="button" class="btn btn-secondary hidden" id="rc-ex-btn" onclick="openTeacherBookings('attend')">📌 臨時進班</button></div>
+      <div id="rollcall-school-row" style="margin:8px 0 6px;">
+        <div class="field-label-text">選擇學校（點一下就進入該校點名）</div>
+        <div id="rollcall-school-grid" class="school-grid" role="group" aria-label="選擇學校"></div>
+        <select id="rollcall-school-select" class="hidden" aria-hidden="true" tabindex="-1" onchange="loadRollCall()"><option value="">請選擇學校…</option></select>
+        <div class="field rc-bk-field" style="margin-top:4px"><button type="button" class="btn btn-secondary hidden" id="rc-bk-btn" onclick="openTeacherBookings()">📅 預約請假</button><button type="button" class="btn btn-secondary hidden" id="rc-ex-btn" onclick="openTeacherBookings('attend')">📌 臨時進班</button></div>
       </div>
       <div id="rc-presence"></div>
       <div id="rollcall-banner"></div>
@@ -1251,6 +1262,7 @@ async function enterApp() {
     STATE.schools = r.schools;
     $('rollcall-school-select').innerHTML = '<option value="">請選擇學校…</option>' +
       r.schools.map(s => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('');
+    renderSchoolGrid();
     STATE.dayInfo = di.day;
     renderTeacherDay();
     // 上次還沒存好的點選：自動補存
@@ -2795,6 +2807,7 @@ async function loadRollCall(silent, opts) {
   $('rc-bk-btn').classList.toggle('hidden', !schoolId);
   $('rc-ex-btn').classList.toggle('hidden', !schoolId);
   try { localStorage.setItem(lastSchoolKey(), schoolId); } catch (e) {}
+  renderSchoolGrid();
   if (SAVE.queue.size) { try { await flushMarks(); } catch (e) {} }   // 換學校前先存好
   if (!schoolId) {
     container.innerHTML = '<div class="empty">請先選擇學校</div>';
@@ -3123,16 +3136,37 @@ async function sendPresence(throwErr) {
   } catch (e) { if (throwErr) throw e; }
 }
 function presenceLabel(p) { return p.mode === 'edit' ? '點名中' : '查看中'; }
+// 老師端學校清單：所有學校直接排出來，點一下進入；目前選到的會標色，其他老師在哪間也顯示在卡片上
+function renderSchoolGrid() {
+  const grid = $('rollcall-school-grid');
+  if (!grid) return;
+  const cur = $('rollcall-school-select').value;
+  const list = STATE.presence || [];
+  const schools = STATE.schools || [];
+  if (!schools.length) { grid.innerHTML = '<div class="empty">尚未建立任何學校，請聯絡管理員</div>'; return; }
+  grid.innerHTML = schools.map(s => {
+    const here = list.filter(p => p.schoolId === s.id);
+    return `<button type="button" class="school-card${s.id === cur ? ' on' : ''}" data-school="${esc(s.id)}" aria-pressed="${s.id === cur}">
+      <span class="sc-name">${esc(s.name)}</span>
+      <span class="sc-meta">${s.studentCount != null ? s.studentCount + ' 位學生' : ''}</span>
+      ${here.map(p => `<span class="sc-pres${p.mode === 'edit' ? ' edit' : ''}">${esc(p.name)} ${presenceLabel(p)}</span>`).join('')}
+    </button>`;
+  }).join('');
+}
+function pickSchool(schoolId) {
+  const sel = $('rollcall-school-select');
+  if (sel.value === schoolId) return;
+  sel.value = schoolId;
+  loadRollCall();
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest && e.target.closest('.school-card');
+  if (b && b.dataset.school) pickSchool(b.dataset.school);
+});
 function renderPresence() {
   const list = STATE.presence || [];
-  // 學校選單：在學校名稱後面標示誰在
+  renderSchoolGrid();
   const sel = $('rollcall-school-select');
-  [...sel.options].forEach(o => {
-    if (!o.value) return;
-    if (!o.dataset.name) o.dataset.name = o.textContent;
-    const here = list.filter(p => p.schoolId === o.value);
-    o.textContent = o.dataset.name + (here.length ? `（${here.map(p => p.name + ' ' + presenceLabel(p)).join('、')}）` : '');
-  });
   // 目前學校的提示列
   const cur = sel.value;
   const here = cur ? list.filter(p => p.schoolId === cur) : [];
