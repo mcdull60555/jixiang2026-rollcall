@@ -518,7 +518,8 @@ function actionSetPresence(body) {
     if (body.schoolId) putPresence_(s, body.schoolId, body.mode);
     else cache.remove('pres_' + s.userId);
   }
-  return { ok: true, presence: presenceList_(s.userId) };
+  // 順便回傳今天各校的需進班／未點名人數，讓老師的學校卡片隨心跳更新
+  return { ok: true, presence: presenceList_(s.userId), counts: s.role === 'teacher' ? todayCounts_() : null };
 }
 
 function actionListTeachers(body) {
@@ -651,14 +652,34 @@ function activeSchools_() {
   return sheetToObjects(SHEET_SCHOOLS).filter(function (sc) { return isActive_(sc.active); });
 }
 
+// 老師端學校卡片用：今天各校「需進班人數」與「未點名人數」
+// 需進班 = 在學學生 − 今天固定不進班 − 今天請假（預約或老師點的）；未點名 = 需進班裡還沒有狀態的人
+// 今天不能點名（例假日／國定假日）時回傳 null
+function todayCounts_() {
+  var ctx = statusCtx_(), today = ctx.today;
+  if (!ctx.isOpen(today)) return null;
+  var out = {};
+  sheetToObjects(SHEET_STUDENTS).forEach(function (st) {
+    if (!isActive_(st.active)) return;
+    var c = out[st.schoolId] = out[st.schoolId] || { need: 0, unmarked: 0 };
+    var s = ctx.status(st.id, today);
+    if (s === 'fixedOff' || s === 'leave') return;
+    c.need++;
+    if (!s) c.unmarked++;
+  });
+  return out;
+}
+
 function actionListSchools(body) {
   requireSession(body.token);
   var counts = {};
   sheetToObjects(SHEET_STUDENTS).forEach(function (st) {
     if (isActive_(st.active)) counts[st.schoolId] = (counts[st.schoolId] || 0) + 1;
   });
+  var today = todayCounts_();
   var out = activeSchools_().map(function (sc) {
-    return { id: sc.id, name: sc.name, studentCount: counts[sc.id] || 0 };
+    var t = today ? (today[sc.id] || { need: 0, unmarked: 0 }) : null;
+    return { id: sc.id, name: sc.name, studentCount: counts[sc.id] || 0, todayNeed: t ? t.need : null, todayUnmarked: t ? t.unmarked : null };
   });
   out.sort(function (a, b) { return String(a.name).localeCompare(String(b.name), 'zh-Hant'); });
   return { ok: true, schools: out };
