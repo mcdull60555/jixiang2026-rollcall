@@ -1090,9 +1090,13 @@ window.addEventListener('unhandledrejection', e => {
 /* ---------------- 登入 / 登出 / 閒置 ---------------- */
 /* 登入帳號選單（自訂下拉：管理員 / 老師 分組各有底色，手機上也看得到顏色） */
 STATE.accounts = [{ username: 'admin', name: '管理員', role: 'admin' }];
+// 記住這台裝置最後一次成功登入的帳號，下次打開就預設選它（這次還沒手動換帳號時）
+const LS_LAST_LOGIN = 'jx_last_login';
+let acctPicked = false;
+STATE.lastLogin = (() => { try { return localStorage.getItem(LS_LAST_LOGIN) || ''; } catch (e) { return ''; } })();
 function acctLabel(a) { return `${esc(a.name)}（${esc(a.username)}）`; }
 function renderAccounts() {
-  const cur = $('login-username').value;
+  const cur = (!acctPicked && STATE.lastLogin) ? STATE.lastLogin : $('login-username').value;
   const a = STATE.accounts.find(x => x.username === cur) || STATE.accounts[0];
   $('login-username').value = a.username;
   $('acct-current').innerHTML = `<span class="acct-role ${a.role}">${a.role === 'admin' ? '管理員' : '老師'}</span>${acctLabel(a)}`;
@@ -1118,6 +1122,7 @@ function setActiveOpt(li) {
   if (li) { $('acct-list').setAttribute('aria-activedescendant', li.id); li.scrollIntoView({ block: 'nearest' }); }
 }
 function chooseAcct(username) {
+  acctPicked = true;
   $('login-username').value = username;
   renderAccounts();
   openAcct(false);
@@ -1194,6 +1199,8 @@ async function doLogin() {
     STATE.token = r.token; STATE.role = r.role; STATE.name = r.name; STATE.today = r.today;
     STATE.lastActivity = Date.now();
     saveSessionLS();
+    STATE.lastLogin = username; acctPicked = false;
+    try { localStorage.setItem(LS_LAST_LOGIN, username); } catch (e) {}
     $('login-password').value = '';
   } catch (e) {
     errEl.textContent = errMsg(e.message);
