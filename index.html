@@ -85,6 +85,9 @@
   .acct-btn{width:100%;display:flex;align-items:center;gap:8px;padding:9px 12px;border:1px solid #cbd5e1;border-radius:10px;background:#fff;color:var(--text);text-align:left;font-size:15px;}
   .acct-btn:focus-visible{outline:2px solid var(--indigo);outline-offset:-1px;}
   .acct-btn .caret{margin-left:auto;color:var(--muted);}
+  .acct-status{margin-top:6px;font-size:13px;color:var(--muted);}
+  .acct-status.err{color:#b91c1c;}
+  .acct-status button{border:0;background:none;color:var(--indigo);font-size:13px;text-decoration:underline;padding:0 2px;cursor:pointer;}
   .acct-role{display:inline-block;padding:2px 9px;border-radius:7px;font-size:12.5px;font-weight:800;}
   .acct-role.admin{background:#dbe6ff;color:#1e3a8a;}
   .acct-role.teacher{background:#e0f2fe;color:#075985;}
@@ -682,6 +685,7 @@ tr.bk-past td:last-child{opacity:1;}
         </button>
         <ul class="acct-list hidden" id="acct-list" role="listbox" aria-labelledby="acct-label" tabindex="-1"></ul>
       </div>
+      <div class="acct-status hidden" id="acct-status" role="status" aria-live="polite"></div>
       <input type="hidden" id="login-username" value="admin">
     </div>
     <div class="field">
@@ -1132,15 +1136,49 @@ $('acct-list').addEventListener('keydown', e => {
 });
 document.addEventListener('click', e => { if (!e.target.closest('#acct-select')) openAcct(false); });
 
+/* 帳號名單：上次載入成功的名單先存在瀏覽器，一打開就先顯示；背景向後端更新，失敗會自動重試 */
+const LS_ACCOUNTS = 'jx_login_accounts';
+let acctLoading = false, acctRetryTimer = null, acctFails = 0, acctLoaded = false;
+function loadAccountsCache() {
+  try {
+    const v = JSON.parse(localStorage.getItem(LS_ACCOUNTS) || 'null');
+    if (Array.isArray(v) && v.length && v.every(a => a && a.username && (a.role === 'admin' || a.role === 'teacher'))) STATE.accounts = v;
+  } catch (e) {}
+}
+function setAcctStatus(kind) {
+  const el = $('acct-status');
+  if (kind === 'loading') { el.className = 'acct-status'; el.textContent = '老師名單載入中…'; }
+  else if (kind === 'failed') {
+    el.className = 'acct-status err';
+    el.innerHTML = '老師名單載入失敗，自動重試中… <button type="button" id="acct-retry">立即重試</button>';
+    $('acct-retry').onclick = () => { clearTimeout(acctRetryTimer); loadLoginAccounts(); };
+  } else { el.className = 'acct-status hidden'; el.textContent = ''; }
+}
 async function loadLoginAccounts() {
+  if (acctLoading) return;
+  acctLoading = true;
+  clearTimeout(acctRetryTimer);
+  if (!acctLoaded) setAcctStatus('loading');
   try {
     const r = await api('listLoginAccounts', {}, { pill: false, flash: false });
     const admins = r.accounts.filter(a => a.role === 'admin');
     const teachers = r.accounts.filter(a => a.role === 'teacher');
     if (!admins.some(a => a.username === 'admin')) admins.unshift({ username: 'admin', name: '管理員', role: 'admin' });
     STATE.accounts = admins.concat(teachers);
-  } catch (e) { /* 保留預設的 admin 選項，連線恢復後會自動重試 */ }
-  if ($('acct-list').classList.contains('hidden')) renderAccounts();
+    try { localStorage.setItem(LS_ACCOUNTS, JSON.stringify(STATE.accounts)); } catch (e) {}
+    acctLoaded = true; acctFails = 0;
+    setAcctStatus('ok');
+  } catch (e) {
+    acctFails++;
+    if (e.message === 'UNKNOWN_ACTION') {
+      $('acct-status').className = 'acct-status err';
+      $('acct-status').textContent = '後端版本過舊，抓不到老師名單，請重新部署 Code.gs';
+    } else setAcctStatus('failed');
+    // 失敗就自動重試：3、5、8 秒…最長每 15 秒一次（登入後就不用再抓）
+    if (!STATE.token) acctRetryTimer = setTimeout(loadLoginAccounts, Math.min(15000, 3000 + acctFails * 2500));
+  }
+  acctLoading = false;
+  renderAccounts();   // 選單開著也重畫，新名單才不會漏掉
 }
 
 async function doLogin() {
@@ -3254,6 +3292,7 @@ try { ['rc_token', 'rc_role', 'rc_name'].forEach(k => localStorage.removeItem(k)
 $('login-password').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
 (async function init() {
   setConn('connecting');
+  loadAccountsCache();
   renderAccounts();
   loadLoginAccounts();
   // 重新整理：還在 60 分鐘內就直接回到系統
