@@ -681,13 +681,13 @@ function todayCounts_() {
   var out = {};
   sheetToObjects(SHEET_STUDENTS).forEach(function (st) {
     if (!isActive_(st.active)) return;
-    var c = out[st.schoolId] = out[st.schoolId] || { need: 0, unmarked: 0, noon: 0, pm: 0 };
+    var c = out[st.schoolId] = out[st.schoolId] || { need: 0, unmarked: 0, noon: 0, pm: 0, noonUn: 0, pmUn: 0 };
     var s = ctx.status(st.id, today);
     if (s === 'fixedOff' || s === 'leave') return;
     c.need++;
     if (!s) c.unmarked++;
     var p = pickupSlotFor_(st, today, ctx, pk);   // 需要接的人數：中午接、下午接各幾位（自走、自送的不算）
-    if (p) c[p.slot]++;
+    if (p) { c[p.slot]++; if (!s) c[p.slot + 'Un']++; }   // 中午接、下午接各自還沒點名的人數
   });
   return out;
 }
@@ -700,10 +700,10 @@ function actionListSchools(body) {
   });
   var today = todayCounts_();
   var out = activeSchools_().map(function (sc) {
-    var t = today ? (today[sc.id] || { need: 0, unmarked: 0, noon: 0, pm: 0 }) : null;
+    var t = today ? (today[sc.id] || { need: 0, unmarked: 0, noon: 0, pm: 0, noonUn: 0, pmUn: 0 }) : null;
     return {
       id: sc.id, name: sc.name, studentCount: counts[sc.id] || 0, todayNeed: t ? t.need : null, todayUnmarked: t ? t.unmarked : null,
-      todayNoon: t ? t.noon : null, todayPm: t ? t.pm : null
+      todayNoon: t ? t.noon : null, todayPm: t ? t.pm : null, todayNoonUn: t ? t.noonUn : null, todayPmUn: t ? t.pmUn : null
     };
   });
   out.sort(function (a, b) { return String(a.name).localeCompare(String(b.name), 'zh-Hant'); });

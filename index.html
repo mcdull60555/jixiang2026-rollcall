@@ -215,6 +215,7 @@
   .pk-tag{display:inline-block;font-size:12px;padding:1px 9px;border-radius:99px;font-weight:800;border:0;line-height:1.5;}
   button.pk-tag{cursor:pointer;font-family:inherit;}
   button.pk-tag:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+  .stat-sub{display:block;font-size:11px;font-weight:700;margin-top:1px;}
   .pk-wrap{margin-top:3px;display:flex;flex-wrap:wrap;gap:4px;align-items:center;}
   .pk-why{font-size:11.5px;color:var(--muted);}
   .pk-tabs{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 10px;}
@@ -2835,7 +2836,7 @@ function openEditTeacherModal(id) {
 function statsHtml(s, withTotal, jumpUnmarked) {
   const chip = (cls, label, n) => `<div class="stat ${cls}"><b>${n}</b>${label}</div>`;
   // 點名畫面：未點名方塊可以點，會捲到第一位還沒點的學生
-  const jump = `<div class="stat st-unmarked stat-jump" role="button" tabindex="0" title="點一下跳到第一位還沒點名的學生"><b>${s.unmarked}</b>未點名</div>`;
+  const jump = `<div class="stat st-unmarked stat-jump" role="button" tabindex="0" title="點一下跳到第一位還沒點名的學生"><b>${s.unmarked}</b>未點名${s.unNoon || s.unPm ? `<small class="stat-sub">${s.unNoon ? '中午 ' + s.unNoon : ''}${s.unNoon && s.unPm ? '・' : ''}${s.unPm ? '下午 ' + s.unPm : ''}</small>` : ''}</div>`;
   return chip('st-present', '到班', s.present) + chip('st-selfDrop', '自送', s.selfDrop) + chip('st-selfWalk', '自走', s.selfWalk) +
     chip('st-leave', '請假', s.leave) + chip('st-fixedOff', '固定不進班', s.fixedOff) + (jumpUnmarked ? jump : chip('st-unmarked', '未點名', s.unmarked)) +
     (withTotal ? chip('st-total', '總人數', s.total) : '');
@@ -2961,8 +2962,12 @@ function sortedByStatus(list, key) {
   return list.map((s, i) => ({ s, i })).sort((a, b) => (statusRank(key(a.s)) - statusRank(key(b.s))) || (a.i - b.i)).map(x => x.s);
 }
 function countStatuses(list) {
-  const c = { present: 0, selfDrop: 0, selfWalk: 0, leave: 0, fixedOff: 0, unmarked: 0, total: list.length };
-  list.forEach(s => { c[s.status && c[s.status] !== undefined ? s.status : 'unmarked']++; });
+  const c = { present: 0, selfDrop: 0, selfWalk: 0, leave: 0, fixedOff: 0, unmarked: 0, unNoon: 0, unPm: 0, total: list.length };
+  list.forEach(s => {
+    const k = s.status && c[s.status] !== undefined ? s.status : 'unmarked';
+    c[k]++;
+    if (k === 'unmarked' && (s.pickup === 'noon' || s.pickup === 'pm')) c[s.pickup === 'noon' ? 'unNoon' : 'unPm']++;   // 未點名再分中午接、下午接
+  });
   return c;
 }
 // 狀態標籤：固定不進班的學生若改為到班（或自送/自走/請假），顯示「到班」＋「固定不進班」
@@ -3200,7 +3205,7 @@ $('rollcall-container').addEventListener('click', async e => {
 const RC_ALERT_MAX = 5;   // 剩下幾位以內沒點名，就讓鈴鐺閃爍提醒
 function updateRcSummary() {
   const rows = [...document.querySelectorAll('#rollcall-container .rc-row')];
-  const list = rows.map(tr => ({ status: tr.dataset.status }));
+  const list = rows.map(tr => ({ status: tr.dataset.status, pickup: tr.dataset.pk }));
   $('rc-summary').innerHTML = statsHtml(countStatuses(list), true, true);
   // 已經點過至少一位、而且只剩 5 位以內沒點名 → 這幾位姓名前面的鈴鐺閃爍
   const left = rows.filter(tr => !tr.dataset.status);
@@ -3451,6 +3456,8 @@ async function sendPresence(throwErr) {
         s.todayUnmarked = r.counts ? (c ? c.unmarked : 0) : null;
         s.todayNoon = r.counts ? (c ? c.noon : 0) : null;
         s.todayPm = r.counts ? (c ? c.pm : 0) : null;
+        s.todayNoonUn = r.counts ? (c ? c.noonUn : 0) : null;
+        s.todayPmUn = r.counts ? (c ? c.pmUn : 0) : null;
       });
     }
     renderPresence();
@@ -3481,7 +3488,8 @@ function schoolCountsHtml(s) {
   const pk = (s.todayNoon || s.todayPm) ? `<span class="sc-pk">${s.todayNoon ? `<span class="pk-tag pk-noon">中午接 ${s.todayNoon}</span>` : ''}${s.todayPm ? `<span class="pk-tag pk-pm">下午接 ${s.todayPm}</span>` : ''}</span>` : '';
   return `<span class="sc-meta">今日需進班 <b>${s.todayNeed}</b> 位</span>` + pk +
     (s.todayNeed === 0 ? '<span class="sc-un zero">今天沒有人需進班</span>'
-      : un > 0 ? `<span class="sc-un">未點名 ${un} 位</span>` : '<span class="sc-un done">✔ 已全部點名</span>');
+      : un > 0 ? `<span class="sc-un">未點名 ${un} 位</span>` + ((s.todayNoonUn || s.todayPmUn) ? `<span class="sc-pk">${s.todayNoonUn ? `<span class="pk-tag pk-noon">中午未點 ${s.todayNoonUn}</span>` : ''}${s.todayPmUn ? `<span class="pk-tag pk-pm">下午未點 ${s.todayPmUn}</span>` : ''}</span>` : '')
+        : '<span class="sc-un done">✔ 已全部點名</span>');
 }
 function pickSchool(schoolId) {
   const sel = $('rollcall-school-select');
