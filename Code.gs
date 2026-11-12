@@ -45,6 +45,10 @@ var PICKUP_RULES = [
   { grades: [3, 4], noon: [3, 5] },         // 三、四年級：週三五中午接，週一二四下午接
   { grades: [5, 6], noon: [3] }             // 五、六年級：週三中午接，週一二四五下午接
 ];
+// 個別學校的特例：用學校名稱對應，列到的年級改用這裡的規則，沒列到的年級仍用上面的預設
+var PICKUP_SCHOOL_RULES = {
+  '國光國小': [{ grades: [1, 2], noon: [1, 2, 3, 5] }]   // 一、二年級：週一二三五中午接，週四下午接
+};
 
 var HEADERS = {
   Admins: ['id', 'username', 'password', 'name'],
@@ -871,7 +875,7 @@ function actionListStudents(body) {
   students.forEach(function (st) {
     st.pickupDates = (byStudent[st.id] || []).sort(function (a, b) { return a.date.localeCompare(b.date); });
   });
-  return { ok: true, students: students, pickupRules: PICKUP_RULES };
+  return { ok: true, students: students, pickupRules: pickupRulesOfSchool_(body.schoolId) };
 }
 
 function studentRow_(schoolId, st) {
@@ -880,7 +884,7 @@ function studentRow_(schoolId, st) {
     id: genId('T'), schoolId: schoolId, name: String(st.name || '').trim(), grade: String(st.grade || '').trim(),
     contacts: JSON.stringify(normalizeContacts(st.contacts)),
     fixedOffDays: m.off.join('|'), selfDropDays: m.drop.join('|'), selfWalkDays: m.walk.join('|'),
-    pickupOverride: formatPickupOverride_(normalizePickupOverride_(st.pickupOverride, st.grade)),
+    pickupOverride: formatPickupOverride_(normalizePickupOverride_(st.pickupOverride, st.grade, pickupRulesOfSchool_(schoolId))),
     active: true, createdAt: new Date().toISOString(),
     note: String(st.note || '').trim()
   };
@@ -947,9 +951,9 @@ function actionEditStudent(body) {
         u.fixedOffDays = m.off.join('|'); u.selfDropDays = m.drop.join('|'); u.selfWalkDays = m.walk.join('|');
       }
       if (body.pickupOverride !== undefined) {
-        u.pickupOverride = formatPickupOverride_(normalizePickupOverride_(body.pickupOverride, grade));
+        u.pickupOverride = formatPickupOverride_(normalizePickupOverride_(body.pickupOverride, grade, pickupRulesOfSchool_(u.schoolId)));
       } else if (u.pickupOverride) {   // 只改了年級：把變成和新年級規則一樣的調整清掉
-        u.pickupOverride = formatPickupOverride_(normalizePickupOverride_(u.pickupOverride, grade));
+        u.pickupOverride = formatPickupOverride_(normalizePickupOverride_(u.pickupOverride, grade, pickupRulesOfSchool_(u.schoolId)));
       }
       if (body.note !== undefined) u.note = String(body.note || '').trim();
       updateObjectByRow(SHEET_STUDENTS, u._row, u);
@@ -986,12 +990,19 @@ function actionDeleteStudent(body) {
 // 某位學生某一天的時段，依優先順序決定：
 // 1. 單日例外（PickupOverrides）  2. 全部中午接日（休業式／結業式）  3. 學生每週調整（社團）  4. 年級規則（PICKUP_RULES）
 // 只有「進班(接)」的日子才有時段；自走、自送、固定不進班的日子不用接，時段留空。
-function pickupBase_(grade, wd) {
+// 某間學校實際適用的規則：學校特例放前面，其餘用預設
+function pickupRulesOfSchool_(schoolId) {
+  var sc = sheetToObjects(SHEET_SCHOOLS).filter(function (x) { return x.id === schoolId; })[0];
+  var extra = (sc && PICKUP_SCHOOL_RULES[String(sc.name).trim()]) || [];
+  return extra.concat(PICKUP_RULES);
+}
+function pickupBase_(grade, wd, rules) {
+  rules = rules || PICKUP_RULES;
   if (wd < 1 || wd > 5) return 'noon';   // 補班補課的週末沒有年級規則，一律中午接
-  var g = gradeNum_(grade), rule = PICKUP_RULES[PICKUP_RULES.length - 1];
+  var g = gradeNum_(grade), rule = rules[rules.length - 1];
   if (g < 1) rule = PICKUP_RULES[0];
-  for (var i = 0; i < PICKUP_RULES.length; i++) {
-    if (PICKUP_RULES[i].grades.indexOf(g) !== -1) { rule = PICKUP_RULES[i]; break; }
+  for (var i = 0; i < rules.length; i++) {
+    if (rules[i].grades.indexOf(g) !== -1) { rule = rules[i]; break; }
   }
   return rule.noon.indexOf(wd) !== -1 ? 'noon' : 'pm';
 }
@@ -1009,12 +1020,12 @@ function formatPickupOverride_(o) {
   return Object.keys(o).sort().map(function (k) { return k + ':' + o[k]; }).join('|');
 }
 // 只留下「和年級規則不同」的星期，存起來的就一定是真正的調整
-function normalizePickupOverride_(raw, grade) {
+function normalizePickupOverride_(raw, grade, rules) {
   var src = (raw && typeof raw === 'object') ? raw : parsePickupOverride_(raw);
   var out = {};
   for (var d = 1; d <= 5; d++) {
     var v = src[d];
-    if ((v === 'noon' || v === 'pm') && v !== pickupBase_(grade, d)) out[d] = v;
+    if ((v === 'noon' || v === 'pm') && v !== pickupBase_(grade, d, rules)) out[d] = v;
   }
   return out;
 }
@@ -1023,7 +1034,8 @@ function pickupCtx_() {
   var ov = {}, noon = {};
   sheetToObjects(SHEET_PICKUP).forEach(function (o) { ov[o.studentId + '|' + String(o.date)] = o; });
   sheetToObjects(SHEET_ALLNOON).forEach(function (o) { noon[String(o.date)] = o; });
-  return { overrides: ov, allNoon: noon };
+  var rc = {};
+  return { overrides: ov, allNoon: noon, rulesOf: function (sid) { return rc[sid] || (rc[sid] = pickupRulesOfSchool_(sid)); } };
 }
 
 // 回傳 { slot: 'noon'|'pm', src: 'date'|'allNoon'|'week'|'grade', reason }
@@ -1031,7 +1043,7 @@ function pickupInfo_(st, date, pk) {
   var o = pk.overrides[st.id + '|' + date];
   if (o && (o.slot === 'noon' || o.slot === 'pm')) return { slot: o.slot, src: 'date', reason: String(o.reason || '') };
   if (pk.allNoon[date]) return { slot: 'noon', src: 'allNoon', reason: String(pk.allNoon[date].reason || '') };
-  var wd = weekdayOf(date), base = pickupBase_(st.grade, wd);
+  var wd = weekdayOf(date), base = pickupBase_(st.grade, wd, pk.rulesOf(st.schoolId));
   var mine = wd >= 1 && wd <= 5 ? parsePickupOverride_(st.pickupOverride)[wd] : '';
   if (mine && mine !== base) return { slot: mine, src: 'week', reason: '' };
   return { slot: base, src: 'grade', reason: '' };
