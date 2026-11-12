@@ -211,6 +211,9 @@
   /* 接送時段：中午接（金黃）／下午接（藍）。adj＝個別調整（社團等），用外框標示 */
   .pk-noon{background:#fef3c7;color:#92400e;}
   .pk-pm{background:#dbeafe;color:#1d4ed8;}
+  /* 未點標籤：字色不變，底色加深一階和「接」區分 */
+  .pk-noon.un{background:#fbbf24;box-shadow:inset 0 0 0 2px #d97706;}
+  .pk-pm.un{background:#7cb3fa;box-shadow:inset 0 0 0 2px #2563eb;}
   .wk-d.adj{outline:2px solid currentColor;outline-offset:-2px;}
   .pk-tag{display:inline-block;font-size:12px;padding:1px 9px;border-radius:99px;font-weight:800;border:0;line-height:1.5;}
   button.pk-tag{cursor:pointer;font-family:inherit;}
@@ -2875,7 +2878,7 @@ function sumSchools(schools) {
 function ovPickupHtml(s) {
   if (s.noon == null || !(s.noon || s.pm)) return '';
   const tag = (cls, txt) => `<span class="pk-tag ${cls}">${txt}</span>`;
-  const col = (cls, name, n, un) => n ? `<span class="ov-pk-col">${tag(cls, name + '接 ' + n)}${un ? tag(cls, name + '未點 ' + un) : ''}</span>` : '';
+  const col = (cls, name, n, un) => n ? `<span class="ov-pk-col">${tag(cls, name + '接 ' + n)}${un ? tag(cls + ' un', name + '未點 ' + un) : ''}</span>` : '';
   return `<div class="ov-pk">${col('pk-noon', '中午', s.noon, s.noonUn)}${col('pk-pm', '下午', s.pm, s.pmUn)}</div>`;
 }
 function weekdayLabel(dateStr) { return '週' + DOW[(new Date(dateStr + 'T12:00:00').getDay() + 6) % 7]; }
@@ -3519,7 +3522,7 @@ function schoolCountsHtml(s) {
   const un = s.todayUnmarked || 0;
   // 左欄＝中午（接、未點同色），右欄＝下午（接、未點同色）；最底下是總未點名（紅色，和中午／下午都不同）
   const tag = (cls, txt) => `<span class="pk-tag ${cls}">${txt}</span>`;
-  const col = (cls, n, un2, name) => `<span class="sc-col">${n ? tag(cls, name + '接 ' + n) : ''}${un > 0 && un2 ? tag(cls, name + '未點 ' + un2) : ''}</span>`;
+  const col = (cls, n, un2, name) => `<span class="sc-col">${n ? tag(cls, name + '接 ' + n) : ''}${un > 0 && un2 ? tag(cls + ' un', name + '未點 ' + un2) : ''}</span>`;
   const cols = (s.todayNoon || s.todayPm) ? `<span class="sc-cols">${col('pk-noon', s.todayNoon, s.todayNoonUn, '中午')}${col('pk-pm', s.todayPm, s.todayPmUn, '下午')}</span>` : '';
   return `<span class="sc-meta">今日需進班 <b>${s.todayNeed}</b> 位</span>` + cols +
     (s.todayNeed === 0 ? '<span class="sc-un zero">今天沒有人需進班</span>'
