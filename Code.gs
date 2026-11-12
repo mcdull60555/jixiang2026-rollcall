@@ -1888,6 +1888,15 @@ function actionGetOverview(body) {
   var sp = specialDays_();
   var special = {};
   sp.forEach(function (x) { special[x.date] = { type: x.type, reason: x.reason }; });
+  // 今天各校的中午接／下午接人數（今天不能點名時不帶）
+  var tc = todayCounts_();
+  if (tc) d.dates.forEach(function (day) {
+    if (day.date !== d.today) return;
+    day.schools.forEach(function (sc) {
+      var c = tc[sc.schoolId] || { noon: 0, pm: 0, noonUn: 0, pmUn: 0 };
+      sc.noon = c.noon; sc.pm = c.pm; sc.noonUn = c.noonUn; sc.pmUn = c.pmUn;
+    });
+  });
   return { ok: true, today: d.today, todayInfo: dayInfo_(d.today, sp), special: special, dates: d.dates, presence: presenceList_(null) };
 }
 

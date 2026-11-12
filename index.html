@@ -378,6 +378,11 @@
   .day-school .name{font-weight:800;font-size:15px;}
   .day-school .meta{font-size:12px;color:var(--muted);margin-top:2px;}
   .stats{display:flex;gap:6px;flex-wrap:wrap;}
+  .ov-pk{display:flex;gap:6px 14px;flex-wrap:wrap;margin-top:8px;}
+  .day-school .meta + .ov-pk{margin-top:6px;}
+  .ov-pk-col{display:flex;gap:4px;flex-wrap:wrap;}
+  .ov-right{display:flex;flex-direction:column;align-items:flex-end;}
+  .ov-right .ov-pk{justify-content:flex-end;}
   .stats .stat{min-width:58px;padding:5px 8px;}
   .stats .stat b{font-size:17px;}
 
@@ -439,6 +444,8 @@
     .day-school{padding:10px 10px 10px 12px;}
     .day-school > div:first-child{width:100%;}
     .day-school .stats{width:100%;}
+    .ov-right{width:100%;align-items:stretch;}
+    .ov-right .ov-pk{justify-content:flex-start;}
 
     /* 過去 40 天小卡：一列 5 張、精簡顯示 */
     .hist-grid{grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;}
@@ -2857,7 +2864,19 @@ function statsHtml(s, withTotal, jumpUnmarked) {
 function sumSchools(schools) {
   const t = { present: 0, selfDrop: 0, selfWalk: 0, leave: 0, fixedOff: 0, unmarked: 0, total: 0, submitted: 0 };
   schools.forEach(s => { Object.keys(t).forEach(k => { if (k !== 'submitted') t[k] += s[k]; }); if (s.submitted) t.submitted++; });
+  // 今天才有的中午接／下午接人數（過去的日子沒有）
+  if (schools.some(s => s.noon != null)) {
+    t.noon = 0; t.pm = 0; t.noonUn = 0; t.pmUn = 0;
+    schools.forEach(s => { t.noon += s.noon || 0; t.pm += s.pm || 0; t.noonUn += s.noonUn || 0; t.pmUn += s.pmUn || 0; });
+  }
   return t;
+}
+// 管理員總覽：中午接（黃）／下午接（藍），各自附上還沒點名的人數
+function ovPickupHtml(s) {
+  if (s.noon == null || !(s.noon || s.pm)) return '';
+  const tag = (cls, txt) => `<span class="pk-tag ${cls}">${txt}</span>`;
+  const col = (cls, name, n, un) => n ? `<span class="ov-pk-col">${tag(cls, name + '接 ' + n)}${un ? tag(cls, name + '未點 ' + un) : ''}</span>` : '';
+  return `<div class="ov-pk">${col('pk-noon', '中午', s.noon, s.noonUn)}${col('pk-pm', '下午', s.pm, s.pmUn)}</div>`;
 }
 function weekdayLabel(dateStr) { return '週' + DOW[(new Date(dateStr + 'T12:00:00').getDay() + 6) % 7]; }
 function fmtTime(iso) {
@@ -2882,7 +2901,7 @@ async function loadOverview(silent) {
   if (todayEntry && todayEntry.schools.length) {
     const t = sumSchools(todayEntry.schools);
     $('today-summary').innerHTML = `<div class="today-card">${closedNote}<h3>今日 ${esc(r.today)}（${weekdayLabel(r.today)}）全部學校　已點名 ${t.submitted} / ${todayEntry.schools.length} 校</h3>
-      <div class="stats">${statsHtml(t, true)}</div></div>`;
+      <div class="stats">${statsHtml(t, true)}</div>${ovPickupHtml(t)}</div>`;
   } else {
     $('today-summary').innerHTML = '';
   }
@@ -2942,12 +2961,12 @@ function schoolDayCardHtml(s, date, fromLeaves) {
       <span class="pill st-fixedOff">今日不點名</span></div>`;
   }
   if (!s.submitted) {
-    return `<div class="day-school pending"><div><div class="name">${esc(s.schoolName)}</div><div class="meta">尚未點名・總人數 ${s.total}</div>${presenceTagHtml(s, date)}</div>
+    return `<div class="day-school pending"><div><div class="name">${esc(s.schoolName)}</div><div class="meta">尚未點名・總人數 ${s.total}</div>${date === STATE.today ? ovPickupHtml(s) : ''}${presenceTagHtml(s, date)}</div>
       <span class="pill st-unmarked">尚未點名</span></div>`;
   }
   return `<div class="day-school" tabindex="0" role="button" data-school="${esc(s.schoolId)}" onclick="openDayDetail('${esc(s.schoolId)}','${esc(date)}',${fromLeaves ? 'true' : 'false'})" onkeydown="if(event.key==='Enter')this.click()">
     <div><div class="name">${esc(s.schoolName)}${s.longLeave ? `<span class="streak-tag" role="link" tabindex="0" title="查看連續請假名單" onclick="event.stopPropagation();openLeaveTab('${esc(s.schoolId)}')">⚠ 連續請假 ${s.longLeave} 人</span>` : ''}</div><div class="meta">送出：${submittersText(s.submitters)}</div>${presenceTagHtml(s, date)}</div>
-    <div class="stats">${statsHtml(s, true)}</div></div>`;
+    <div class="ov-right"><div class="stats">${statsHtml(s, true)}</div>${date === STATE.today ? ovPickupHtml(s) : ''}</div></div>`;
 }
 
 // 點日期小卡：當天請假名單 → 再點學校看點名明細
