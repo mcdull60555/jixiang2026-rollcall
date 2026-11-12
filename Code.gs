@@ -18,7 +18,7 @@ var SPREADSHEET_ID = '1Xk5mxGTzRDmsLlbag6dkHn6420n6ZLUP59z6QefTjKo';      // 試
 var RETENTION_DAYS = 40;      // 點名紀錄保留天數：超過 40 天的舊資料於每天凌晨 3 點自動清除
 var SESSION_HOURS = 12;       // 登入 token 最長有效時數 (前端另外有閒置 60 分鐘自動登出)
 var TZ = 'Asia/Taipei';
-var SCHEMA_VERSION = 'schema_v10';
+var SCHEMA_VERSION = 'schema_v11';
 var DEFAULT_CONTACT_TYPES = ['爸爸', '媽媽', '住家'];
 var VALID_STATUS = ['present', 'selfDrop', 'selfWalk', 'leave', 'fixedOff', ''];
 
@@ -64,7 +64,7 @@ var HEADERS = {
   // 每次送出點名的紀錄：同一天同一校可能上午 A 老師、下午 B 老師分批送出
   Submissions: ['id', 'date', 'schoolId', 'teacherId', 'teacherName', 'submittedAt', 'count'],
   // 點名日設定：workday=補班補課（週末可點名）、holiday=國定假日放假（不能點名）
-  SpecialDays: ['date', 'type', 'reason', 'createdBy', 'createdAt'],
+  SpecialDays: ['date', 'type', 'reason', 'createdBy', 'createdAt', 'followDay'],
   // 預約請假：家長事先告知的請假期間（管理員與老師都可以登記）
   LeaveBookings: ['id', 'schoolId', 'studentId', 'startDate', 'endDate', 'reason', 'createdBy', 'createdRole', 'createdAt', 'updatedBy', 'updatedAt'],
   // 臨時進班：固定不進班的學生因臨時或考前加強要進班，期間內固定不進班的日子改為正常進班
@@ -1034,8 +1034,10 @@ function pickupCtx_() {
   var ov = {}, noon = {};
   sheetToObjects(SHEET_PICKUP).forEach(function (o) { ov[o.studentId + '|' + String(o.date)] = o; });
   sheetToObjects(SHEET_ALLNOON).forEach(function (o) { noon[String(o.date)] = o; });
+  var follow = {};   // 補班補課日「補星期幾」→ 當天各年級照那天的接送時段
+  specialDays_().forEach(function (x) { if (x.type === 'workday' && x.followDay) follow[x.date] = x.followDay; });
   var rc = {};
-  return { overrides: ov, allNoon: noon, rulesOf: function (sid) { return rc[sid] || (rc[sid] = pickupRulesOfSchool_(sid)); } };
+  return { overrides: ov, allNoon: noon, follow: follow, rulesOf: function (sid) { return rc[sid] || (rc[sid] = pickupRulesOfSchool_(sid)); } };
 }
 
 // 回傳 { slot: 'noon'|'pm', src: 'date'|'allNoon'|'week'|'grade', reason }
@@ -1043,7 +1045,7 @@ function pickupInfo_(st, date, pk) {
   var o = pk.overrides[st.id + '|' + date];
   if (o && (o.slot === 'noon' || o.slot === 'pm')) return { slot: o.slot, src: 'date', reason: String(o.reason || '') };
   if (pk.allNoon[date]) return { slot: 'noon', src: 'allNoon', reason: String(pk.allNoon[date].reason || '') };
-  var wd = weekdayOf(date), base = pickupBase_(st.grade, wd, pk.rulesOf(st.schoolId));
+  var wd = (pk.follow && pk.follow[date]) || weekdayOf(date), base = pickupBase_(st.grade, wd, pk.rulesOf(st.schoolId));
   var mine = wd >= 1 && wd <= 5 ? parsePickupOverride_(st.pickupOverride)[wd] : '';
   if (mine && mine !== base) return { slot: mine, src: 'week', reason: '' };
   return { slot: base, src: 'grade', reason: '' };
@@ -1108,9 +1110,15 @@ function actionDeleteAllNoonDay(body) {
 // ---------- 點名日：例假日 / 補班補課 / 國定假日 ----------
 var WEEKDAY_NAMES = ['', '一', '二', '三', '四', '五', '六', '日'];
 
+// 補班補課「補星期幾」：1～5 才有效，其餘（空白、週末）＝0＝不指定（一律中午接）
+function followDay_(v) {
+  var n = Number(v);
+  return (n >= 1 && n <= 5 && n === Math.floor(n)) ? n : 0;
+}
 function specialDays_() {
   return sheetToObjects(SHEET_SPECIAL).map(function (x) {
-    return { date: String(x.date), type: String(x.type), reason: String(x.reason || ''), createdBy: x.createdBy, createdAt: String(x.createdAt || '') };
+    return { date: String(x.date), type: String(x.type), reason: String(x.reason || ''), createdBy: x.createdBy, createdAt: String(x.createdAt || ''),
+      followDay: String(x.type) === 'workday' ? followDay_(x.followDay) : 0 };
   });
 }
 
@@ -1119,7 +1127,7 @@ function dayInfo_(date, list) {
   var sp = (list || specialDays_()).filter(function (x) { return x.date === date; })[0];
   var wd = weekdayOf(date);
   var base = { date: date, weekday: wd, reason: sp ? sp.reason : '' };
-  if (sp && sp.type === 'workday') return Object.assign(base, { open: true, type: 'workday', label: '補班補課' });
+  if (sp && sp.type === 'workday') return Object.assign(base, { open: true, type: 'workday', label: '補班補課', followDay: sp.followDay || 0 });
   if (sp && sp.type === 'holiday') return Object.assign(base, { open: false, type: 'holiday', label: '國定假日放假' });
   if (wd >= 6) return Object.assign(base, { open: false, type: 'weekend', label: '例假日（星期' + WEEKDAY_NAMES[wd] + '）放假' });
   return Object.assign(base, { open: true, type: 'normal', label: '' });
@@ -1149,7 +1157,8 @@ function actionSetSpecialDay(body) {
   if (type === 'holiday' && wd >= 6) return { ok: false, error: 'NOT_WEEKDAY' };  // 週末本來就放假
   var rows = sheetToObjects(SHEET_SPECIAL).filter(function (x) { return String(x.date) === date; });
   deleteRows_(SHEET_SPECIAL, rows);
-  appendObject(SHEET_SPECIAL, { date: date, type: type, reason: String(body.reason || '').trim().slice(0, 30), createdBy: s.name, createdAt: new Date().toISOString() });
+  appendObject(SHEET_SPECIAL, { date: date, type: type, reason: String(body.reason || '').trim().slice(0, 30), createdBy: s.name, createdAt: new Date().toISOString(),
+    followDay: type === 'workday' ? (followDay_(body.followDay) || '') : '' });
   return { ok: true, day: dayInfo_(date) };
 }
 
@@ -1179,7 +1188,7 @@ function actionSetSpecialDaysBatch(body) {
     if (type === 'workday' && wd < 6) { bad.push({ row: i + 1, date: date, error: 'NOT_WEEKEND' }); return; }
     if (type === 'holiday' && wd >= 6) { bad.push({ row: i + 1, date: date, error: 'NOT_WEEKDAY' }); return; }
     if (!map[date]) order.push(date);
-    map[date] = { type: type, reason: String(d.reason || '').trim().slice(0, 30) };   // 重複日期：以最後一筆為準
+    map[date] = { type: type, reason: String(d.reason || '').trim().slice(0, 30), followDay: type === 'workday' ? (followDay_(d.followDay) || '') : '' };   // 重複日期：以最後一筆為準
   });
   if (bad.length) return { ok: false, error: 'INVALID_DAYS', bad: bad };
   if (!order.length) return { ok: false, error: 'DATE_REQUIRED' };
@@ -1189,7 +1198,7 @@ function actionSetSpecialDaysBatch(body) {
   deleteRows_(SHEET_SPECIAL, existing);
   var now = new Date().toISOString();
   order.forEach(function (date) {
-    appendObject(SHEET_SPECIAL, { date: date, type: map[date].type, reason: map[date].reason, createdBy: s.name, createdAt: now });
+    appendObject(SHEET_SPECIAL, { date: date, type: map[date].type, reason: map[date].reason, createdBy: s.name, createdAt: now, followDay: map[date].followDay });
   });
   var nUpd = Object.keys(updated).length;
   return { ok: true, created: order.length - nUpd, updated: nUpd };
@@ -1205,8 +1214,11 @@ function actionEditSpecialDay(body) {
   var rows = all.filter(function (x) { return String(x.date) === date; });
   if (!rows.length) return { ok: false, error: 'DAY_NOT_FOUND' };
   if (newDate !== date && all.some(function (x) { return String(x.date) === newDate; })) return { ok: false, error: 'DAY_EXISTS' };
+  var newType = autoDayType_(newDate);
+  var keep = body.followDay === undefined ? followDay_(rows[0].followDay) : followDay_(body.followDay);   // 沒帶就沿用原本的
   deleteRows_(SHEET_SPECIAL, rows);
-  appendObject(SHEET_SPECIAL, { date: newDate, type: autoDayType_(newDate), reason: String(body.reason || '').trim().slice(0, 30), createdBy: s.name, createdAt: new Date().toISOString() });
+  appendObject(SHEET_SPECIAL, { date: newDate, type: newType, reason: String(body.reason || '').trim().slice(0, 30), createdBy: s.name, createdAt: new Date().toISOString(),
+    followDay: newType === 'workday' ? (keep || '') : '' });
   return { ok: true, day: dayInfo_(newDate) };
 }
 

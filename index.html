@@ -870,6 +870,7 @@ tr.bk-past td:last-child{opacity:1;}
       </div>
       <div class="day-status" id="day-date-status"></div>
       <div class="row">
+        <div class="field" style="min-width:150px"><label for="day-follow">補班補課：補星期幾</label><select id="day-follow"><option value="">不指定（全部中午接）</option><option value="1">補星期一的課</option><option value="2">補星期二的課</option><option value="3">補星期三的課</option><option value="4">補星期四的課</option><option value="5">補星期五的課</option></select></div>
         <button class="btn btn-teal" id="btn-workday" onclick="setSpecialDay('workday')">補班補課（可以點名）</button>
         <button class="btn btn-danger" id="btn-holiday" onclick="setSpecialDay('holiday')">國定假日放假（不能點名）</button>
       </div>
@@ -1398,6 +1399,7 @@ function clientDayInfo(date) {
 function dayStatusHtml(d) {
   return d.open ? `<span class="open">✔ 可以點名</span>（${dayReasonText(d)}）` : `<span class="closed">✖ 不能點名</span>（${dayReasonText(d)}）`;
 }
+function followText(n) { return n ? `當天各年級的接送時段照<b>星期${DOW[n - 1]}</b>的規則（中午接／下午接）。` : '沒有指定補星期幾，當天全部學生中午接。'; }
 function mdw(date) { return `${date.slice(5).replace('-', '/')}（${weekdayLabel(date)}）`; }
 
 async function loadDays(silent) {
@@ -1412,7 +1414,7 @@ async function loadDays(silent) {
   const ordered = upcoming.concat(past);
   $('days-tbody').innerHTML = ordered.length ? ordered.map(x => `<tr class="${x.date < r.today ? 'day-past' : ''}">
       <td><b>${esc(mdw(x.date))}</b>${x.date === r.today ? '<span class="today-badge" style="margin-left:6px">今天</span>' : x.date < r.today ? '<span class="past-tag">已過</span>' : ''}<div class="marked-by">${esc(x.date.slice(0, 4))}</div></td>
-      <td><span class="pill ${x.type === 'workday' ? 'st-present' : 'st-unmarked'}">${x.type === 'workday' ? '補班補課（可點名）' : '國定假日放假（不能點名）'}</span></td>
+      <td><span class="pill ${x.type === 'workday' ? 'st-present' : 'st-unmarked'}">${x.type === 'workday' ? '補班補課（可點名）' : '國定假日放假（不能點名）'}</span>${x.type === 'workday' ? `<div class="marked-by">${x.followDay ? '補星期' + DOW[x.followDay - 1] + '的課・接送照星期' + DOW[x.followDay - 1] : '未指定・全部中午接'}</div>` : ''}</td>
       <td>${esc(x.reason) || '-'}</td><td>${esc(x.createdBy || '-')}</td>
       <td><div class="day-actions"><button class="btn btn-secondary btn-sm" onclick="openEditDayModal('${esc(x.date)}')">修改</button>
         <button class="btn btn-secondary btn-sm" onclick="deleteSpecialDay('${esc(x.date)}')">取消設定</button></div></td></tr>`).join('')
@@ -1454,6 +1456,7 @@ function updateDayDateStatus() {
   const wd = (new Date(date + 'T12:00:00').getDay() + 6) % 7 + 1;
   $('day-date-status').innerHTML = `${esc(mdw(date))} 目前：${dayStatusHtml(clientDayInfo(date))}`;
   $('btn-workday').disabled = wd < 6;    // 補班補課只能設在週六日
+  $('day-follow').disabled = wd < 6;
   $('btn-holiday').disabled = wd >= 6;   // 國定假日只能設在平日
 }
 
@@ -1462,12 +1465,13 @@ async function setSpecialDay(type) {
   if (!date) { toast('請先選擇日期', true); return; }
   const reason = $('day-reason').value.trim();
   const reasonTxt = reason ? '（' + esc(reason) + '）' : '';
+  const followDay = type === 'workday' ? Number($('day-follow').value) || 0 : 0;
   const ok = type === 'workday'
-    ? await confirmBox('設為補班補課', `確定把 <b>${esc(mdw(date))}</b> 設為「<b>補班補課</b>」${reasonTxt}嗎？<br>設定後老師當天<b>可以點名</b>。`, '確定設定')
+    ? await confirmBox('設為補班補課', `確定把 <b>${esc(mdw(date))}</b> 設為「<b>補班補課</b>」${reasonTxt}嗎？<br>設定後老師當天<b>可以點名</b>。<br>${followText(followDay)}`, '確定設定')
     : await confirmBox('設為國定假日放假', `確定把 <b>${esc(mdw(date))}</b> 設為「<b>國定假日放假</b>」${reasonTxt}嗎？<br>設定後老師當天<b>不能點名</b>，並會看到原因。`, '確定設定', true);
   if (!ok) return;
-  const r = await doWrite('setSpecialDay', { date, type, reason }, () => loadDays(true));
-  if (r) $('day-reason').value = '';
+  const r = await doWrite('setSpecialDay', { date, type, reason, followDay }, () => loadDays(true));
+  if (r) { $('day-reason').value = ''; $('day-follow').value = ''; }
 }
 
 async function deleteSpecialDay(date) {
@@ -1596,6 +1600,7 @@ function openBatchDaysModal() {
   modal.querySelector('#bd-from').focus();
 }
 
+const FOLLOW_OPTS = '<option value="">不指定（全部中午接）</option><option value="1">補星期一的課</option><option value="2">補星期二的課</option><option value="3">補星期三的課</option><option value="4">補星期四的課</option><option value="5">補星期五的課</option>';
 function openEditDayModal(date) {
   const sp = (STATE.specialDays || []).find(x => x.date === date);
   if (!sp) return;
@@ -1603,12 +1608,14 @@ function openEditDayModal(date) {
     <div class="field"><label for="m-day-date">日期</label><input type="date" id="m-day-date" value="${esc(date)}"></div>
     <div class="day-status" id="m-day-status" style="margin:8px 0"></div>
     <div class="field"><label for="m-day-reason">原因（選填，會顯示給老師）</label><input id="m-day-reason" maxlength="30" value="${esc(sp.reason || '')}" placeholder="例如：國慶日、颱風假補課"></div>
+    <div class="field" id="m-follow-wrap"><label for="m-day-follow">補班補課：補星期幾（決定各年級中午接／下午接）</label><select id="m-day-follow">${FOLLOW_OPTS}</select></div>
   `, async () => {
     const newDate = $('m-day-date').value, reason = $('m-day-reason').value.trim();
+    const followDay = Number($('m-day-follow').value) || 0;
     if (!newDate) { toast('請選擇日期', true); return false; }
     if (newDate !== date && (STATE.specialDays || []).some(x => x.date === newDate)) { toast(errMsg('DAY_EXISTS'), true); return false; }
     const newType = autoTypeOf(newDate);
-    if (newDate === date && reason === (sp.reason || '')) return true;   // 沒有變更
+    if (newDate === date && reason === (sp.reason || '') && (newType !== 'workday' || followDay === (sp.followDay || 0))) return true;   // 沒有變更
     if (newDate !== date || newType !== sp.type) {
       const restore = wdOf(date) >= 6 ? '例假日，不能點名' : '一般上課日，可以點名';
       const ok = await confirmBox('修改點名日', `確定把設定從 <b>${esc(mdw(date))}</b> 改到 <b>${esc(mdw(newDate))}</b> 嗎？<br>
@@ -1616,13 +1623,15 @@ function openEditDayModal(date) {
         ${esc(mdw(date))} 恢復為：<b>${restore}</b>。`, '確定修改', newType === 'holiday');
       if (!ok) return false;
     }
-    const r = await doWrite('editSpecialDay', { date, newDate, reason }, () => loadDays(true));
+    const r = await doWrite('editSpecialDay', { date, newDate, reason, followDay }, () => loadDays(true));
     return !!r;
   }, { confirmText: '儲存修改' });
   const upd = () => {
     const d = $('m-day-date').value;
     $('m-day-status').innerHTML = d ? `${esc(mdw(d))} 將設為：${dayTypePill(autoTypeOf(d))}` : '';
+    $('m-follow-wrap').classList.toggle('hidden', !d || autoTypeOf(d) !== 'workday');
   };
+  $('m-day-follow').value = sp.followDay ? String(sp.followDay) : '';
   $('m-day-date').addEventListener('change', upd);
   upd();
   modal.querySelector('#m-day-reason').focus();
