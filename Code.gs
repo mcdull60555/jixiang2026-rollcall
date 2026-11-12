@@ -18,7 +18,7 @@ var SPREADSHEET_ID = '1Xk5mxGTzRDmsLlbag6dkHn6420n6ZLUP59z6QefTjKo';      // 試
 var RETENTION_DAYS = 40;      // 點名紀錄保留天數：超過 40 天的舊資料於每天凌晨 3 點自動清除
 var SESSION_HOURS = 12;       // 登入 token 最長有效時數 (前端另外有閒置 60 分鐘自動登出)
 var TZ = 'Asia/Taipei';
-var SCHEMA_VERSION = 'schema_v9';
+var SCHEMA_VERSION = 'schema_v10';
 var DEFAULT_CONTACT_TYPES = ['爸爸', '媽媽', '住家'];
 var VALID_STATUS = ['present', 'selfDrop', 'selfWalk', 'leave', 'fixedOff', ''];
 
@@ -33,13 +33,26 @@ var SHEET_SUBMISSIONS = 'Submissions';
 var SHEET_SPECIAL = 'SpecialDays';
 var SHEET_BOOKINGS = 'LeaveBookings';
 var SHEET_EXTRAS = 'ExtraClasses';
+var SHEET_PICKUP = 'PickupOverrides';
+var SHEET_ALLNOON = 'AllNoonDays';
+
+// ---------- 接送時段規則（中午接 / 下午接）----------
+// 依年級決定「進班(接)」的學生每週哪幾天中午接，沒列到的平日一律下午接。
+// 要改規則只要改這裡（grades＝適用年級，noon＝中午接的星期：1=週一 … 5=週五），改完重新部署即可。
+// 學生因社團等原因要調整，在學生資料裡設定；休業式／結業式在「點名日設定」設定為全部中午接。
+var PICKUP_RULES = [
+  { grades: [1, 2], noon: [1, 3, 4, 5] },   // 一、二年級：週一三四五中午接，週二下午接
+  { grades: [3, 4], noon: [3, 5] },         // 三、四年級：週三五中午接，週一二四下午接
+  { grades: [5, 6], noon: [3] }             // 五、六年級：週三中午接，週一二四五下午接
+];
 
 var HEADERS = {
   Admins: ['id', 'username', 'password', 'name'],
   Teachers: ['id', 'username', 'password', 'name', 'active', 'createdAt'],
   Schools: ['id', 'name', 'createdAt', 'active'],
   // fixedOffDays 固定不進班 / selfDropDays 固定自送 / selfWalkDays 固定自走：星期一到五（1–5），同一天只會出現在其中一個
-  Students: ['id', 'schoolId', 'name', 'grade', 'contacts', 'fixedOffDays', 'active', 'createdAt', 'note', 'selfDropDays', 'selfWalkDays'],
+  // pickupOverride 學生每週接送時段調整（例如社團）：格式 "1:pm|3:noon"＝週一改下午接、週三改中午接；沒有填就依年級規則
+  Students: ['id', 'schoolId', 'name', 'grade', 'contacts', 'fixedOffDays', 'active', 'createdAt', 'note', 'selfDropDays', 'selfWalkDays', 'pickupOverride'],
   // auto=true：這筆狀態是系統預設值（預約請假 / 固定不進班），老師沒有改過
   Attendance: ['id', 'date', 'schoolId', 'studentId', 'status', 'selfDrop', 'selfWalk', 'teacherId', 'teacherName', 'submittedAt', 'wasFixedOff', 'auto'],
   Sessions: ['token', 'userId', 'role', 'name', 'username', 'createdAt', 'expiresAt'],
@@ -51,7 +64,11 @@ var HEADERS = {
   // 預約請假：家長事先告知的請假期間（管理員與老師都可以登記）
   LeaveBookings: ['id', 'schoolId', 'studentId', 'startDate', 'endDate', 'reason', 'createdBy', 'createdRole', 'createdAt', 'updatedBy', 'updatedAt'],
   // 臨時進班：固定不進班的學生因臨時或考前加強要進班，期間內固定不進班的日子改為正常進班
-  ExtraClasses: ['id', 'schoolId', 'studentId', 'startDate', 'endDate', 'reason', 'createdBy', 'createdRole', 'createdAt', 'updatedBy', 'updatedAt']
+  ExtraClasses: ['id', 'schoolId', 'studentId', 'startDate', 'endDate', 'reason', 'createdBy', 'createdRole', 'createdAt', 'updatedBy', 'updatedAt'],
+  // 單日例外：某位學生某一天改成中午接（noon）或下午接（pm），優先於年級規則、每週調整與「全部中午接」
+  PickupOverrides: ['id', 'schoolId', 'studentId', 'date', 'slot', 'reason', 'createdBy', 'createdAt'],
+  // 全部中午接的日子（休業式、結業式）：這天所有年級都中午接，個別例外用單日例外調整
+  AllNoonDays: ['date', 'reason', 'createdBy', 'createdAt']
 };
 
 // ---------- 初始化 ----------
@@ -383,13 +400,15 @@ function route(body) {
     setSpecialDaysBatch: actionSetSpecialDaysBatch, editSpecialDay: actionEditSpecialDay,
     listBookings: actionListBookings, saveBooking: actionSaveBooking, saveBookingsBatch: actionSaveBookingsBatch, deleteBooking: actionDeleteBooking,
     getOverview: actionGetOverview, getSchoolDayDetail: actionGetSchoolDayDetail,
-    listLeaveStreaks: actionListLeaveStreaks
+    listLeaveStreaks: actionListLeaveStreaks,
+    setPickupSlot: actionSetPickupSlot, setAllNoonDay: actionSetAllNoonDay, deleteAllNoonDay: actionDeleteAllNoonDay
   };
   // 會寫入試算表的動作：一律在全域鎖內執行（多人同時操作也不會互相覆蓋）
   var WRITES = ['login', 'logout', 'changePwd', 'addContactType', 'addSchool', 'addSchoolsBatch', 'editSchool', 'deleteSchool',
     'addStudent', 'addStudentsBatch', 'editStudent', 'deleteStudent', 'deleteStudentsBatch',
     'addTeacher', 'editTeacher', 'deleteTeacher', 'deleteTeachersBatch', 'submitAttendance', 'saveMarks', 'setSpecialDay', 'deleteSpecialDay',
-    'setSpecialDaysBatch', 'editSpecialDay', 'saveBooking', 'saveBookingsBatch', 'deleteBooking'];
+    'setSpecialDaysBatch', 'editSpecialDay', 'saveBooking', 'saveBookingsBatch', 'deleteBooking',
+    'setPickupSlot', 'setAllNoonDay', 'deleteAllNoonDay'];
   var fn = ACTIONS[action];
   if (!fn) return { ok: false, error: 'UNKNOWN_ACTION' };
   if (WRITES.indexOf(action) !== -1) return withLock_(function () { return fn(body); });
@@ -658,14 +677,17 @@ function activeSchools_() {
 function todayCounts_() {
   var ctx = statusCtx_(), today = ctx.today;
   if (!ctx.isOpen(today)) return null;
+  var pk = pickupCtx_();
   var out = {};
   sheetToObjects(SHEET_STUDENTS).forEach(function (st) {
     if (!isActive_(st.active)) return;
-    var c = out[st.schoolId] = out[st.schoolId] || { need: 0, unmarked: 0 };
+    var c = out[st.schoolId] = out[st.schoolId] || { need: 0, unmarked: 0, noon: 0, pm: 0 };
     var s = ctx.status(st.id, today);
     if (s === 'fixedOff' || s === 'leave') return;
     c.need++;
     if (!s) c.unmarked++;
+    var p = pickupSlotFor_(st, today, ctx, pk);   // 需要接的人數：中午接、下午接各幾位（自走、自送的不算）
+    if (p) c[p.slot]++;
   });
   return out;
 }
@@ -678,8 +700,11 @@ function actionListSchools(body) {
   });
   var today = todayCounts_();
   var out = activeSchools_().map(function (sc) {
-    var t = today ? (today[sc.id] || { need: 0, unmarked: 0 }) : null;
-    return { id: sc.id, name: sc.name, studentCount: counts[sc.id] || 0, todayNeed: t ? t.need : null, todayUnmarked: t ? t.unmarked : null };
+    var t = today ? (today[sc.id] || { need: 0, unmarked: 0, noon: 0, pm: 0 }) : null;
+    return {
+      id: sc.id, name: sc.name, studentCount: counts[sc.id] || 0, todayNeed: t ? t.need : null, todayUnmarked: t ? t.unmarked : null,
+      todayNoon: t ? t.noon : null, todayPm: t ? t.pm : null
+    };
   });
   out.sort(function (a, b) { return String(a.name).localeCompare(String(b.name), 'zh-Hant'); });
   return { ok: true, schools: out };
@@ -808,7 +833,8 @@ function studentOut_(x) {
   var m = weekModes_({ off: parseDays_(x.fixedOffDays), drop: parseDays_(x.selfDropDays), walk: parseDays_(x.selfWalkDays) });
   return {
     id: x.id, name: x.name, grade: String(x.grade), gradeNum: gradeNum_(x.grade),
-    contacts: parseContacts(x), fixedOffDays: m.off, selfDropDays: m.drop, selfWalkDays: m.walk, note: String(x.note || '')
+    contacts: parseContacts(x), fixedOffDays: m.off, selfDropDays: m.drop, selfWalkDays: m.walk, note: String(x.note || ''),
+    pickupOverride: parsePickupOverride_(x.pickupOverride)   // 每週接送時段調整：{ 星期: 'noon'|'pm' }，沒有的星期依年級規則
   };
 }
 
@@ -836,7 +862,16 @@ function actionListStudents(body) {
     return x.schoolId === body.schoolId && isActive_(x.active);
   }).map(studentOut_);
   sortStudents(students);
-  return { ok: true, students: students };
+  // 單日例外（今天起）：讓管理員在學生視窗看到、可取消
+  var today = today_(), byStudent = {};
+  sheetToObjects(SHEET_PICKUP).forEach(function (o) {
+    if (String(o.date) < today) return;
+    (byStudent[o.studentId] = byStudent[o.studentId] || []).push({ date: String(o.date), slot: String(o.slot), reason: String(o.reason || '') });
+  });
+  students.forEach(function (st) {
+    st.pickupDates = (byStudent[st.id] || []).sort(function (a, b) { return a.date.localeCompare(b.date); });
+  });
+  return { ok: true, students: students, pickupRules: PICKUP_RULES };
 }
 
 function studentRow_(schoolId, st) {
@@ -845,6 +880,7 @@ function studentRow_(schoolId, st) {
     id: genId('T'), schoolId: schoolId, name: String(st.name || '').trim(), grade: String(st.grade || '').trim(),
     contacts: JSON.stringify(normalizeContacts(st.contacts)),
     fixedOffDays: m.off.join('|'), selfDropDays: m.drop.join('|'), selfWalkDays: m.walk.join('|'),
+    pickupOverride: formatPickupOverride_(normalizePickupOverride_(st.pickupOverride, st.grade)),
     active: true, createdAt: new Date().toISOString(),
     note: String(st.note || '').trim()
   };
@@ -910,6 +946,11 @@ function actionEditStudent(body) {
         });
         u.fixedOffDays = m.off.join('|'); u.selfDropDays = m.drop.join('|'); u.selfWalkDays = m.walk.join('|');
       }
+      if (body.pickupOverride !== undefined) {
+        u.pickupOverride = formatPickupOverride_(normalizePickupOverride_(body.pickupOverride, grade));
+      } else if (u.pickupOverride) {   // 只改了年級：把變成和新年級規則一樣的調整清掉
+        u.pickupOverride = formatPickupOverride_(normalizePickupOverride_(u.pickupOverride, grade));
+      }
       if (body.note !== undefined) u.note = String(body.note || '').trim();
       updateObjectByRow(SHEET_STUDENTS, u._row, u);
       return { ok: true };
@@ -939,6 +980,117 @@ function actionDeleteStudentsBatch(body) {
 function actionDeleteStudent(body) {
   var r = actionDeleteStudentsBatch({ token: body.token, studentIds: [body.studentId] });
   return r.deleted ? { ok: true } : { ok: false, error: 'STUDENT_NOT_FOUND' };
+}
+
+// ---------- 接送時段：中午接 / 下午接 ----------
+// 某位學生某一天的時段，依優先順序決定：
+// 1. 單日例外（PickupOverrides）  2. 全部中午接日（休業式／結業式）  3. 學生每週調整（社團）  4. 年級規則（PICKUP_RULES）
+// 只有「進班(接)」的日子才有時段；自走、自送、固定不進班的日子不用接，時段留空。
+function pickupBase_(grade, wd) {
+  if (wd < 1 || wd > 5) return 'noon';   // 補班補課的週末沒有年級規則，一律中午接
+  var g = gradeNum_(grade), rule = PICKUP_RULES[PICKUP_RULES.length - 1];
+  if (g < 1) rule = PICKUP_RULES[0];
+  for (var i = 0; i < PICKUP_RULES.length; i++) {
+    if (PICKUP_RULES[i].grades.indexOf(g) !== -1) { rule = PICKUP_RULES[i]; break; }
+  }
+  return rule.noon.indexOf(wd) !== -1 ? 'noon' : 'pm';
+}
+
+// "1:pm|3:noon" → { 1: 'pm', 3: 'noon' }
+function parsePickupOverride_(v) {
+  var out = {};
+  String(v === undefined || v === null ? '' : v).split('|').forEach(function (p) {
+    var m = p.match(/^([1-5]):(noon|pm)$/);
+    if (m) out[m[1]] = m[2];
+  });
+  return out;
+}
+function formatPickupOverride_(o) {
+  return Object.keys(o).sort().map(function (k) { return k + ':' + o[k]; }).join('|');
+}
+// 只留下「和年級規則不同」的星期，存起來的就一定是真正的調整
+function normalizePickupOverride_(raw, grade) {
+  var src = (raw && typeof raw === 'object') ? raw : parsePickupOverride_(raw);
+  var out = {};
+  for (var d = 1; d <= 5; d++) {
+    var v = src[d];
+    if ((v === 'noon' || v === 'pm') && v !== pickupBase_(grade, d)) out[d] = v;
+  }
+  return out;
+}
+
+function pickupCtx_() {
+  var ov = {}, noon = {};
+  sheetToObjects(SHEET_PICKUP).forEach(function (o) { ov[o.studentId + '|' + String(o.date)] = o; });
+  sheetToObjects(SHEET_ALLNOON).forEach(function (o) { noon[String(o.date)] = o; });
+  return { overrides: ov, allNoon: noon };
+}
+
+// 回傳 { slot: 'noon'|'pm', src: 'date'|'allNoon'|'week'|'grade', reason }
+function pickupInfo_(st, date, pk) {
+  var o = pk.overrides[st.id + '|' + date];
+  if (o && (o.slot === 'noon' || o.slot === 'pm')) return { slot: o.slot, src: 'date', reason: String(o.reason || '') };
+  if (pk.allNoon[date]) return { slot: 'noon', src: 'allNoon', reason: String(pk.allNoon[date].reason || '') };
+  var wd = weekdayOf(date), base = pickupBase_(st.grade, wd);
+  var mine = wd >= 1 && wd <= 5 ? parsePickupOverride_(st.pickupOverride)[wd] : '';
+  if (mine && mine !== base) return { slot: mine, src: 'week', reason: '' };
+  return { slot: base, src: 'grade', reason: '' };
+}
+
+// 這天需要「接」這位學生才有時段；每週設定為自走／自送／固定不進班（沒有臨時進班）→ 回傳 null
+function pickupSlotFor_(st, date, ctx, pk) {
+  var wd = ctx.wdOf(date);
+  if (wd >= 1 && wd <= 5) {
+    if (parseDays_(st.selfDropDays).indexOf(wd) !== -1 || parseDays_(st.selfWalkDays).indexOf(wd) !== -1) return null;
+    if (ctx.isFixed(st.id, date)) return null;
+  }
+  return pickupInfo_(st, date, pk);
+}
+
+// 單日例外：某位學生某一天改成中午接或下午接（slot 留空＝取消例外）。管理員可設今天起的任何日期；老師只能調整今天
+function actionSetPickupSlot(body) {
+  var s = requireSession(body.token);
+  var today = today_();
+  var date = body.date ? String(body.date) : today;
+  if (!isDateStr_(date)) return { ok: false, error: 'DATE_REQUIRED' };
+  if (date < today) return { ok: false, error: 'DATE_PAST' };
+  if (s.role !== 'admin' && date !== today) return { ok: false, error: 'FORBIDDEN' };
+  var slot = String(body.slot || '');
+  if (slot !== '' && slot !== 'noon' && slot !== 'pm') return { ok: false, error: 'UNKNOWN_ACTION' };
+  var st = sheetToObjects(SHEET_STUDENTS).filter(function (x) { return x.id === body.studentId && isActive_(x.active); })[0];
+  if (!st) return { ok: false, error: 'STUDENT_NOT_FOUND' };
+  deleteRows_(SHEET_PICKUP, sheetToObjects(SHEET_PICKUP).filter(function (o) { return o.studentId === st.id && String(o.date) === date; }));
+  var def = pickupInfo_(st, date, pickupCtx_());   // 沒有單日例外時的時段
+  if (slot && slot !== def.slot) {
+    appendObject(SHEET_PICKUP, {
+      id: genId('P'), schoolId: st.schoolId, studentId: st.id, date: date, slot: slot,
+      reason: String(body.reason || '').trim().slice(0, 30), createdBy: s.name, createdAt: new Date().toISOString()
+    });
+    return { ok: true, date: date, slot: slot, src: 'date' };
+  }
+  return { ok: true, date: date, slot: def.slot, src: def.src };
+}
+
+// 全部中午接的日子（休業式、結業式）
+function allNoonDays_() {
+  return sheetToObjects(SHEET_ALLNOON).map(function (x) {
+    return { date: String(x.date), reason: String(x.reason || ''), weekday: weekdayOf(String(x.date)) };
+  }).sort(function (a, b) { return b.date.localeCompare(a.date); });
+}
+function actionSetAllNoonDay(body) {
+  var s = requireSession(body.token, 'admin');
+  var date = String(body.date || '');
+  if (!isDateStr_(date)) return { ok: false, error: 'DATE_REQUIRED' };
+  deleteRows_(SHEET_ALLNOON, sheetToObjects(SHEET_ALLNOON).filter(function (x) { return String(x.date) === date; }));
+  appendObject(SHEET_ALLNOON, { date: date, reason: String(body.reason || '').trim().slice(0, 30), createdBy: s.name, createdAt: new Date().toISOString() });
+  return { ok: true };
+}
+function actionDeleteAllNoonDay(body) {
+  requireSession(body.token, 'admin');
+  var rows = sheetToObjects(SHEET_ALLNOON).filter(function (x) { return String(x.date) === String(body.date); });
+  if (!rows.length) return { ok: false, error: 'DAY_NOT_FOUND' };
+  deleteRows_(SHEET_ALLNOON, rows);
+  return { ok: true };
 }
 
 // ---------- 點名日：例假日 / 補班補課 / 國定假日 ----------
@@ -971,7 +1123,7 @@ function actionListSpecialDays(body) {
   requireSession(body.token, 'admin');
   var list = specialDays_().sort(function (a, b) { return b.date.localeCompare(a.date); });
   list.forEach(function (x) { x.weekday = weekdayOf(x.date); });
-  return { ok: true, today: today_(), todayInfo: dayInfo_(today_(), list), days: list };
+  return { ok: true, today: today_(), todayInfo: dayInfo_(today_(), list), days: list, allNoonDays: allNoonDays_() };
 }
 
 function actionSetSpecialDay(body) {
@@ -1423,6 +1575,7 @@ function actionGetRollCall(body) {
   attendance.forEach(function (a) { attMap[a.studentId] = a; });
 
   var ctx = statusCtx_();
+  var pk = pickupCtx_();
   var out = activeStudentsOf_(schoolId).map(function (st) {
     var so = studentOut_(st);
     var isFixedOff = ctx.isFixed(st.id, date);   // 臨時進班的日子不算固定不進班
@@ -1432,8 +1585,10 @@ function actionGetRollCall(body) {
     var status = ctx.status(st.id, date);
     var byTeacher = !!ctx.teacherSet(existing);   // 系統自動判斷的不顯示點名老師
     var bk = ctx.bookingOn(st.id, date);
+    var pick = pickupSlotFor_(st, date, ctx, pk);   // 今天中午接／下午接；自走、自送、固定不進班的人不用接 → 空白
     return {
       id: so.id, name: so.name, grade: so.grade, isFixedOff: isFixedOff, primaryContact: primary,
+      pickup: pick ? pick.slot : '', pickupSrc: pick ? pick.src : '', pickupReason: pick ? pick.reason : '',
       contacts: so.contacts, note: so.note, status: status, defaultStatus: ctx.defaultOf(st.id, date), fixedOffDays: so.fixedOffDays,
       // 今天是這位學生固定的自送／自走日：只當提示，不自動預填狀態（要老師確認到班後再點）
       fixedMode: so.selfDropDays.indexOf(wd) !== -1 ? 'selfDrop' : (so.selfWalkDays.indexOf(wd) !== -1 ? 'selfWalk' : ''),
@@ -1447,6 +1602,7 @@ function actionGetRollCall(body) {
   var last = submitters[submitters.length - 1] || null;
   return {
     ok: true, date: date, day: dayInfo_(date), students: out, submitted: submitters.length > 0, submitters: submitters,
+    allNoon: pk.allNoon[date] ? { reason: String(pk.allNoon[date].reason || '') } : null,   // 今天是休業式／結業式：全部中午接
     submittedAt: last ? last.at : null, submittedBy: last ? last.name : null
   };
 }
@@ -1862,6 +2018,8 @@ function cleanupOldRecords() {
     pruneByDate_(SHEET_ATTENDANCE, cutoff);
     pruneByDate_(SHEET_SUBMISSIONS, cutoff);
     pruneByDate_(SHEET_SPECIAL, cutoff);
+    pruneByDate_(SHEET_PICKUP, cutoff);
+    pruneByDate_(SHEET_ALLNOON, cutoff);
     // 預約請假：結束日超過保留期限才清除
     var oldB = sheetToObjects(SHEET_BOOKINGS).filter(function (b) { return String(b.endDate) < cutoff; });
     if (oldB.length) deleteRows_(SHEET_BOOKINGS, oldB);
