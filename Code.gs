@@ -2307,7 +2307,7 @@ function buildReminderText_(r, data) {
       lines.push('');
       lines.push('【' + sc.name + '】' + (list.length + walk.length) + ' 位');
       if (list.length) lines.push(list.map(nm).join('、'));
-      if (walk.length) lines.push('固定自走／自送：' + walk.map(function (st) { return nm(st) + '[' + st.tag + ']'; }).join('、'));
+      walk.forEach(function (st) { lines.push('📌 ' + nm(st) + '[固定' + st.tag + ']'); });   // 固定自走／自送：每人一行，前面加 📌（和點名畫面的提示一致）
     });
   if (!total) return '';
   var hm = ('0' + r.hour).slice(-2) + ':' + ('0' + r.minute).slice(-2);
