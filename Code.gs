@@ -2396,7 +2396,7 @@ function lineCommandReply_(raw) {
 function lineCmdHelp_() {
   return ['📖 小管家可用口令（在群組傳這些字就會回覆）', '',
     '未點名：現在還沒點名的學生', '點名進度：各校已點名／應到人數', '今日請假：今天請假的學生', '臨時進班：今天臨時進班的學生',
-    '今日接送：各校今天中午接、下午接、自走、自送人數', '明日請假：下個上課日的預約請假與臨時進班', '查 王小明：查一位學生今天的狀態與預約', '指令：顯示這份說明'].join('\n');
+    '今日接送：各校今天中午接、下午接、自走、自送人數', '明日請假：下個上課日的預約請假與臨時進班', '查 王小明：查一位學生今天的狀態與預約', '查 國光國小：查一間學校今天所有學生的狀態', '指令：顯示這份說明'].join('\n');
 }
 
 function lineDayCtx_() {
@@ -2525,8 +2525,32 @@ function lineCmdNextDay_() {
   }).join('\n');
 }
 
+// 查一間學校：今天每位學生的狀態與接送方式，依狀態分組
+function lineCmdSchool_(d, sid) {
+  var list = sortStudents(d.students.filter(function (st) { return st.schoolId === sid; }));
+  var head = '🏫 ' + d.schools[sid] + '　' + lineDateLabel_(d.today);
+  if (!list.length) return head + '\n目前沒有學生';
+  if (!d.ctx.isOpen(d.today)) return head + '\n今天不是上課日（例假日／國定假日），共 ' + list.length + ' 位學生';
+  var wd = d.ctx.wdOf(d.today), g = { '': [], present: [], selfDrop: [], selfWalk: [], leave: [], fixedOff: [] };
+  list.forEach(function (st) {
+    var s = d.ctx.status(st.id, d.today), p = pickupSlotFor_(st, d.today, d.ctx, d.pk), how = '';
+    if (s !== 'fixedOff') how = p ? (p.slot === 'noon' ? '中午接' : '下午接') : (parseDays_(st.selfDropDays).indexOf(wd) !== -1 ? '固定自送' : '固定自走');
+    (g[s] || g['']).push(st.name + '(' + st.grade + ')' + (how && s !== 'leave' ? '｜' + how : ''));
+  });
+  var need = list.length - g.fixedOff.length - g.leave.length, un = g[''].length;
+  var out = [head, '應到 ' + need + '，已點 ' + (need - un) + '，未點 ' + un + (g.leave.length ? '（請假 ' + g.leave.length + '）' : '')];
+  [['', '⚪ 未點名'], ['present', '✅ 已到班'], ['selfDrop', '🏠 自送'], ['selfWalk', '🚶 自走'], ['leave', '🔴 請假'], ['fixedOff', '⏸ 今天固定不進班']].forEach(function (k) {
+    if (g[k[0]].length) { out.push(''); out.push(k[1] + '（' + g[k[0]].length + '）'); g[k[0]].forEach(function (x) { out.push(x); }); }
+  });
+  return out.join('\n');
+}
+
 function lineCmdStudent_(name) {
   var d = lineDayCtx_();
+  var sids = Object.keys(d.schools).filter(function (id) { return d.schools[id] === name; });
+  if (!sids.length) sids = Object.keys(d.schools).filter(function (id) { return String(d.schools[id]).indexOf(name) !== -1; });
+  if (sids.length === 1) return lineCmdSchool_(d, sids[0]);   // 查 國光國小：列出這間學校今天所有學生
+  if (sids.length > 1) return '符合「' + name + '」的學校有 ' + sids.length + ' 間，請輸入完整校名：\n' + sids.map(function (id) { return d.schools[id]; }).join('\n');
   var hit = d.students.filter(function (st) { return String(st.name).indexOf(name) !== -1; });
   if (!hit.length) return '找不到「' + name + '」，請確認姓名';
   hit = sortStudents(hit);
