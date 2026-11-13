@@ -15,6 +15,7 @@
 
 // ---------- 基本設定 ----------
 var SPREADSHEET_ID = '1Xk5mxGTzRDmsLlbag6dkHn6420n6ZLUP59z6QefTjKo';      // 試算表 ID 或整段網址 (留空則使用目前綁定的試算表)
+var MAKEUP_DAYS = 7;          // 老師可以補點名的天數：昨天往前算幾天內（不含今天，今天走一般點名）
 var RETENTION_DAYS = 40;      // 點名紀錄保留天數：超過 40 天的舊資料於每天凌晨 3 點自動清除
 var SESSION_HOURS = 12;       // 登入 token 最長有效時數 (前端另外有閒置 60 分鐘自動登出)
 var TZ = 'Asia/Taipei';
@@ -398,6 +399,7 @@ function route(body) {
     editStudent: actionEditStudent, deleteStudent: actionDeleteStudent, deleteStudentsBatch: actionDeleteStudentsBatch,
     listTeachers: actionListTeachers, addTeacher: actionAddTeacher, editTeacher: actionEditTeacher,
     deleteTeacher: actionDeleteTeacher, deleteTeachersBatch: actionDeleteTeachersBatch,
+    listMakeup: actionListMakeup, getMakeupRollCall: actionGetMakeupRollCall, saveMakeup: actionSaveMakeup,
     getRollCall: actionGetRollCall, submitAttendance: actionSubmitAttendance, saveMarks: actionSaveMarks, setPresence: actionSetPresence,
     getDayInfo: actionGetDayInfo, listSpecialDays: actionListSpecialDays,
     setSpecialDay: actionSetSpecialDay, deleteSpecialDay: actionDeleteSpecialDay,
@@ -410,7 +412,7 @@ function route(body) {
   // 會寫入試算表的動作：一律在全域鎖內執行（多人同時操作也不會互相覆蓋）
   var WRITES = ['login', 'logout', 'changePwd', 'addContactType', 'addSchool', 'addSchoolsBatch', 'editSchool', 'deleteSchool',
     'addStudent', 'addStudentsBatch', 'editStudent', 'deleteStudent', 'deleteStudentsBatch',
-    'addTeacher', 'editTeacher', 'deleteTeacher', 'deleteTeachersBatch', 'submitAttendance', 'saveMarks', 'setSpecialDay', 'deleteSpecialDay',
+    'addTeacher', 'editTeacher', 'deleteTeacher', 'deleteTeachersBatch', 'submitAttendance', 'saveMarks', 'saveMakeup', 'setSpecialDay', 'deleteSpecialDay',
     'setSpecialDaysBatch', 'editSpecialDay', 'saveBooking', 'saveBookingsBatch', 'deleteBooking',
     'setPickupSlot', 'setAllNoonDay', 'deleteAllNoonDay'];
   var fn = ACTIONS[action];
@@ -1563,8 +1565,9 @@ function submittersIndex_(cutoff, attendanceRows) {
   var add = function (key, tid, name, at) {
     if (!name) return;
     var m = idx[key] = idx[key] || {};
-    var k = tid || name;
-    if (!m[k] || at > m[k].at) m[k] = { name: name, at: at };
+    var mk = isMakeupAt_(key.split('|')[0], at);   // 隔天（含）以後才送出的點名＝補點名，和當天點的分開列
+    var k = (tid || name) + (mk ? '|mk' : '');
+    if (!m[k] || at > m[k].at) m[k] = { name: name, at: at, makeup: mk };
   };
   var logged = {};
   sheetToObjects(SHEET_SUBMISSIONS).forEach(function (l) {
@@ -1587,6 +1590,98 @@ function submittersIndex_(cutoff, attendanceRows) {
   });
   return out;
 }
+
+// ---------- 補點名 ----------
+// 送出時間的台北日期 > 點名日期 ＝ 補點名（不用多存欄位，舊資料也自然適用）
+function dayOfIso_(iso) { var t = Date.parse(iso); return isNaN(t) ? '' : Utilities.formatDate(new Date(t), TZ, 'yyyy-MM-dd'); }
+function isMakeupAt_(date, iso) { var d = dayOfIso_(iso); return !!d && d > String(date); }
+
+// 補點名的日期要在「昨天往前 MAKEUP_DAYS 天」內、而且當天可以點名；回傳錯誤代碼或空字串
+function checkMakeupDate_(date) {
+  date = String(date || '');
+  if (!isDateStr_(date)) return 'DATE_REQUIRED';
+  if (date >= today_() || date < dateStrDaysAgo_(MAKEUP_DAYS)) return 'MAKEUP_RANGE';
+  if (!dayInfo_(date).open) return 'DAY_CLOSED';
+  return '';
+}
+
+// 過去的日子各校還沒點名的人數：{ 日期: { 學校id: 人數 } }。
+// 沒有狀態、也不是固定不進班的學生才算；從有點名紀錄的第一天算起（系統上線前不算），今天不算（還在點）
+function missingByDay_(fromDate, toDate, ctx) {
+  var today = today_();
+  if (toDate >= today) toDate = prevDate_(today);
+  var first = '';
+  Object.keys(ctx.rec).forEach(function (k) { var d = k.slice(0, 10); if (!first || d < first) first = d; });
+  if (!first) return {};
+  if (fromDate < first) fromDate = first;
+  var activeIds = {};
+  activeSchools_().forEach(function (sc) { activeIds[sc.id] = true; });
+  var students = sheetToObjects(SHEET_STUDENTS).filter(function (st) { return isActive_(st.active) && activeIds[st.schoolId]; });
+  var out = {};
+  for (var d = fromDate; d <= toDate; d = nextDate_(d)) {
+    if (!ctx.isOpen(d)) continue;
+    students.forEach(function (st) {
+      if (!studentExistsOn_(st, d) || ctx.status(st.id, d) || ctx.isFixed(st.id, d)) return;
+      var m = out[d] = out[d] || {};
+      m[st.schoolId] = (m[st.schoolId] || 0) + 1;
+    });
+  }
+  return out;
+}
+function missingList_(map, schoolMap, schoolFilter) {
+  return Object.keys(map || {}).filter(function (sid) { return !schoolFilter || sid === schoolFilter; }).map(function (sid) {
+    return { schoolId: sid, schoolName: schoolMap[sid] || '', n: map[sid] };
+  }).sort(function (a, b) { return String(a.schoolName).localeCompare(String(b.schoolName), 'zh-Hant'); });
+}
+
+// 老師端：哪幾天、哪幾間學校還有學生沒點名（可以補點名）
+function actionListMakeup(body) {
+  requireSession(body.token);
+  var ctx = statusCtx_();
+  var schoolMap = {};
+  activeSchools_().forEach(function (sc) { schoolMap[sc.id] = sc.name; });
+  var miss = missingByDay_(dateStrDaysAgo_(MAKEUP_DAYS), prevDate_(today_()), ctx);
+  var items = [];
+  Object.keys(miss).sort(function (a, b) { return b.localeCompare(a); }).forEach(function (d) {
+    missingList_(miss[d], schoolMap, null).forEach(function (x) { items.push({ date: d, schoolId: x.schoolId, schoolName: x.schoolName, unmarked: x.n }); });
+  });
+  return { ok: true, days: MAKEUP_DAYS, items: items };
+}
+
+// 老師端：某天某校的補點名名單。固定不進班（沒有紀錄）的學生不用點，預約請假（系統判斷）的學生只讀
+function actionGetMakeupRollCall(body) {
+  requireSession(body.token, 'teacher');
+  var date = String(body.date || '');
+  var err = checkMakeupDate_(date);
+  if (err) return { ok: false, error: err };
+  var ctx = statusCtx_();
+  var wd = weekdayOf(date);
+  var recs = {};
+  sheetToObjects(SHEET_ATTENDANCE).forEach(function (a) { if (a.schoolId === body.schoolId && String(a.date) === date) recs[a.studentId] = a; });
+  var out = [];
+  activeStudentsOf_(body.schoolId).forEach(function (st) {
+    if (!studentExistsOn_(st, date) && !recs[st.id]) return;
+    var status = ctx.status(st.id, date);
+    if (status === 'fixedOff' || (!status && ctx.isFixed(st.id, date))) return;   // 固定不進班：不用點
+    var so = studentOut_(st), a = recs[st.id], mine = !!ctx.teacherSet(a);
+    out.push({
+      id: so.id, name: so.name, grade: so.grade, status: status, locked: status === 'leave' && !mine,
+      fixedMode: so.selfDropDays.indexOf(wd) !== -1 ? 'selfDrop' : (so.selfWalkDays.indexOf(wd) !== -1 ? 'selfWalk' : ''),
+      markedBy: mine ? a.teacherName : '', markedAt: mine ? String(a.submittedAt) : '', makeup: mine && isMakeupAt_(date, a.submittedAt)
+    });
+  });
+  sortStudents(out);
+  return { ok: true, date: date, students: out };
+}
+
+// 老師端：補點名儲存（每點一位就送一次）。沿用一般點名的寫入流程，紀錄裡的送出時間晚於點名日＝補點名
+function actionSaveMakeup(body) {
+  var err = checkMakeupDate_(body.date);
+  if (err) { requireSession(body.token, 'teacher'); return { ok: false, error: err }; }
+  var records = (body.records || []).filter(function (r) { return r && PICK_STATUS_.indexOf(r.status) !== -1; });
+  return actionSubmitAttendance(Object.assign({}, body, { records: records, autosave: true, makeupDate: String(body.date) }));
+}
+var PICK_STATUS_ = ['present', 'selfDrop', 'selfWalk', 'leave'];
 
 function actionGetRollCall(body) {
   requireSession(body.token);
@@ -1642,6 +1737,11 @@ function actionSaveMarks(body) {
 function actionSubmitAttendance(body) {
   var s = requireSession(body.token, 'teacher');
   var date = today_();
+  if (body.makeupDate) {   // 補點名：補過去幾天（由 actionSaveMakeup 帶入，這裡再檢查一次）
+    var mkErr = checkMakeupDate_(body.makeupDate);
+    if (mkErr) return { ok: false, error: mkErr };
+    date = String(body.makeupDate);
+  }
   var schoolId = body.schoolId;
   var now = new Date().toISOString();
   var day = dayInfo_(date);
@@ -1898,7 +1998,11 @@ function actionGetOverview(body) {
       sc.noon = c.noon; sc.pm = c.pm; sc.noonUn = c.noonUn; sc.pmUn = c.pmUn; sc.noneUn = c.noneUn;
     });
   });
-  return { ok: true, today: d.today, todayInfo: dayInfo_(d.today, sp), special: special, dates: d.dates, presence: presenceList_(null) };
+  // 過去每天各校還沒點名的人數（含整天都沒人點的學校）→ 管理端標示「有老師未點名」
+  var days = Number(body.days) || RETENTION_DAYS;
+  var miss = missingByDay_(dateStrDaysAgo_(days), prevDate_(d.today), d.ctx), missing = {};
+  Object.keys(miss).forEach(function (dt) { missing[dt] = missingList_(miss[dt], d.schoolMap, body.schoolId || null); });
+  return { ok: true, today: d.today, todayInfo: dayInfo_(d.today, sp), special: special, dates: d.dates, missing: missing, presence: presenceList_(null) };
 }
 
 // 某一天的請假名單（全部學校或單一學校）＋ 當天各校摘要
@@ -1942,7 +2046,12 @@ function actionGetDayLeaves(body) {
       (gradeNum_(a.grade) - gradeNum_(b.grade)) || (classNum_(a.grade) - classNum_(b.grade)) ||
       String(a.name).localeCompare(String(b.name), 'zh-Hant');
   });
-  return { ok: true, date: date, schools: day.schools.filter(function (s) { return s.submitted; }), leaves: leaves };
+  var missing = [];
+  if (date < d.today) {
+    var mm = missingByDay_(date, date, ctx);
+    missing = missingList_(mm[date], d.schoolMap, schoolFilter);
+  }
+  return { ok: true, date: date, schools: day.schools.filter(function (s) { return s.submitted; }), leaves: leaves, missing: missing };
 }
 
 function actionGetSchoolDayDetail(body) {
@@ -1970,7 +2079,7 @@ function actionGetSchoolDayDetail(body) {
     return {
       id: st.id, name: st.name, grade: String(st.grade), status: status,
       wasFixedOff: fixed, contacts: so.contacts, note: so.note, booking: bk ? bookingBrief_(bk) : null, extra: exb ? bookingBrief_(exb) : null,
-      markedBy: mine ? a.teacherName : '', markedAt: mine ? String(a.submittedAt) : ''
+      markedBy: mine ? a.teacherName : '', markedAt: mine ? String(a.submittedAt) : '', makeup: mine && isMakeupAt_(date, a.submittedAt)
     };
   });
   var streaks = leaveStreaks_(date, out.map(function (x) { return x.id; }), ctx);

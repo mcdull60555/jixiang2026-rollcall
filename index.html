@@ -215,6 +215,18 @@
   .pk-noon.un{background:#fbbf24;box-shadow:inset 0 0 0 2px #d97706;}
   .pk-pm.un{background:#7cb3fa;box-shadow:inset 0 0 0 2px #2563eb;}
   /* 不用接（今天固定自走／自送）但還沒點名的人：算在未點名，用紫色和中午／下午區分 */
+  .mk-tag{display:inline-block;font-size:11.5px;font-weight:800;color:#b45309;background:#fef3c7;border:1px solid #f59e0b;padding:0 7px;border-radius:99px;margin-right:4px;}
+  .miss-tag{display:inline-block;margin-left:8px;font-size:12px;font-weight:800;color:#be123c;background:#ffe4e6;border-radius:99px;padding:1px 9px;}
+  .hday .hd-miss{margin-top:4px;font-size:11.5px;font-weight:800;color:#be123c;background:#ffe4e6;border-radius:7px;padding:1px 5px;}
+  .hday.warn{border-color:#fda4af;}
+  .mk-list{display:flex;flex-direction:column;gap:8px;margin-top:8px;}
+  .mk-item{display:flex;align-items:center;gap:10px;flex-wrap:wrap;width:100%;text-align:left;font-family:inherit;font-size:15px;background:#fff;border:1.5px solid #fda4af;border-radius:12px;padding:10px 12px;cursor:pointer;}
+  .mk-item:hover{background:#fff1f2;}
+  .mk-item .mk-date{font-weight:800;}
+  .mk-item .mk-school{flex:1 1 auto;font-weight:700;color:var(--ink,#1e293b);}
+  .mk-row td{vertical-align:middle;}
+  .mk-lock{font-size:13px;color:var(--muted);}
+  .rc-mk-n{display:inline-block;min-width:18px;margin-left:6px;padding:0 6px;border-radius:99px;background:#e11d48;color:#fff;font-size:12px;font-weight:800;line-height:18px;text-align:center;}
   .pk-none{background:#ede9fe;color:#6d28d9;}
   .pk-none.un{background:#c4b5fd;box-shadow:inset 0 0 0 2px #7c3aed;}
   .wk-d.adj{outline:2px solid currentColor;outline-offset:-2px;}
@@ -924,7 +936,7 @@ tr.bk-past td:last-child{opacity:1;}
         <div class="field-label-text">選擇學校（點一下就進入該校點名）</div>
         <div id="rollcall-school-grid" class="school-grid" role="group" aria-label="選擇學校"></div>
         <select id="rollcall-school-select" class="hidden" aria-hidden="true" tabindex="-1" onchange="loadRollCall()"><option value="">請選擇學校…</option></select>
-        <div class="field rc-bk-field" style="margin-top:4px"><button type="button" class="btn btn-secondary hidden" id="rc-bk-btn" onclick="openTeacherBookings()">📅 預約請假</button><button type="button" class="btn btn-secondary hidden" id="rc-ex-btn" onclick="openTeacherBookings('attend')">📌 臨時進班</button></div>
+        <div class="field rc-bk-field" style="margin-top:4px"><button type="button" class="btn btn-secondary hidden" id="rc-bk-btn" onclick="openTeacherBookings()">📅 預約請假</button><button type="button" class="btn btn-secondary hidden" id="rc-ex-btn" onclick="openTeacherBookings('attend')">📌 臨時進班</button><button type="button" class="btn btn-secondary" id="rc-mk-btn" onclick="openMakeup()">📝 補點名<span class="rc-mk-n hidden" id="rc-mk-n"></span></button></div>
       </div>
       <div id="rc-presence"></div>
       <div id="rollcall-banner"></div>
@@ -1034,7 +1046,7 @@ function errMsg(code) {
     USERNAME_TAKEN: '此帳號已被使用', WRONG_OLD_PASSWORD: '原密碼不正確', PASSWORD_REQUIRED: '請輸入新密碼',
     NAME_REQUIRED: '請輸入名稱', NAME_TOO_LONG: '名稱太長（最多 12 字）', SCHOOL_EXISTS: '已有同名學校',
     STUDENT_NOT_FOUND: '找不到該學生', TEACHER_NOT_FOUND: '找不到該老師', UNKNOWN_ACTION: '後端版本過舊，請重新部署 Code.gs',
-    BUSY: '目前多人同時操作中，請稍後再試一次', DATE_REQUIRED: '請選擇日期', DATE_PAST: '不能設定已經過去的日期', NOT_WEEKEND: '補班補課只能設定在星期六或星期日', NOT_WEEKDAY: '星期六、日本來就放假，不需要設定國定假日', DAY_NOT_FOUND: '這天沒有特別設定（可能已被取消）', DAY_EXISTS: '新的日期已經有設定了，請先取消那天的設定或改選其他日期', INVALID_DAYS: '有日期設定不正確，請檢查後再送出', DAY_CLOSED: '今天不能點名', BOOKING_PAST: '老師只能登記今天（含）以後的預約請假，結束日期不能早於今天', BOOKING_STARTED: '這筆預約已經結束（或要更改開始日期），請聯絡管理員處理', BOOKING_OVERLAP: '這位學生在這段期間已經有預約請假', BOOKING_NO_DAYS: '這段期間沒有上課日（都是例假日、國定假日或學生固定不進班的日子）', BOOKING_RANGE: '結束日期不能早於開始日期', BOOKING_TOO_OLD: '只能補登 40 天內的預約請假', BOOKING_TOO_LONG: '一次最多登記 120 天', BOOKING_NOT_FOUND: '找不到這筆預約（可能已被取消）', EXTRA_NOT_FIXED: '這位學生沒有設定固定不進班，不需要登記臨時進班', EXTRA_OVERLAP: '這位學生在這段期間已經有臨時進班登記', EXTRA_NO_DAYS: '這段期間沒有這位學生固定不進班的上課日，不需要登記', BATCH_EMPTY: '請至少填寫一列', BATCH_TOO_MANY: '一次最多登記 100 列', SCHOOL_NOT_FOUND: '找不到這間學校（可能已被刪除）', GRADE_REQUIRED: '請填寫年級班級', CONTACT_REQUIRED: '請至少填寫一組聯絡人與聯絡電話', INVALID_ROWS: '有學生資料不完整（姓名、年級班級、聯絡人與聯絡電話為必填）', USERNAME_REQUIRED: '請填寫登入帳號', CONFLICT: '這間學校的點名剛被其他老師更新', INCOMPLETE: '還有學生尚未點名'
+    BUSY: '目前多人同時操作中，請稍後再試一次', DATE_REQUIRED: '請選擇日期', DATE_PAST: '不能設定已經過去的日期', NOT_WEEKEND: '補班補課只能設定在星期六或星期日', NOT_WEEKDAY: '星期六、日本來就放假，不需要設定國定假日', DAY_NOT_FOUND: '這天沒有特別設定（可能已被取消）', DAY_EXISTS: '新的日期已經有設定了，請先取消那天的設定或改選其他日期', INVALID_DAYS: '有日期設定不正確，請檢查後再送出', DAY_CLOSED: '今天不能點名', BOOKING_PAST: '老師只能登記今天（含）以後的預約請假，結束日期不能早於今天', BOOKING_STARTED: '這筆預約已經結束（或要更改開始日期），請聯絡管理員處理', BOOKING_OVERLAP: '這位學生在這段期間已經有預約請假', BOOKING_NO_DAYS: '這段期間沒有上課日（都是例假日、國定假日或學生固定不進班的日子）', BOOKING_RANGE: '結束日期不能早於開始日期', BOOKING_TOO_OLD: '只能補登 40 天內的預約請假', BOOKING_TOO_LONG: '一次最多登記 120 天', BOOKING_NOT_FOUND: '找不到這筆預約（可能已被取消）', EXTRA_NOT_FIXED: '這位學生沒有設定固定不進班，不需要登記臨時進班', EXTRA_OVERLAP: '這位學生在這段期間已經有臨時進班登記', EXTRA_NO_DAYS: '這段期間沒有這位學生固定不進班的上課日，不需要登記', BATCH_EMPTY: '請至少填寫一列', BATCH_TOO_MANY: '一次最多登記 100 列', SCHOOL_NOT_FOUND: '找不到這間學校（可能已被刪除）', GRADE_REQUIRED: '請填寫年級班級', CONTACT_REQUIRED: '請至少填寫一組聯絡人與聯絡電話', INVALID_ROWS: '有學生資料不完整（姓名、年級班級、聯絡人與聯絡電話為必填）', USERNAME_REQUIRED: '請填寫登入帳號', CONFLICT: '這間學校的點名剛被其他老師更新', INCOMPLETE: '還有學生尚未點名', MAKEUP_RANGE: '只能補最近幾天（昨天以前、不含今天）的點名，這天已超過範圍'
   };
   return map[code] || ('發生錯誤（' + code + '）');
 }
@@ -1372,6 +1384,7 @@ async function enterApp() {
     renderSchoolGrid();
     STATE.dayInfo = di.day;
     renderTeacherDay();
+    refreshMakeupBadge();
     // 上次還沒存好的點選：自動補存
     restorePending();
     if (SAVE.queue.size && di.day.open) { try { await flushMarks(); } catch (e) {} }
@@ -2927,15 +2940,20 @@ async function loadOverview(silent) {
     const date = addDays(r.today, -i);
     const d = byDate[date];
     const has = d && d.schools.some(s => s.submitted);
+    const miss = (r.missing && r.missing[date]) || [];   // 這天還有學生沒點名的學校（含整天沒人點的）
+    const missTag = miss.length ? `<div class="hd-miss">⚠ ${miss.length} 校未點完</div>` : '';
     const wd = weekdayLabel(date);
     const weekend = wd === '週六' || wd === '週日';
     const sp = STATE.special[date];
     const tag = sp ? `<div class="hd-tag hd-${sp.type}">${sp.type === 'workday' ? '補班補課' : '國定假日'}</div>` : '';
     if (has) {
       const t = sumSchools(d.schools);
-      cards.push(`<button type="button" class="hday${weekend ? ' weekend' : ''}" data-date="${date}" onclick="openDayLeaves('${date}')" aria-label="${date} ${wd}，請假 ${t.leave} 人">
+      cards.push(`<button type="button" class="hday${weekend ? ' weekend' : ''}${miss.length ? ' warn' : ''}" data-date="${date}" onclick="openDayLeaves('${date}')" aria-label="${date} ${wd}，請假 ${t.leave} 人${miss.length ? '，' + miss.length + ' 校還有學生未點名' : ''}">
         <div class="hd-date">${date.slice(5).replace('-', '/')}</div><div class="hd-wd">${wd}</div>
-        <div class="hd-leave${t.leave ? ' has' : ''}">請假 ${t.leave}</div>${tag}<div class="hd-sub">${t.submitted} 校已點名</div></button>`);
+        <div class="hd-leave${t.leave ? ' has' : ''}">請假 ${t.leave}</div>${tag}${missTag}<div class="hd-sub">${t.submitted} 校已點名</div></button>`);
+    } else if (miss.length) {
+      cards.push(`<button type="button" class="hday warn${weekend ? ' weekend' : ''}" data-date="${date}" onclick="openDayLeaves('${date}')" aria-label="${date} ${wd}，${miss.length} 校沒有點名">
+        <div class="hd-date">${date.slice(5).replace('-', '/')}</div><div class="hd-wd">${wd}</div>${tag}${missTag}<div class="hd-sub">無點名紀錄</div></button>`);
     } else {
       cards.push(`<button type="button" class="hday${weekend ? ' weekend' : ''}" data-date="${date}" disabled>
         <div class="hd-date">${date.slice(5).replace('-', '/')}</div><div class="hd-wd">${wd}</div>${tag}<div class="hd-sub">${sp && sp.type === 'holiday' ? '放假' : '無點名紀錄'}</div></button>`);
@@ -2955,7 +2973,8 @@ function fmtClock(iso) {
 }
 // 送出點名的老師：同一位只列一次，不同老師依時間先後全部列出（例如上午 A 老師、下午 B 老師）
 function submittersText(list) {
-  return (list || []).map(x => `${esc(x.name)}（${esc(fmtClock(x.at))}）`).join('、') || '-';
+  // 補點名（隔天以後才補點的）加上標籤和完整日期時間，管理員看得出是誰補的
+  return (list || []).map(x => x.makeup ? `<span class="mk-tag">補點名</span>${esc(x.name)}（${esc(fmtTime(x.at))}）` : `${esc(x.name)}（${esc(fmtClock(x.at))}）`).join('、') || '-';
 }
 function presenceTagHtml(s, date) {
   if (date !== STATE.today) return '';
@@ -2972,7 +2991,7 @@ function schoolDayCardHtml(s, date, fromLeaves) {
       <span class="pill st-unmarked">尚未點名</span></div>`;
   }
   return `<div class="day-school" tabindex="0" role="button" data-school="${esc(s.schoolId)}" onclick="openDayDetail('${esc(s.schoolId)}','${esc(date)}',${fromLeaves ? 'true' : 'false'})" onkeydown="if(event.key==='Enter')this.click()">
-    <div><div class="name">${esc(s.schoolName)}${s.longLeave ? `<span class="streak-tag" role="link" tabindex="0" title="查看連續請假名單" onclick="event.stopPropagation();openLeaveTab('${esc(s.schoolId)}')">⚠ 連續請假 ${s.longLeave} 人</span>` : ''}</div><div class="meta">送出：${submittersText(s.submitters)}</div>${presenceTagHtml(s, date)}</div>
+    <div><div class="name">${esc(s.schoolName)}${s.missN ? `<span class="miss-tag">⚠ 未點名 ${s.missN} 位</span>` : ''}${s.longLeave ? `<span class="streak-tag" role="link" tabindex="0" title="查看連續請假名單" onclick="event.stopPropagation();openLeaveTab('${esc(s.schoolId)}')">⚠ 連續請假 ${s.longLeave} 人</span>` : ''}</div><div class="meta">送出：${submittersText(s.submitters)}</div>${presenceTagHtml(s, date)}</div>
     <div class="ov-right"><div class="stats">${statsHtml(s, true)}</div>${date === STATE.today ? ovPickupHtml(s) : ''}</div></div>`;
 }
 
@@ -2980,12 +2999,16 @@ function schoolDayCardHtml(s, date, fromLeaves) {
 async function openDayLeaves(date) {
   const schoolId = $('overview-school-filter').value || null;
   const r = await api('getDayLeaves', { date, schoolId });
+  const missN = {}; (r.missing || []).forEach(x => { missN[x.schoolId] = x.n; });
+  r.schools.forEach(s => { s.missN = missN[s.schoolId] || 0; });
   const t = sumSchools(r.schools);
+  const missBox = (r.missing || []).length
+    ? `<div class="banner-closed" style="background:#fff1f2;border-color:#fda4af;color:#9f1239"><b>⚠ 這天有老師未點名</b>：${r.missing.map(x => `${esc(x.schoolName)}（${x.n} 位）`).join('、')}<br><span style="font-size:13px">老師可在點名頁的「📝 補點名」補上（只能補最近幾天），補好後這裡會標示是誰補的。</span></div>` : '';
   const leaves = r.leaves.length ? `<div class="table-wrap"><table><thead><tr><th>學校</th><th>年級班級</th><th>學生姓名</th></tr></thead><tbody>
     ${r.leaves.map(x => `<tr><td>${esc(x.schoolName)}</td><td><b>${esc(x.grade) || '-'}</b></td><td><span class="p-name">${esc(x.name)}</span>${x.booking ? '<span class="bk-mini">預約</span>' : ''}${streakTagHtml(x)}</td></tr>`).join('')}
     </tbody></table></div>` : '<div class="empty">這天沒有請假的學生</div>';
   buildModal(`${date.slice(5).replace('-', '/')}（${weekdayLabel(date)}）請假名單`, `
-    <div class="rc-summary">${statsHtml(t, true)}</div>
+    ${missBox}<div class="rc-summary">${statsHtml(t, true)}</div>
     <h4>請假名單（${r.leaves.length} 人）</h4>${leaves}
     <h4>各校點名明細</h4>${r.schools.map(s => schoolDayCardHtml(s, date, true)).join('') || '<div class="empty">這天沒有點名紀錄</div>'}`,
     null, { hideConfirm: true, wide: true });
@@ -3055,7 +3078,7 @@ function statusTableHtml(students, collapse) {
       html += `<tr class="grp ${statusClass(k)}"><td colspan="3">${statusLabel(k)}・${sorted.filter(x => (x.status || '') === k).length} 人</td></tr>`;
     }
     html += `<tr${showStreak && k === 'leave' && st.leaveStreak >= LEAVE_STREAK_ALERT ? ' class="streak-row"' : ''}><td><b>${esc(st.grade) || '-'}</b></td><td>${personCellHtml(st, false, true, collapse)}${pickupTagHtml(st, false)}</td><td>${statusPillHtml(k, st.wasFixedOff || st.isFixedOff)}${st.extra ? bookingTagHtml(st.extra, false, 'attend') : ''}${k === 'leave' && st.booking ? bookingTagHtml(st.booking) : ''}${showStreak ? streakTagHtml(st) : ''}` +
-      (st.markedBy ? `<div class="marked-by">${esc(st.markedBy)} ${esc(fmtClock(st.markedAt))}</div>` : '') + noteHtml(st) + '</td></tr>';
+      (st.markedBy ? `<div class="marked-by">${st.makeup ? '<span class="mk-tag">補點名</span>' : ''}${esc(st.markedBy)} ${esc(st.makeup ? fmtTime(st.markedAt) : fmtClock(st.markedAt))}</div>` : '') + noteHtml(st) + '</td></tr>';
   });
   return `<div class="table-wrap"><table class="card-table"><thead><tr><th>年級班級</th><th>姓名 / 聯絡人</th><th>狀態 / 備註</th></tr></thead><tbody>
     ${html || '<tr><td colspan="3" class="empty">無資料</td></tr>'}</tbody></table></div>`;
@@ -3333,6 +3356,83 @@ async function handleRcConflict(data) {
     '覆蓋送出', true);
   if (ok) submitAttendance(true);
   else loadRollCall(false);
+}
+
+/* ---------------- 補點名（老師端） ---------------- */
+// 補最近幾天（昨天以前）還有學生沒點名的學校；紀錄會標示「補點名」和補點的老師，管理員在各校點名明細看得到
+async function refreshMakeupBadge() {
+  try {
+    const r = await api('listMakeup', {}, { pill: false, flash: false });
+    const n = $('rc-mk-n');
+    if (!n) return r;
+    n.textContent = r.items.length; n.classList.toggle('hidden', !r.items.length);
+    return r;
+  } catch (e) { return null; }
+}
+async function openMakeup() {
+  const r = await api('listMakeup', {}, { pill: true, flash: false });
+  const n = $('rc-mk-n'); if (n) { n.textContent = r.items.length; n.classList.toggle('hidden', !r.items.length); }
+  const list = r.items.length
+    ? `<div class="mk-list">${r.items.map(x => `<button type="button" class="mk-item" data-school="${esc(x.schoolId)}" data-date="${esc(x.date)}">
+        <span class="mk-date">${esc(x.date.slice(5).replace('-', '/'))}（${weekdayLabel(x.date)}）</span><span class="mk-school">${esc(x.schoolName)}</span><span class="pill st-unmarked">未點名 ${x.unmarked} 位</span></button>`).join('')}</div>`
+    : '<div class="empty">最近沒有需要補點名的學校 👍</div>';
+  const bg = buildModal('補點名', `<p class="hint" style="margin-top:0">可以補最近 ${r.days} 天（昨天以前、不含今天）還有學生沒點名的學校。補點名的紀錄會標示「補點名」和你的名字，管理員看得到。</p>${list}`, null, { hideConfirm: true, wide: true });
+  bg.addEventListener('click', e => {
+    const b = e.target.closest('.mk-item');
+    if (b) openMakeupSchool(b.dataset.school, b.dataset.date);
+  });
+}
+async function openMakeupSchool(schoolId, date) {
+  const school = (STATE.schools || []).find(x => x.id === schoolId);
+  let r;
+  try { r = await api('getMakeupRollCall', { schoolId, date }, { pill: true, flash: false }); }
+  catch (e) { toast(e.message === 'DAY_CLOSED' ? '這天不能點名' : errMsg(e.message), true); return; }
+  const students = r.students;
+  const rowHtml = st => `<tr class="mk-row" data-sid="${esc(st.id)}" data-status="${esc(st.status || '')}">
+      <td><b>${esc(st.grade) || '-'}</b></td>
+      <td><div class="p-name">${esc(st.name)}</div>${fixedModeTagHtml(st.fixedMode)}${st.markedBy ? `<div class="marked-by">${st.makeup ? '<span class="mk-tag">補點名</span>' : ''}${esc(st.markedBy)} ${esc(fmtClock(st.markedAt))}</div>` : ''}</td>
+      <td>${st.locked ? `<span class="pill st-leave">預約請假</span> <span class="mk-lock">（系統依預約判斷，不能在這裡改）</span>`
+        : `<div class="st-group" role="group" aria-label="${esc(st.name)} 出席狀態">${PICK.map(k => `<button type="button" class="st-btn st-${k}${st.status === k ? ' on' : ''}" data-st="${k}" aria-pressed="${st.status === k}">${STATUS[k].label}</button>`).join('')}</div>`}</td></tr>`;
+  const todo = students.filter(st => !st.status), done = students.filter(st => st.status);
+  const body = (todo.length ? `<tr class="sec sec-todo"><td colspan="3">未點名（請點選出席狀態）</td></tr>` + todo.map(rowHtml).join('') : '') +
+    (done.length ? `<tr class="sec sec-done"><td colspan="3">已點名（如需更改可直接點選）</td></tr>` + done.map(rowHtml).join('') : '');
+  const bg = buildModal(`補點名　${date.slice(5).replace('-', '/')}（${weekdayLabel(date)}）${school ? school.name : ''}`,
+    `<button type="button" class="btn btn-secondary btn-sm back-link" id="mk-back">← 回到補點名清單</button>
+     <div class="savebar" id="mk-savebar" role="status" aria-live="polite">點選出席狀態後會自動儲存，並標示為補點名</div>
+     <div class="rc-summary" id="mk-summary"></div>
+     <div class="table-wrap"><table class="card-table rc-table"><thead><tr><th>年級班級</th><th>姓名</th><th>出席狀態</th></tr></thead><tbody>${body || '<tr><td colspan="3" class="empty">這天沒有需要點名的學生</td></tr>'}</tbody></table></div>`,
+    null, { hideConfirm: true, wide: true });
+  const sum = () => {
+    const rows = [...bg.querySelectorAll('.mk-row')];
+    const left = rows.filter(tr => !tr.dataset.status).length;
+    $('mk-summary').innerHTML = left ? `<span class="pill st-unmarked">還有 ${left} 位未點名</span>` : '<span class="pill st-present">✔ 這天已全部點完</span>';
+  };
+  sum();
+  const bar = (cls, html) => { const el = $('mk-savebar'); if (el) { el.className = 'savebar ' + cls; el.innerHTML = html; } };
+  let saving = 0;
+  bg.addEventListener('click', async e => {
+    if (e.target.closest('#mk-back')) { openMakeup(); return; }
+    const btn = e.target.closest('.st-btn');
+    if (!btn) return;
+    const tr = btn.closest('.mk-row'), status = btn.dataset.st, prev = tr.dataset.status || '';
+    if (status === prev) return;
+    const setRow = v => {
+      tr.dataset.status = v;
+      tr.querySelectorAll('.st-btn').forEach(b => { const on = b.dataset.st === v; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
+      sum();
+    };
+    setRow(status);
+    saving++; bar('saving', '<span class="spin" aria-hidden="true"></span> 儲存中…');
+    try {
+      await api('saveMakeup', { schoolId, date, records: [{ studentId: tr.dataset.sid, status }] }, { pill: false, flash: false });
+      saving--;
+      if (!saving) bar('ok', `✓ 已儲存為補點名（${esc(fmtClock(new Date().toISOString()))}）`);
+    } catch (err) {
+      saving--;
+      setRow(prev);   // 沒存成功：改回原本的狀態，請老師再點一次
+      bar('warn', `⚠ 沒有儲存成功（${esc(err.message === 'DAY_CLOSED' ? '這天不能點名' : errMsg(err.message) || '網路不穩')}），請再點一次`);
+    }
+  });
 }
 
 /* ---------------- 點名自動儲存 ---------------- */
