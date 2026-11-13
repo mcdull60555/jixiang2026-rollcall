@@ -214,6 +214,9 @@
   /* 未點標籤：字色不變，底色加深一階和「接」區分 */
   .pk-noon.un{background:#fbbf24;box-shadow:inset 0 0 0 2px #d97706;}
   .pk-pm.un{background:#7cb3fa;box-shadow:inset 0 0 0 2px #2563eb;}
+  /* 不用接（今天固定自走／自送）但還沒點名的人：算在未點名，用紫色和中午／下午區分 */
+  .pk-none{background:#ede9fe;color:#6d28d9;}
+  .pk-none.un{background:#c4b5fd;box-shadow:inset 0 0 0 2px #7c3aed;}
   .wk-d.adj{outline:2px solid currentColor;outline-offset:-2px;}
   .pk-tag{display:inline-block;font-size:12px;padding:1px 9px;border-radius:99px;font-weight:800;border:0;line-height:1.5;}
   button.pk-tag{cursor:pointer;font-family:inherit;}
@@ -2876,10 +2879,11 @@ function sumSchools(schools) {
 }
 // 管理員總覽：中午接（黃）／下午接（藍），各自附上還沒點名的人數
 function ovPickupHtml(s) {
-  if (s.noon == null || !(s.noon || s.pm)) return '';
+  if (s.noon == null || !(s.noon || s.pm || s.noneUn)) return '';
   const tag = (cls, txt) => `<span class="pk-tag ${cls}">${txt}</span>`;
   const col = (cls, name, n, un) => n ? `<span class="ov-pk-col">${tag(cls, name + '接 ' + n)}${un ? tag(cls + ' un', name + '未點 ' + un) : ''}</span>` : '';
-  return `<div class="ov-pk">${col('pk-noon', '中午', s.noon, s.noonUn)}${col('pk-pm', '下午', s.pm, s.pmUn)}</div>`;
+  const none = s.noneUn ? `<span class="ov-pk-col">${tag('pk-none un', '自走／自送未點 ' + s.noneUn)}</span>` : '';   // 未點名 = 中午未點 + 下午未點 + 這裡
+  return `<div class="ov-pk">${col('pk-noon', '中午', s.noon, s.noonUn)}${col('pk-pm', '下午', s.pm, s.pmUn)}${none}</div>`;
 }
 function weekdayLabel(dateStr) { return '週' + DOW[(new Date(dateStr + 'T12:00:00').getDay() + 6) % 7]; }
 function fmtTime(iso) {
@@ -3237,15 +3241,21 @@ $('rollcall-container').addEventListener('click', async e => {
   sendPresence();
 });
 
-const RC_ALERT_MAX = 5;   // 剩下幾位以內沒點名，就讓鈴鐺閃爍提醒
+const RC_ALERT_MAX = 5;   // 剩下幾位以內沒點名，就讓鈴鐺閃爍提醒（中午接、下午接各自算）
 function updateRcSummary() {
   const rows = [...document.querySelectorAll('#rollcall-container .rc-row')];
   const list = rows.map(tr => ({ status: tr.dataset.status, pickup: tr.dataset.pk }));
   $('rc-summary').innerHTML = statsHtml(countStatuses(list), true, true);
-  // 已經點過至少一位、而且只剩 5 位以內沒點名 → 這幾位姓名前面的鈴鐺閃爍
-  const left = rows.filter(tr => !tr.dataset.status);
-  const alertOn = left.length > 0 && left.length <= RC_ALERT_MAX && left.length < rows.length;
-  rows.forEach(tr => tr.classList.toggle('rc-alert', alertOn && !tr.dataset.status));
+  // 鈴鐺：中午接、下午接各自計算——該時段已經點過至少一位、而且只剩 5 位以內沒點名 → 這幾位姓名前面的鈴鐺閃爍
+  // （不用接的人＝今天固定自走／自送，沒有時段，照整間學校剩幾位算）
+  const alertOf = group => { const left = group.filter(tr => !tr.dataset.status); return left.length > 0 && left.length <= RC_ALERT_MAX && left.length < group.length; };
+  const noonOn = alertOf(rows.filter(tr => tr.dataset.pk === 'noon'));
+  const pmOn = alertOf(rows.filter(tr => tr.dataset.pk === 'pm'));
+  const allOn = alertOf(rows);
+  rows.forEach(tr => {
+    const on = tr.dataset.pk === 'noon' ? noonOn : tr.dataset.pk === 'pm' ? pmOn : allOn;
+    tr.classList.toggle('rc-alert', on && !tr.dataset.status);
+  });
   updateRcPkTabs();
 }
 // 點「未點名」方塊：捲到第一位還沒點名的學生並稍微標示（只找目前分頁看得到的）
@@ -3493,6 +3503,7 @@ async function sendPresence(throwErr) {
         s.todayPm = r.counts ? (c ? c.pm : 0) : null;
         s.todayNoonUn = r.counts ? (c ? c.noonUn : 0) : null;
         s.todayPmUn = r.counts ? (c ? c.pmUn : 0) : null;
+        s.todayNoneUn = r.counts ? (c ? c.noneUn : 0) : null;
       });
     }
     renderPresence();
@@ -3524,7 +3535,8 @@ function schoolCountsHtml(s) {
   const tag = (cls, txt) => `<span class="pk-tag ${cls}">${txt}</span>`;
   const col = (cls, n, un2, name) => `<span class="sc-col">${n ? tag(cls, name + '接 ' + n) : ''}${un > 0 && un2 ? tag(cls + ' un', name + '未點 ' + un2) : ''}</span>`;
   const cols = (s.todayNoon || s.todayPm) ? `<span class="sc-cols">${col('pk-noon', s.todayNoon, s.todayNoonUn, '中午')}${col('pk-pm', s.todayPm, s.todayPmUn, '下午')}</span>` : '';
-  return `<span class="sc-meta">今日需進班 <b>${s.todayNeed}</b> 位</span>` + cols +
+  const none = un > 0 && s.todayNoneUn ? `<span class="sc-cols"><span class="sc-col">${tag('pk-none un', '自走／自送未點 ' + s.todayNoneUn)}</span></span>` : '';
+  return `<span class="sc-meta">今日需進班 <b>${s.todayNeed}</b> 位</span>` + cols + none +
     (s.todayNeed === 0 ? '<span class="sc-un zero">今天沒有人需進班</span>'
       : un > 0 ? `<span class="sc-un">未點名 ${un} 位</span>`
         : '<span class="sc-un done">✔ 已全部點名</span>');
