@@ -2277,12 +2277,17 @@ function unmarkedBySlot_() {
   if (!ctx.isOpen(today)) return null;
   var pk = pickupCtx_();
   var schools = {};
-  activeSchools_().forEach(function (sc) { schools[sc.id] = { name: sc.name, noon: [], pm: [] }; });
+  activeSchools_().forEach(function (sc) { schools[sc.id] = { name: sc.name, noon: [], pm: [], walk: [] }; });
+  var wd = ctx.wdOf(today);
   sheetToObjects(SHEET_STUDENTS).forEach(function (st) {
     if (!isActive_(st.active) || !schools[st.schoolId]) return;
     if (ctx.status(st.id, today)) return;
     var p = pickupSlotFor_(st, today, ctx, pk);
-    if (!p) return;
+    if (!p) {   // 今天固定自走／自送、不用接但老師還沒點：下午接的提醒一起列出（標註自走或自送）
+      var tag = parseDays_(st.selfDropDays).indexOf(wd) !== -1 ? '自送' : '自走';
+      schools[st.schoolId].walk.push(Object.assign({}, st, { tag: tag }));
+      return;
+    }
     schools[st.schoolId][p.slot].push(st);
   });
   return { date: today, schools: schools };
@@ -2295,11 +2300,14 @@ function buildReminderText_(r, data) {
     .sort(function (a, b) { return String(a.name).localeCompare(String(b.name), 'zh-Hant'); })
     .forEach(function (sc) {
       var list = sortStudents(sc[r.slot].slice());
-      if (!list.length) return;
-      schools++; total += list.length;
+      var walk = r.slot === 'pm' ? sortStudents(sc.walk.slice()) : [];   // 固定自走／自送的只加在下午接提醒，放在該校名單最後面
+      if (!list.length && !walk.length) return;
+      schools++; total += list.length + walk.length;
+      var nm = function (st) { return st.name + '(' + st.grade + ')'; };
       lines.push('');
-      lines.push('【' + sc.name + '】' + list.length + ' 位');
-      lines.push(list.map(function (st) { return st.name + '(' + st.grade + ')'; }).join('、'));
+      lines.push('【' + sc.name + '】' + (list.length + walk.length) + ' 位');
+      if (list.length) lines.push(list.map(nm).join('、'));
+      if (walk.length) lines.push('固定自走／自送：' + walk.map(function (st) { return nm(st) + '[' + st.tag + ']'; }).join('、'));
     });
   if (!total) return '';
   var hm = ('0' + r.hour).slice(-2) + ':' + ('0' + r.minute).slice(-2);
