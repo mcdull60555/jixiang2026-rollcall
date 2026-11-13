@@ -226,6 +226,7 @@
   .mk-item .mk-school{flex:1 1 auto;font-weight:700;color:var(--ink,#1e293b);}
   .mk-row td{vertical-align:middle;}
   .mk-lock{font-size:13px;color:var(--muted);}
+  .mk-done{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;}
   .rc-mk-n{display:inline-block;min-width:18px;margin-left:6px;padding:0 6px;border-radius:99px;background:#e11d48;color:#fff;font-size:12px;font-weight:800;line-height:18px;text-align:center;}
   .pk-none{background:#ede9fe;color:#6d28d9;}
   .pk-none.un{background:#c4b5fd;box-shadow:inset 0 0 0 2px #7c3aed;}
@@ -3403,7 +3404,8 @@ async function openMakeupSchool(schoolId, date) {
     `<button type="button" class="btn btn-secondary btn-sm back-link" id="mk-back">← 回到補點名清單</button>
      <div class="savebar" id="mk-savebar" role="status" aria-live="polite">點選出席狀態後會自動儲存，並標示為補點名</div>
      <div class="rc-summary" id="mk-summary"></div>
-     <div class="table-wrap"><table class="card-table rc-table"><thead><tr><th>年級班級</th><th>姓名</th><th>出席狀態</th></tr></thead><tbody>${body || '<tr><td colspan="3" class="empty">這天沒有需要點名的學生</td></tr>'}</tbody></table></div>`,
+     <div class="table-wrap"><table class="card-table rc-table"><thead><tr><th>年級班級</th><th>姓名</th><th>出席狀態</th></tr></thead><tbody>${body || '<tr><td colspan="3" class="empty">這天沒有需要點名的學生</td></tr>'}</tbody></table></div>
+     <div class="mk-done"><button type="button" class="btn btn-primary" id="mk-done">✔ 完成補點名</button><span class="hint" style="margin:0;align-self:center">每點一位都已自動儲存；按「完成補點名」確認並回到清單</span></div>`,
     null, { hideConfirm: true, wide: true });
   const sum = () => {
     const rows = [...bg.querySelectorAll('.mk-row')];
@@ -3415,6 +3417,19 @@ async function openMakeupSchool(schoolId, date) {
   let saving = 0;
   bg.addEventListener('click', async e => {
     if (e.target.closest('#mk-back')) { openMakeup(); return; }
+    if (e.target.closest('#mk-done')) {   // 確認鍵：等儲存完、還有人沒點就再確認一次，然後回到清單
+      const left = [...bg.querySelectorAll('.mk-row')].filter(tr => !tr.dataset.status).length;
+      if (left) {
+        const ok = await confirmBox('還有學生未點名', `這天還有 <b>${left}</b> 位學生沒點名，確定先結束嗎？<br><span style="color:var(--muted);font-size:13px">之後還可以再進來補（限最近幾天內）。<br>按「取消」會回到名單繼續補點名。</span>`, '確定');
+        if (!ok) return;
+      }
+      busyStart('儲存中，請稍候…');
+      for (let i = 0; i < 50 && saving; i++) await new Promise(r => setTimeout(r, 200));
+      if (saving) { busyEnd(false); toast('還有學生尚未儲存完成，請確認網路後再按一次', true); return; }
+      busyEnd(true, left ? `補點名已儲存（還有 ${left} 位未點名）` : '補點名完成，已全部點完');
+      openMakeup();
+      return;
+    }
     const btn = e.target.closest('.st-btn');
     if (!btn) return;
     const tr = btn.closest('.mk-row'), status = btn.dataset.st, prev = tr.dataset.status || '';
