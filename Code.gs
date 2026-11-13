@@ -2208,12 +2208,7 @@ function lineConfigured_() { return !!lineProps_().getProperty('LINE_CHANNEL_TOK
 function linePush_(text, onlyTo) {
   var p = lineProps_(), token = p.getProperty('LINE_CHANNEL_TOKEN'), to = onlyTo ? [onlyTo] : lineTargets_();
   if (!token || !to.length) return { ok: false, error: 'LINE_NOT_CONFIGURED' };
-  var chunks = [], cur = '';
-  String(text).split('\n').forEach(function (line) {
-    if ((cur + '\n' + line).length > 4500 && cur) { chunks.push(cur); cur = line; }
-    else cur = cur ? cur + '\n' + line : line;
-  });
-  if (cur) chunks.push(cur);
+  var chunks = lineChunks_(text);
   var err = '';
   to.forEach(function (target) {
     chunks.forEach(function (chunk) {
@@ -2231,7 +2226,35 @@ function linePush_(text, onlyTo) {
   return err ? { ok: false, error: err } : { ok: true };
 }
 
-function linePushTo_(target, text) { return linePush_(text, target); }   // 只發給指定的一個群組（綁定／解除的確認訊息用）
+// 文字依長度切成多則（LINE 單則上限 5000 字）
+function lineChunks_(text) {
+  var chunks = [], cur = '';
+  String(text).split('\n').forEach(function (line) {
+    if ((cur + '\n' + line).length > 4500 && cur) { chunks.push(cur); cur = line; }
+    else cur = cur ? cur + '\n' + line : line;
+  });
+  if (cur) chunks.push(cur);
+  return chunks;
+}
+
+// 用「回覆」回答群組裡的口令（reply 訊息通常不計入每月推播則數）；一次最多 5 則，超過的截掉
+function lineReply_(replyToken, text) {
+  var p = lineProps_(), token = p.getProperty('LINE_CHANNEL_TOKEN');
+  if (!token || !replyToken) return { ok: false, error: 'LINE_NOT_CONFIGURED' };
+  var chunks = lineChunks_(text);
+  if (chunks.length > 5) { chunks = chunks.slice(0, 5); chunks[4] += '\n…（名單太長，請到點名系統查看完整內容）'; }
+  var err = '';
+  try {
+    var res = UrlFetchApp.fetch('https://api.line.me/v2/bot/message/reply', {
+      method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+      headers: { Authorization: 'Bearer ' + token },
+      payload: JSON.stringify({ replyToken: replyToken, messages: chunks.map(function (c) { return { type: 'text', text: c }; }) })
+    });
+    if (res.getResponseCode() !== 200) err = res.getResponseCode() + ' ' + res.getContentText().slice(0, 300);
+  } catch (e) { err = String(e && e.message || e); }
+  p.setProperty('LINE_LAST_ERROR', err ? new Date().toISOString() + ' ' + err : '');
+  return err ? { ok: false, error: err } : { ok: true };
+}
 
 function lineDateLabel_(d) {
   var w = ['', '一', '二', '三', '四', '五', '六', '日'][weekdayOf(d)];
@@ -2324,8 +2347,8 @@ function createLineReminderTrigger() {
 function handleLineWebhook_(body) {
   (body.events || []).forEach(function (ev) {
     if (!ev || ev.type !== 'message' || !ev.message || ev.message.type !== 'text') return;
-    var text = String(ev.message.text).trim();
-    if (text !== LINE_BIND_KEYWORD && text !== LINE_UNBIND_KEYWORD) return;
+    if (ev.deliveryContext && ev.deliveryContext.isRedelivery) return;   // LINE 重送的事件不重複處理
+    var text = String(ev.message.text).replace(/　/g, ' ').trim();
     var src = ev.source || {};
     var id = src.groupId || src.roomId;
     if (!id) return;   // 只處理群組／多人聊天室，不處理一對一聊天
@@ -2333,14 +2356,199 @@ function handleLineWebhook_(body) {
     if (text === LINE_BIND_KEYWORD) {
       if (at === -1) list.push(id);
       lineProps_().setProperty('LINE_GROUP_ID', list.join(','));
-      linePushTo_(id, (at === -1 ? '✅ 已綁定這個群組為「基翔點名」通知對象' : '✅ 這個群組已經綁定過了') +
-        '\n目前共 ' + list.length + ' 個通知群組\n之後會在這裡通知：預約請假／臨時進班的新增、修改、取消，以及 13:00 中午接、16:30 下午接未點名提醒');
-    } else {
+      lineReply_(ev.replyToken, (at === -1 ? '✅ 已綁定這個群組為「基翔點名」通知對象' : '✅ 這個群組已經綁定過了') +
+        '\n目前共 ' + list.length + ' 個通知群組\n之後會在這裡通知：13:00 中午接、16:30 下午接未點名提醒\n傳「指令」可以查看可用的查詢口令');
+    } else if (text === LINE_UNBIND_KEYWORD) {
       if (at !== -1) list.splice(at, 1);
       lineProps_().setProperty('LINE_GROUP_ID', list.join(','));
-      linePushTo_(id, at !== -1 ? '✅ 已解除這個群組的點名通知\n目前剩 ' + list.length + ' 個通知群組' : '這個群組本來就沒有綁定');
+      lineReply_(ev.replyToken, at !== -1 ? '✅ 已解除這個群組的點名通知\n目前剩 ' + list.length + ' 個通知群組' : '這個群組本來就沒有綁定');
+    } else if (at !== -1) {   // 查詢口令：只回答已綁定的群組，沒綁定的群組不會得到學生資料
+      var out = null;
+      try { out = lineCommandReply_(text); }
+      catch (e) { lineProps_().setProperty('LINE_LAST_ERROR', new Date().toISOString() + ' 口令「' + text + '」失敗：' + String(e && e.message || e)); out = '查詢失敗，請稍後再試，或到點名系統查看'; }
+      if (out) lineReply_(ev.replyToken, out);
     }
   });
+}
+
+// =====================================================================
+// ---------- 群組查詢口令（用回覆的方式回答，只有被問到才回覆）----------
+// 未點名／點名進度／今日請假／臨時進班／今日接送／明日請假／查 姓名／指令
+// =====================================================================
+var LINE_STATUS_LABEL_ = { '': '未點名', present: '已到班', selfDrop: '自送', selfWalk: '自走', leave: '請假', fixedOff: '今天固定不進班' };
+
+function lineCommandReply_(raw) {
+  var t = String(raw).replace(/　/g, ' ').trim();
+  var m = t.match(/^查\s+(.+)$/);
+  if (m) return lineCmdStudent_(m[1].trim());
+  switch (t) {
+    case '未點名': return lineCmdUnmarked_();
+    case '點名進度': return lineCmdProgress_();
+    case '今日請假': return lineCmdLeaveToday_();
+    case '臨時進班': return lineCmdAttendToday_();
+    case '今日接送': return lineCmdPickup_();
+    case '明日請假': return lineCmdNextDay_();
+    case '指令': return lineCmdHelp_();
+  }
+  return null;
+}
+
+function lineCmdHelp_() {
+  return ['📖 小管家可用口令（在群組傳這些字就會回覆）', '',
+    '未點名：現在還沒點名的學生', '點名進度：各校已點名／應到人數', '今日請假：今天請假的學生', '臨時進班：今天臨時進班的學生',
+    '今日接送：各校今天中午接、下午接、自走、自送人數', '明日請假：下個上課日的預約請假與臨時進班', '查 王小明：查一位學生今天的狀態與預約', '指令：顯示這份說明'].join('\n');
+}
+
+function lineDayCtx_() {
+  var ctx = statusCtx_(), schools = {};
+  activeSchools_().forEach(function (sc) { schools[sc.id] = sc.name; });
+  var students = sheetToObjects(SHEET_STUDENTS).filter(function (st) { return isActive_(st.active) && schools[st.schoolId]; });
+  return { ctx: ctx, today: ctx.today, schools: schools, students: students, pk: pickupCtx_() };
+}
+function lineClosedText_(d, date) { return lineDateLabel_(date || d.today) + ' 不是上課日（例假日／國定假日）'; }
+function lineSpan_(a, b) { return a === b ? lineDateLabel_(a) : lineDateLabel_(a) + '～' + lineDateLabel_(b); }
+function lineNow_() { return Utilities.formatDate(new Date(), TZ, 'HH:mm'); }
+
+// 依學校分組輸出；items 是學生資料列（附帶欄位），fmt 決定每人一行的內容
+function lineBySchool_(d, items, fmt) {
+  var by = {}, ids = [];
+  items.forEach(function (it) { if (!by[it.schoolId]) { by[it.schoolId] = []; ids.push(it.schoolId); } by[it.schoolId].push(it); });
+  ids.sort(function (a, b) { return String(d.schools[a]).localeCompare(String(d.schools[b]), 'zh-Hant'); });
+  var lines = [];
+  ids.forEach(function (sid) {
+    lines.push(''); lines.push('【' + d.schools[sid] + '】' + by[sid].length + ' 位');
+    sortStudents(by[sid]).forEach(function (it) { lines.push(fmt(it)); });
+  });
+  return lines;
+}
+function lineWho_(st) { return st.name + '（' + st.grade + '）'; }
+
+function lineCmdUnmarked_() {
+  var data = unmarkedBySlot_();
+  if (!data) return lineClosedText_({ today: today_() });
+  var lines = [], total = 0, n = 0;
+  Object.keys(data.schools).map(function (k) { return data.schools[k]; })
+    .sort(function (a, b) { return String(a.name).localeCompare(String(b.name), 'zh-Hant'); })
+    .forEach(function (sc) {
+      var noon = sortStudents(sc.noon.slice()), pm = sortStudents(sc.pm.slice()), walk = sortStudents(sc.walk.slice());
+      var cnt = noon.length + pm.length + walk.length;
+      if (!cnt) return;
+      n++; total += cnt;
+      var nm = function (st) { return st.name + '(' + st.grade + ')'; };
+      lines.push(''); lines.push('【' + sc.name + '】' + cnt + ' 位');
+      if (noon.length) lines.push('中午接：' + noon.map(nm).join('、'));
+      if (pm.length) lines.push('下午接：' + pm.map(nm).join('、'));
+      walk.forEach(function (st) { lines.push('📌 ' + nm(st) + '[固定' + st.tag + ']'); });
+    });
+  var head = '📋 目前未點名（' + lineNow_() + '）\n' + lineDateLabel_(data.date);
+  if (!total) return head + '\n✅ 全部都點完了';
+  return head + '\n共 ' + n + ' 校、' + total + ' 位\n' + lines.join('\n');
+}
+
+function lineCmdProgress_() {
+  var d = lineDayCtx_();
+  if (!d.ctx.isOpen(d.today)) return lineClosedText_(d);
+  var counts = todayCounts_() || {}, lines = [], need = 0, un = 0;
+  Object.keys(d.schools).sort(function (a, b) { return String(d.schools[a]).localeCompare(String(d.schools[b]), 'zh-Hant'); }).forEach(function (sid) {
+    var c = counts[sid];
+    if (!c || !c.need) return;
+    need += c.need; un += c.unmarked;
+    lines.push('【' + d.schools[sid] + '】已點 ' + (c.need - c.unmarked) + '/' + c.need + (c.unmarked ? '，未點 ' + c.unmarked : ' ✅'));
+  });
+  if (!lines.length) return lineDateLabel_(d.today) + ' 今天沒有需要點名的學生';
+  return '📊 點名進度（' + lineNow_() + '）\n' + lineDateLabel_(d.today) + '　全部已點 ' + (need - un) + '/' + need + '\n（應到＝扣除請假與固定不進班）\n\n' + lines.join('\n');
+}
+
+function lineCmdLeaveToday_() {
+  var d = lineDayCtx_();
+  if (!d.ctx.isOpen(d.today)) return lineClosedText_(d);
+  var items = [];
+  d.students.forEach(function (st) {
+    if (d.ctx.status(st.id, d.today) !== 'leave') return;
+    items.push(Object.assign({}, st, { b: d.ctx.bookingOn(st.id, d.today) }));
+  });
+  if (!items.length) return '🔴 ' + lineDateLabel_(d.today) + ' 今天沒有人請假';
+  return '🔴 今日請假\n' + lineDateLabel_(d.today) + '，共 ' + items.length + ' 位\n' + lineBySchool_(d, items, function (it) {
+    return '🔴 ' + lineWho_(it) + ' ' + (it.b ? lineSpan_(it.b.startDate, it.b.endDate) + (it.b.reason ? '｜' + it.b.reason : '') : '（當天點名請假）');
+  }).join('\n');
+}
+
+function lineCmdAttendToday_() {
+  var d = lineDayCtx_();
+  if (!d.ctx.isOpen(d.today)) return lineClosedText_(d);
+  var items = [];
+  d.students.forEach(function (st) {
+    var b = d.ctx.extraOn(st.id, d.today);
+    if (b) items.push(Object.assign({}, st, { b: b }));
+  });
+  if (!items.length) return '🟢 ' + lineDateLabel_(d.today) + ' 今天沒有臨時進班';
+  return '🟢 今日臨時進班\n' + lineDateLabel_(d.today) + '，共 ' + items.length + ' 位\n' + lineBySchool_(d, items, function (it) {
+    return '🟢 ' + lineWho_(it) + ' ' + lineSpan_(it.b.startDate, it.b.endDate) + (it.b.reason ? '｜' + it.b.reason : '');
+  }).join('\n');
+}
+
+function lineCmdPickup_() {
+  var d = lineDayCtx_();
+  if (!d.ctx.isOpen(d.today)) return lineClosedText_(d);
+  var wd = d.ctx.wdOf(d.today), by = {}, tot = { noon: 0, pm: 0, walk: 0, drop: 0, leave: 0 };
+  d.students.forEach(function (st) {
+    var c = by[st.schoolId] = by[st.schoolId] || { noon: 0, pm: 0, walk: 0, drop: 0, leave: 0 };
+    var s = d.ctx.status(st.id, d.today);
+    if (s === 'fixedOff') return;
+    if (s === 'leave') { c.leave++; tot.leave++; return; }
+    var p = pickupSlotFor_(st, d.today, d.ctx, d.pk);
+    var k = p ? p.slot : (parseDays_(st.selfDropDays).indexOf(wd) !== -1 ? 'drop' : 'walk');
+    c[k]++; tot[k]++;
+  });
+  var line = function (c) { return '中午接 ' + c.noon + '｜下午接 ' + c.pm + '｜自走 ' + c.walk + '｜自送 ' + c.drop + (c.leave ? '（請假 ' + c.leave + '）' : ''); };
+  var lines = Object.keys(d.schools).sort(function (a, b) { return String(d.schools[a]).localeCompare(String(d.schools[b]), 'zh-Hant'); })
+    .filter(function (sid) { var c = by[sid]; return c && (c.noon + c.pm + c.walk + c.drop + c.leave); })
+    .map(function (sid) { return '【' + d.schools[sid] + '】' + line(by[sid]); });
+  if (!lines.length) return lineDateLabel_(d.today) + ' 今天沒有學生需要接送';
+  return '🚌 今日接送\n' + lineDateLabel_(d.today) + '\n\n' + lines.join('\n') + '\n\n全部：' + line(tot);
+}
+
+function lineCmdNextDay_() {
+  var d = lineDayCtx_(), day = d.today, i = 0;
+  do { day = nextDate_(day); i++; } while (!d.ctx.isOpen(day) && i < 14);
+  if (!d.ctx.isOpen(day)) return '近期沒有上課日';
+  var items = [];
+  d.students.forEach(function (st) {
+    var lv = d.ctx.bookingOn(st.id, day), ex = d.ctx.extraOn(st.id, day);
+    if (lv) items.push(Object.assign({}, st, { b: lv, kind: 'leave' }));
+    if (ex) items.push(Object.assign({}, st, { b: ex, kind: 'attend' }));
+  });
+  var label = (day === nextDate_(d.today) ? '明日 ' : '下個上課日 ') + lineDateLabel_(day);
+  if (!items.length) return '📅 ' + label + ' 沒有預約請假或臨時進班';
+  return '📅 ' + label + ' 預約\n共 ' + items.length + ' 筆\n' + lineBySchool_(d, items, function (it) {
+    return (it.kind === 'attend' ? '🟢 ' : '🔴 ') + lineWho_(it) + ' [' + (it.kind === 'attend' ? '進班' : '請假') + '] ' + lineSpan_(it.b.startDate, it.b.endDate) + (it.b.reason ? '｜' + it.b.reason : '');
+  }).join('\n');
+}
+
+function lineCmdStudent_(name) {
+  var d = lineDayCtx_();
+  var hit = d.students.filter(function (st) { return String(st.name).indexOf(name) !== -1; });
+  if (!hit.length) return '找不到「' + name + '」，請確認姓名';
+  hit = sortStudents(hit);
+  if (hit.length > 5) {
+    return '符合「' + name + '」的有 ' + hit.length + ' 位，請輸入完整姓名：\n' + hit.slice(0, 10).map(function (st) { return st.name + '（' + d.schools[st.schoolId] + ' ' + st.grade + '）'; }).join('\n');
+  }
+  var open = d.ctx.isOpen(d.today), wd = d.ctx.wdOf(d.today);
+  return hit.map(function (st) {
+    var lines = ['👤 ' + lineWho_(st) + '　' + d.schools[st.schoolId]];
+    if (!open) lines.push('今天：不是上課日');
+    else {
+      var s = d.ctx.status(st.id, d.today), p = pickupSlotFor_(st, d.today, d.ctx, d.pk), how;
+      if (s === 'fixedOff') how = '';
+      else if (p) how = p.slot === 'noon' ? '中午接' : '下午接';
+      else how = parseDays_(st.selfDropDays).indexOf(wd) !== -1 ? '固定自送' : '固定自走';
+      lines.push('今天：' + LINE_STATUS_LABEL_[s] + (how ? '｜' + how : ''));
+    }
+    var upcoming = function (list) { return (list || []).filter(function (b) { return b.endDate >= d.today; }).sort(function (a, b) { return a.startDate < b.startDate ? -1 : 1; }).slice(0, 5); };
+    upcoming(d.ctx.bookings[st.id]).forEach(function (b) { lines.push('🔴 預約請假：' + lineSpan_(b.startDate, b.endDate) + (b.reason ? '｜' + b.reason : '')); });
+    upcoming(d.ctx.extras[st.id]).forEach(function (b) { lines.push('🟢 臨時進班：' + lineSpan_(b.startDate, b.endDate) + (b.reason ? '｜' + b.reason : '')); });
+    return lines.join('\n');
+  }).join('\n\n');
 }
 
 // ---------- 手動執行用（在編輯器選函式 > 執行）----------
