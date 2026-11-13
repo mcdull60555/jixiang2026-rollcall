@@ -1340,8 +1340,8 @@ function actionSaveBooking(body) {
   var row = bookingRow_(s, kind, c, new Date().toISOString());
   if (c.old) {
     updateObjectByRow(bkSheet_(kind), c.old._row, row);
-    var o = c.old;   // 日期或原因真的有改才通知
-    if (o.startDate !== row.startDate || o.endDate !== row.endDate || String(o.reason || '') !== String(row.reason || '') || o.studentId !== row.studentId) {
+    var o = c.old;   // 日期或學生有改才通知（只改原因不通知）
+    if (o.startDate !== row.startDate || o.endDate !== row.endDate || o.studentId !== row.studentId) {
       notifyBookingsLine_(s, kind, [{ row: row, days: c.days, st: c.st, old: o }], 'edit');
     }
   } else {
@@ -2261,6 +2261,7 @@ function notifyBookingsLine_(s, kind, entries, action) {
     var name = kind === 'attend' ? '臨時進班' : '預約請假';
     var title = { add: (kind === 'attend' ? '➕ 新增' : '📝 新增') + name, edit: '✏️ 修改' + name,
       cancel: '🗑️ 取消' + name, trunc: '🗑️ 取消' + name + '（從今天起）' }[action];
+    var mark = kind === 'attend' ? '🟢' : '🔴';   // 學生前的醒目標示：預約請假＝紅點、臨時進班＝綠點
     var schoolName = {};
     sheetToObjects(SHEET_SCHOOLS).forEach(function (sc) { schoolName[sc.id] = sc.name; });
     var spanOf = function (r) {
@@ -2284,11 +2285,11 @@ function notifyBookingsLine_(s, kind, entries, action) {
         var reason = r.reason ? '｜' + r.reason : '';
         if (action === 'edit' && e.old) {
           var oldReason = e.old.reason ? '｜原因：' + e.old.reason : '';
-          lines.push('• ' + who + ' 原 ' + spanOf(e.old) + oldReason + ' → 改 ' + spanOf(r) + '，共 ' + e.days + ' 天' + reason);
+          lines.push(mark + ' ' + who + ' 原 ' + spanOf(e.old) + oldReason + ' → 改 ' + spanOf(r) + '，共 ' + e.days + ' 天' + reason);
         } else if (action === 'trunc' && e.old) {
-          lines.push('• ' + who + ' 原 ' + spanOf(e.old) + ' → 改為 ' + spanOf(r) + reason);
+          lines.push(mark + ' ' + who + ' 原 ' + spanOf(e.old) + ' → 改為 ' + spanOf(r) + reason);
         } else {
-          lines.push('• ' + who + ' ' + spanOf(r) + '，共 ' + e.days + ' 天' + reason);
+          lines.push(mark + ' ' + who + ' ' + spanOf(r) + '，共 ' + e.days + ' 天' + reason);
         }
       });
     });
