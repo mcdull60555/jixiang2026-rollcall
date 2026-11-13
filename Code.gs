@@ -1338,10 +1338,15 @@ function actionSaveBooking(body) {
   var c = checkBooking_(s, ctx, kind, body, bookings_(kind));
   if (c.error) return { ok: false, error: c.error, clash: c.clash };
   var row = bookingRow_(s, kind, c, new Date().toISOString());
-  if (c.old) updateObjectByRow(bkSheet_(kind), c.old._row, row);
-  else {
+  if (c.old) {
+    updateObjectByRow(bkSheet_(kind), c.old._row, row);
+    var o = c.old;   // 日期或原因真的有改才通知
+    if (o.startDate !== row.startDate || o.endDate !== row.endDate || String(o.reason || '') !== String(row.reason || '') || o.studentId !== row.studentId) {
+      notifyBookingsLine_(s, kind, [{ row: row, days: c.days, st: c.st, old: o }], 'edit');
+    }
+  } else {
     appendObject(bkSheet_(kind), row);
-    notifyBookingsLine_(s, kind, [{ row: row, days: c.days, st: c.st }]);   // 新增才通知老師群組（修改不通知）
+    notifyBookingsLine_(s, kind, [{ row: row, days: c.days, st: c.st }], 'add');
   }
   return { ok: true, id: row.id, days: c.days, startDate: c.start, endDate: c.end };
 }
@@ -1375,7 +1380,7 @@ function actionSaveBookingsBatch(body) {
   });
   if (bad.length) return { ok: false, error: 'INVALID_BOOKINGS', bad: bad };
   appendObjects(bkSheet_(kind), rows);
-  notifyBookingsLine_(s, kind, notes);
+  notifyBookingsLine_(s, kind, notes, 'add');
   return { ok: true, created: rows.length, days: totalDays };
 }
 
@@ -1385,14 +1390,18 @@ function actionDeleteBooking(body) {
   var b = bookings_(kind).filter(function (x) { return x.id === String(body.id || ''); })[0];
   if (!b) return { ok: false, error: 'BOOKING_NOT_FOUND' };
   var today = today_();
+  var nctx = statusCtx_(), nst = nctx.stMap[b.studentId] || null;   // 通知用：先在刪除前算好原本的天數
+  var ndays = bookingDays_(nctx, b.studentId, b.startDate, b.endDate, kind).length;
   if (s.role !== 'admin' && b.startDate < today) {
     // 已經開始的預約：老師「取消」＝ 從今天起不再請假（結束日期改為昨天），之前已過去的日子照舊保留
     if (b.endDate < today) return { ok: false, error: 'BOOKING_STARTED' };
     var row = bookingRow_(s, kind, { old: b, st: { id: b.studentId, schoolId: b.schoolId }, start: b.startDate, end: prevDate_(today), reason: b.reason }, new Date().toISOString());
     updateObjectByRow(bkSheet_(kind), b._row, row);
+    notifyBookingsLine_(s, kind, [{ row: row, days: ndays, st: nst, old: b }], 'trunc');
     return { ok: true, truncated: true };
   }
   deleteRows_(bkSheet_(kind), [b]);
+  notifyBookingsLine_(s, kind, [{ row: b, days: ndays, st: nst }], 'cancel');
   return { ok: true };
 }
 
@@ -2241,29 +2250,46 @@ function lineDateLabel_(d) {
   return parseInt(d.slice(5, 7), 10) + '/' + parseInt(d.slice(8, 10), 10) + '(' + w + ')';
 }
 
-// 新增預約請假／臨時進班 → 通知老師群組；entries: [{ row, days, st }]
-function notifyBookingsLine_(s, kind, entries) {
+// 預約請假／臨時進班有異動 → 通知老師群組
+// action: add 新增 / edit 修改 / cancel 取消 / trunc 老師取消已開始的預約（從今天起不再請假或進班）
+// entries: [{ row, days, st, old? }]；row＝異動後（取消時為原登記），old＝異動前
+function notifyBookingsLine_(s, kind, entries, action) {
   try {
     if (!entries || !entries.length || !lineConfigured_()) return;
     if (s.role === 'admin' && !LINE_NOTIFY_ADMIN_BOOKINGS) return;
+    action = action || 'add';
+    var name = kind === 'attend' ? '臨時進班' : '預約請假';
+    var title = { add: (kind === 'attend' ? '➕ 新增' : '📝 新增') + name, edit: '✏️ 修改' + name,
+      cancel: '🗑️ 取消' + name, trunc: '🗑️ 取消' + name + '（從今天起）' }[action];
     var schoolName = {};
     sheetToObjects(SHEET_SCHOOLS).forEach(function (sc) { schoolName[sc.id] = sc.name; });
+    var spanOf = function (r) {
+      return r.startDate === r.endDate ? lineDateLabel_(r.startDate) : lineDateLabel_(r.startDate) + '～' + lineDateLabel_(r.endDate);
+    };
     var bySchool = {}, order = [];
     entries.forEach(function (e) {
       var sid = e.row.schoolId;
       if (!bySchool[sid]) { bySchool[sid] = []; order.push(sid); }
       bySchool[sid].push(e);
     });
-    var lines = [kind === 'attend' ? '➕ 新增臨時進班' : '📝 新增預約請假',
-      '登記人：' + s.name + (s.role === 'admin' ? '（管理員）' : '（老師）')];
+    var lines = [title, '操作人：' + s.name + (s.role === 'admin' ? '（管理員）' : '（老師）')];
     order.forEach(function (sid) {
       lines.push('');
       lines.push('【' + (schoolName[sid] || '學校') + '】');
-      var sorted = sortStudents(bySchool[sid].map(function (e) { return { grade: e.st.grade, name: e.st.name, e: e }; }));
+      var sorted = sortStudents(bySchool[sid].map(function (e) {
+        return { grade: e.st ? e.st.grade : '', name: e.st ? e.st.name : '(已刪除的學生)', e: e };
+      }));
       sorted.forEach(function (x) {
-        var e = x.e, r = e.row, st = e.st;
-        var span = r.startDate === r.endDate ? lineDateLabel_(r.startDate) : lineDateLabel_(r.startDate) + '～' + lineDateLabel_(r.endDate);
-        lines.push('• ' + st.name + '（' + st.grade + '）' + span + '，共 ' + e.days + ' 天' + (r.reason ? '｜' + r.reason : ''));
+        var e = x.e, r = e.row, who = x.name + (e.st ? '（' + e.st.grade + '）' : '');
+        var reason = r.reason ? '｜' + r.reason : '';
+        if (action === 'edit' && e.old) {
+          var oldReason = e.old.reason ? '｜原因：' + e.old.reason : '';
+          lines.push('• ' + who + ' 原 ' + spanOf(e.old) + oldReason + ' → 改 ' + spanOf(r) + '，共 ' + e.days + ' 天' + reason);
+        } else if (action === 'trunc' && e.old) {
+          lines.push('• ' + who + ' 原 ' + spanOf(e.old) + ' → 改為 ' + spanOf(r) + reason);
+        } else {
+          lines.push('• ' + who + ' ' + spanOf(r) + '，共 ' + e.days + ' 天' + reason);
+        }
       });
     });
     linePush_(lines.join('\n'));
