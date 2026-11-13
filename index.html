@@ -244,10 +244,13 @@
   .pk-tab .pk-un{display:inline-block;margin-left:4px;padding:0 6px;border-radius:99px;background:#fef3c7;color:#b45309;font-size:12px;}
   .banner-allnoon{background:#fef3c7;color:#92400e;border:1px solid #fcd34d;border-radius:10px;padding:8px 12px;font-weight:700;font-size:14px;margin-bottom:8px;}
   .sc-pk{display:flex;gap:4px;flex-wrap:wrap;margin-top:2px;}
-  .sc-cols{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:4px 6px;margin-top:2px;align-items:start;align-self:stretch;}
+  /* 欄寬跟著標籤文字走（標籤不再被擠出底色）；手機卡片很窄時，中午、下午上下排 */
+  .sc-cols{display:grid;grid-template-columns:repeat(2,max-content);gap:4px 6px;margin-top:2px;align-items:start;align-self:stretch;}
+  .sc-cols.sc-cols-1{grid-template-columns:max-content;}
+  @media (max-width:600px){ .sc-cols{grid-template-columns:max-content;} }
   .sc-col{display:flex;flex-direction:column;gap:4px;align-items:flex-start;}
   .sc-col{min-width:0;}
-  .sc-col .pk-tag{white-space:nowrap;font-size:12px;padding:1px 8px;max-width:100%;}
+  .sc-col .pk-tag{white-space:nowrap;font-size:12px;padding:1px 8px;}
   .wkp-slot{margin-left:2px;}
   .wkp-slot select{padding:5px 6px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:13px;font-weight:700;background:#fff;}
   .wkp-slot select.is-noon{background:#fef3c7;border-color:#d97706;color:#92400e;}
@@ -3635,7 +3638,7 @@ function schoolCountsHtml(s) {
   const tag = (cls, txt) => `<span class="pk-tag ${cls}">${txt}</span>`;
   const col = (cls, n, un2, name) => `<span class="sc-col">${n ? tag(cls, name + '接 ' + n) : ''}${un > 0 && un2 ? tag(cls + ' un', name + '未點 ' + un2) : ''}</span>`;
   const cols = (s.todayNoon || s.todayPm) ? `<span class="sc-cols">${col('pk-noon', s.todayNoon, s.todayNoonUn, '中午')}${col('pk-pm', s.todayPm, s.todayPmUn, '下午')}</span>` : '';
-  const none = un > 0 && s.todayNoneUn ? `<span class="sc-cols"><span class="sc-col">${tag('pk-none un', '自走／自送未點 ' + s.todayNoneUn)}</span></span>` : '';
+  const none = un > 0 && s.todayNoneUn ? `<span class="sc-cols sc-cols-1"><span class="sc-col">${tag('pk-none un', '自走／自送未點 ' + s.todayNoneUn)}</span></span>` : '';
   return `<span class="sc-meta">今日需進班 <b>${s.todayNeed}</b> 位</span>` + cols + none +
     (s.todayNeed === 0 ? '<span class="sc-un zero">今天沒有人需進班</span>'
       : un > 0 ? `<span class="sc-un">未點名 ${un} 位</span>`

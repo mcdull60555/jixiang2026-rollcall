@@ -1909,7 +1909,8 @@ function overviewData_(schoolFilter, cutoff) {
     var d = String(a.date);
     if (d < cutoff || d > today) return;
     if (schoolFilter && a.schoolId !== schoolFilter) return;
-    if (String(a.teacherId) !== 'system') hasRec[d + '|' + a.schoolId] = true;   // 系統補寫的固定不進班不算「已送出」
+    // 「已送出」＝老師真的點了至少一位學生的狀態。系統補寫的固定不進班、或老師按「完成點名」時一起寫入的空白列（全部還是未點名）都不算
+    if (String(a.teacherId) !== 'system' && ctx.teacherSet(a)) hasRec[d + '|' + a.schoolId] = true;
     count(bucket(d, a.schoolId), d, a.studentId, a.schoolId, ctx.status(a.studentId, d));
   });
   // 預約請假：當天沒有點名紀錄也算請假
