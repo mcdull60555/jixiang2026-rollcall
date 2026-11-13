@@ -1338,16 +1338,8 @@ function actionSaveBooking(body) {
   var c = checkBooking_(s, ctx, kind, body, bookings_(kind));
   if (c.error) return { ok: false, error: c.error, clash: c.clash };
   var row = bookingRow_(s, kind, c, new Date().toISOString());
-  if (c.old) {
-    updateObjectByRow(bkSheet_(kind), c.old._row, row);
-    var o = c.old;   // 日期或學生有改才通知（只改原因不通知）
-    if (o.startDate !== row.startDate || o.endDate !== row.endDate || o.studentId !== row.studentId) {
-      notifyBookingsLine_(s, kind, [{ row: row, days: c.days, st: c.st, old: o }], 'edit');
-    }
-  } else {
-    appendObject(bkSheet_(kind), row);
-    notifyBookingsLine_(s, kind, [{ row: row, days: c.days, st: c.st }], 'add');
-  }
+  if (c.old) updateObjectByRow(bkSheet_(kind), c.old._row, row);
+  else appendObject(bkSheet_(kind), row);
   return { ok: true, id: row.id, days: c.days, startDate: c.start, endDate: c.end };
 }
 
@@ -1363,7 +1355,7 @@ function actionSaveBookingsBatch(body) {
   var ctx = statusCtx_();
   var all = bookings_(kind);
   var now = new Date().toISOString();
-  var bad = [], rows = [], totalDays = 0, notes = [];
+  var bad = [], rows = [], totalDays = 0;
   items.forEach(function (it, i) {
     var input = { studentId: it && it.studentId, startDate: it && it.startDate, endDate: it && it.endDate, reason: it && it.reason, schoolId: body.schoolId };
     var c = checkBooking_(s, ctx, kind, input, all);
@@ -1374,13 +1366,11 @@ function actionSaveBookingsBatch(body) {
     }
     var row = bookingRow_(s, kind, c, now);
     rows.push(row);
-    notes.push({ row: row, days: c.days, st: c.st });
     all.push(row);   // 同一批裡同一位學生的期間也不能重疊
     totalDays += c.days;
   });
   if (bad.length) return { ok: false, error: 'INVALID_BOOKINGS', bad: bad };
   appendObjects(bkSheet_(kind), rows);
-  notifyBookingsLine_(s, kind, notes, 'add');
   return { ok: true, created: rows.length, days: totalDays };
 }
 
@@ -1390,18 +1380,14 @@ function actionDeleteBooking(body) {
   var b = bookings_(kind).filter(function (x) { return x.id === String(body.id || ''); })[0];
   if (!b) return { ok: false, error: 'BOOKING_NOT_FOUND' };
   var today = today_();
-  var nctx = statusCtx_(), nst = nctx.stMap[b.studentId] || null;   // 通知用：先在刪除前算好原本的天數
-  var ndays = bookingDays_(nctx, b.studentId, b.startDate, b.endDate, kind).length;
   if (s.role !== 'admin' && b.startDate < today) {
     // 已經開始的預約：老師「取消」＝ 從今天起不再請假（結束日期改為昨天），之前已過去的日子照舊保留
     if (b.endDate < today) return { ok: false, error: 'BOOKING_STARTED' };
     var row = bookingRow_(s, kind, { old: b, st: { id: b.studentId, schoolId: b.schoolId }, start: b.startDate, end: prevDate_(today), reason: b.reason }, new Date().toISOString());
     updateObjectByRow(bkSheet_(kind), b._row, row);
-    notifyBookingsLine_(s, kind, [{ row: row, days: ndays, st: nst, old: b }], 'trunc');
     return { ok: true, truncated: true };
   }
   deleteRows_(bkSheet_(kind), [b]);
-  notifyBookingsLine_(s, kind, [{ row: b, days: ndays, st: nst }], 'cancel');
   return { ok: true };
 }
 
@@ -2194,8 +2180,7 @@ function cleanupOldRecords() {
 
 // =====================================================================
 // ---------- LINE 通知（只發給老師群組，不發給家長）----------
-// 1) 新增「預約請假」「臨時進班」時，立刻推播
-// 2) 每天 13:00 推播「今天中午接、還沒點名」的學生；16:30 推播「今天下午接、還沒點名」的學生
+// 每天 13:00 推播「今天中午接、還沒點名」的學生；16:30 推播「今天下午接、還沒點名」的學生
 //
 // 設定：Apps Script「專案設定 > 指令碼屬性」新增兩個屬性（金鑰不要寫在程式裡，也不會被推到 GitHub）
 //   LINE_CHANNEL_TOKEN  Messaging API 的 Channel access token (long-lived)
@@ -2205,7 +2190,6 @@ function cleanupOldRecords() {
 //   不想再通知某個群組：在那個群組傳「解除點名通知」。
 // 第一次使用：在編輯器執行一次 setupLine()（授權 + 建立排程 + 傳測試訊息）。
 // =====================================================================
-var LINE_NOTIFY_ADMIN_BOOKINGS = true;   // 管理員新增的預約請假／臨時進班也通知老師群組；不要的話改成 false
 var LINE_BIND_KEYWORD = '綁定點名通知';
 var LINE_UNBIND_KEYWORD = '解除點名通知';
 var LINE_REMINDER_GRACE_MIN = 30;        // 排程每 5 分鐘檢查一次；整點後 30 分鐘內補發都算，過了就不發
@@ -2252,53 +2236,6 @@ function linePushTo_(target, text) { return linePush_(text, target); }   // 只�
 function lineDateLabel_(d) {
   var w = ['', '一', '二', '三', '四', '五', '六', '日'][weekdayOf(d)];
   return parseInt(d.slice(5, 7), 10) + '/' + parseInt(d.slice(8, 10), 10) + '(' + w + ')';
-}
-
-// 預約請假／臨時進班有異動 → 通知老師群組
-// action: add 新增 / edit 修改 / cancel 取消 / trunc 老師取消已開始的預約（從今天起不再請假或進班）
-// entries: [{ row, days, st, old? }]；row＝異動後（取消時為原登記），old＝異動前
-function notifyBookingsLine_(s, kind, entries, action) {
-  try {
-    if (!entries || !entries.length || !lineConfigured_()) return;
-    if (s.role === 'admin' && !LINE_NOTIFY_ADMIN_BOOKINGS) return;
-    action = action || 'add';
-    var name = kind === 'attend' ? '臨時進班' : '預約請假';
-    var title = { add: (kind === 'attend' ? '➕ 新增' : '📝 新增') + name, edit: '✏️ 修改' + name,
-      cancel: '🗑️ 取消' + name, trunc: '🗑️ 取消' + name + '（從今天起）' }[action];
-    var mark = kind === 'attend' ? '🟢' : '🔴';   // 學生前的醒目標示：預約請假＝紅點、臨時進班＝綠點
-    var schoolName = {};
-    sheetToObjects(SHEET_SCHOOLS).forEach(function (sc) { schoolName[sc.id] = sc.name; });
-    var spanOf = function (r) {
-      return r.startDate === r.endDate ? lineDateLabel_(r.startDate) : lineDateLabel_(r.startDate) + '～' + lineDateLabel_(r.endDate);
-    };
-    var bySchool = {}, order = [];
-    entries.forEach(function (e) {
-      var sid = e.row.schoolId;
-      if (!bySchool[sid]) { bySchool[sid] = []; order.push(sid); }
-      bySchool[sid].push(e);
-    });
-    var lines = [title, '操作人：' + s.name + (s.role === 'admin' ? '（管理員）' : '（老師）')];
-    order.forEach(function (sid) {
-      lines.push('');
-      lines.push('【' + (schoolName[sid] || '學校') + '】');
-      var sorted = sortStudents(bySchool[sid].map(function (e) {
-        return { grade: e.st ? e.st.grade : '', name: e.st ? e.st.name : '(已刪除的學生)', e: e };
-      }));
-      sorted.forEach(function (x) {
-        var e = x.e, r = e.row, who = x.name + (e.st ? '（' + e.st.grade + '）' : '');
-        var reason = r.reason ? '｜' + r.reason : '';
-        if (action === 'edit' && e.old) {
-          var oldReason = e.old.reason ? '｜原因：' + e.old.reason : '';
-          lines.push(mark + ' ' + who + ' 原 ' + spanOf(e.old) + oldReason + ' → 改 ' + spanOf(r) + '，共 ' + e.days + ' 天' + reason);
-        } else if (action === 'trunc' && e.old) {
-          lines.push(mark + ' ' + who + ' 原 ' + spanOf(e.old) + ' → 改為 ' + spanOf(r) + reason);
-        } else {
-          lines.push(mark + ' ' + who + ' ' + spanOf(r) + '，共 ' + e.days + ' 天' + reason);
-        }
-      });
-    });
-    linePush_(lines.join('\n'));
-  } catch (err) { /* 通知失敗不影響登記 */ }
 }
 
 // 今天「還沒點名、而且要接」的學生，依學校與接送時段分組；今天不能點名（例假日／國定假日）回傳 null
