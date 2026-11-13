@@ -82,6 +82,7 @@ function setup() {
   var def = ss_().getSheetByName('Sheet1');
   if (def && def.getLastRow() === 0) ss_().deleteSheet(def);
   createDailyCleanupTrigger();
+  createLineReminderTrigger();
   return 'setup done';
 }
 
@@ -372,6 +373,10 @@ function doPost(e) {
   var result;
   try {
     var body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
+    if (body && Array.isArray(body.events)) {   // LINE Webhook（綁定通知群組用），不是前端的 API 呼叫
+      try { handleLineWebhook_(body); } catch (err2) { /* 不影響回應 */ }
+      return ContentService.createTextOutput(JSON.stringify({ ok: true })).setMimeType(ContentService.MimeType.JSON);
+    }
     result = route(body);
   } catch (err) {
     result = { ok: false, error: err.message };
@@ -1334,7 +1339,10 @@ function actionSaveBooking(body) {
   if (c.error) return { ok: false, error: c.error, clash: c.clash };
   var row = bookingRow_(s, kind, c, new Date().toISOString());
   if (c.old) updateObjectByRow(bkSheet_(kind), c.old._row, row);
-  else appendObject(bkSheet_(kind), row);
+  else {
+    appendObject(bkSheet_(kind), row);
+    notifyBookingsLine_(s, kind, [{ row: row, days: c.days, st: c.st }]);   // 新增才通知老師群組（修改不通知）
+  }
   return { ok: true, id: row.id, days: c.days, startDate: c.start, endDate: c.end };
 }
 
@@ -1350,7 +1358,7 @@ function actionSaveBookingsBatch(body) {
   var ctx = statusCtx_();
   var all = bookings_(kind);
   var now = new Date().toISOString();
-  var bad = [], rows = [], totalDays = 0;
+  var bad = [], rows = [], totalDays = 0, notes = [];
   items.forEach(function (it, i) {
     var input = { studentId: it && it.studentId, startDate: it && it.startDate, endDate: it && it.endDate, reason: it && it.reason, schoolId: body.schoolId };
     var c = checkBooking_(s, ctx, kind, input, all);
@@ -1361,11 +1369,13 @@ function actionSaveBookingsBatch(body) {
     }
     var row = bookingRow_(s, kind, c, now);
     rows.push(row);
+    notes.push({ row: row, days: c.days, st: c.st });
     all.push(row);   // 同一批裡同一位學生的期間也不能重疊
     totalDays += c.days;
   });
   if (bad.length) return { ok: false, error: 'INVALID_BOOKINGS', bad: bad };
   appendObjects(bkSheet_(kind), rows);
+  notifyBookingsLine_(s, kind, notes);
   return { ok: true, created: rows.length, days: totalDays };
 }
 
@@ -2171,4 +2181,191 @@ function cleanupOldRecords() {
     if (oldE.length) deleteRows_(SHEET_EXTRAS, oldE);
   });
   cleanupExpiredSessions_();
+}
+
+// =====================================================================
+// ---------- LINE 通知（只發給老師群組，不發給家長）----------
+// 1) 新增「預約請假」「臨時進班」時，立刻推播
+// 2) 每天 13:00 推播「今天中午接、還沒點名」的學生；16:30 推播「今天下午接、還沒點名」的學生
+//
+// 設定：Apps Script「專案設定 > 指令碼屬性」新增兩個屬性（金鑰不要寫在程式裡，也不會被推到 GitHub）
+//   LINE_CHANNEL_TOKEN  Messaging API 的 Channel access token (long-lived)
+//   LINE_GROUP_ID       老師群組的 groupId（C 開頭）；可用逗號放多個收件對象
+// 沒有 groupId 時：把官方帳號 @098stubd 邀進老師群組，Webhook URL 填這個 Web App 的 /exec 網址，
+//   然後在群組裡傳一句「綁定點名通知」，系統會自動把這個群組存成 LINE_GROUP_ID 並回覆確認。
+// 第一次使用：在編輯器執行一次 setupLine()（授權 + 建立排程 + 傳測試訊息）。
+// =====================================================================
+var LINE_NOTIFY_ADMIN_BOOKINGS = true;   // 管理員新增的預約請假／臨時進班也通知老師群組；不要的話改成 false
+var LINE_BIND_KEYWORD = '綁定點名通知';
+var LINE_REMINDER_GRACE_MIN = 30;        // 排程每 5 分鐘檢查一次；整點後 30 分鐘內補發都算，過了就不發
+var LINE_REMINDERS = [
+  { slot: 'noon', label: '中午接', hour: 13, minute: 0 },
+  { slot: 'pm', label: '下午接', hour: 16, minute: 30 }
+];
+
+function lineProps_() { return PropertiesService.getScriptProperties(); }
+function lineTargets_() {
+  return String(lineProps_().getProperty('LINE_GROUP_ID') || '').split(',').map(function (x) { return x.trim(); }).filter(String);
+}
+function lineConfigured_() { return !!lineProps_().getProperty('LINE_CHANNEL_TOKEN') && lineTargets_().length > 0; }
+
+// 推播文字（超過 LINE 單則上限時自動拆成多則）。回傳 { ok, error? }；失敗只記錄，不丟錯誤，避免影響點名
+function linePush_(text) {
+  var p = lineProps_(), token = p.getProperty('LINE_CHANNEL_TOKEN'), to = lineTargets_();
+  if (!token || !to.length) return { ok: false, error: 'LINE_NOT_CONFIGURED' };
+  var chunks = [], cur = '';
+  String(text).split('\n').forEach(function (line) {
+    if ((cur + '\n' + line).length > 4500 && cur) { chunks.push(cur); cur = line; }
+    else cur = cur ? cur + '\n' + line : line;
+  });
+  if (cur) chunks.push(cur);
+  var err = '';
+  to.forEach(function (target) {
+    chunks.forEach(function (chunk) {
+      try {
+        var res = UrlFetchApp.fetch('https://api.line.me/v2/bot/message/push', {
+          method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+          headers: { Authorization: 'Bearer ' + token },
+          payload: JSON.stringify({ to: target, messages: [{ type: 'text', text: chunk }] })
+        });
+        if (res.getResponseCode() !== 200) err = res.getResponseCode() + ' ' + res.getContentText().slice(0, 300);
+      } catch (e) { err = String(e && e.message || e); }
+    });
+  });
+  p.setProperty('LINE_LAST_ERROR', err ? new Date().toISOString() + ' ' + err : '');
+  return err ? { ok: false, error: err } : { ok: true };
+}
+
+function lineDateLabel_(d) {
+  var w = ['', '一', '二', '三', '四', '五', '六', '日'][weekdayOf(d)];
+  return parseInt(d.slice(5, 7), 10) + '/' + parseInt(d.slice(8, 10), 10) + '(' + w + ')';
+}
+
+// 新增預約請假／臨時進班 → 通知老師群組；entries: [{ row, days, st }]
+function notifyBookingsLine_(s, kind, entries) {
+  try {
+    if (!entries || !entries.length || !lineConfigured_()) return;
+    if (s.role === 'admin' && !LINE_NOTIFY_ADMIN_BOOKINGS) return;
+    var schoolName = {};
+    sheetToObjects(SHEET_SCHOOLS).forEach(function (sc) { schoolName[sc.id] = sc.name; });
+    var bySchool = {}, order = [];
+    entries.forEach(function (e) {
+      var sid = e.row.schoolId;
+      if (!bySchool[sid]) { bySchool[sid] = []; order.push(sid); }
+      bySchool[sid].push(e);
+    });
+    var lines = [kind === 'attend' ? '➕ 新增臨時進班' : '📝 新增預約請假',
+      '登記人：' + s.name + (s.role === 'admin' ? '（管理員）' : '（老師）')];
+    order.forEach(function (sid) {
+      lines.push('');
+      lines.push('【' + (schoolName[sid] || '學校') + '】');
+      var sorted = sortStudents(bySchool[sid].map(function (e) { return { grade: e.st.grade, name: e.st.name, e: e }; }));
+      sorted.forEach(function (x) {
+        var e = x.e, r = e.row, st = e.st;
+        var span = r.startDate === r.endDate ? lineDateLabel_(r.startDate) : lineDateLabel_(r.startDate) + '～' + lineDateLabel_(r.endDate);
+        lines.push('• ' + st.name + '（' + st.grade + '）' + span + '，共 ' + e.days + ' 天' + (r.reason ? '｜' + r.reason : ''));
+      });
+    });
+    linePush_(lines.join('\n'));
+  } catch (err) { /* 通知失敗不影響登記 */ }
+}
+
+// 今天「還沒點名、而且要接」的學生，依學校與接送時段分組；今天不能點名（例假日／國定假日）回傳 null
+// 排除：已點名（到班、自送、自走、請假）、預約請假、今天固定不進班、固定自走／自送（不用接，不屬於中午／下午）
+function unmarkedBySlot_() {
+  var ctx = statusCtx_(), today = ctx.today;
+  if (!ctx.isOpen(today)) return null;
+  var pk = pickupCtx_();
+  var schools = {};
+  activeSchools_().forEach(function (sc) { schools[sc.id] = { name: sc.name, noon: [], pm: [] }; });
+  sheetToObjects(SHEET_STUDENTS).forEach(function (st) {
+    if (!isActive_(st.active) || !schools[st.schoolId]) return;
+    if (ctx.status(st.id, today)) return;
+    var p = pickupSlotFor_(st, today, ctx, pk);
+    if (!p) return;
+    schools[st.schoolId][p.slot].push(st);
+  });
+  return { date: today, schools: schools };
+}
+
+// 組出提醒文字；沒有未點名的學生回傳空字串
+function buildReminderText_(r, data) {
+  var lines = [], schools = 0, total = 0;
+  Object.keys(data.schools).map(function (k) { return data.schools[k]; })
+    .sort(function (a, b) { return String(a.name).localeCompare(String(b.name), 'zh-Hant'); })
+    .forEach(function (sc) {
+      var list = sortStudents(sc[r.slot].slice());
+      if (!list.length) return;
+      schools++; total += list.length;
+      lines.push('');
+      lines.push('【' + sc.name + '】' + list.length + ' 位');
+      lines.push(list.map(function (st) { return st.name + '(' + st.grade + ')'; }).join('、'));
+    });
+  if (!total) return '';
+  var hm = ('0' + r.hour).slice(-2) + ':' + ('0' + r.minute).slice(-2);
+  return '🔔 ' + r.label + ' 還沒點名（' + hm + '）\n' + lineDateLabel_(data.date) + '\n共 ' + schools + ' 校、' + total + ' 位' +
+    lines.join('\n') + '\n\n請負責的老師盡快點名';
+}
+
+// 送出一個時段的提醒；force=true（手動測試）時沒有未點名也會回覆一則說明
+function sendReminder_(r, force) {
+  _memo = {};
+  var data = unmarkedBySlot_();
+  if (!data) return force ? linePush_('今天不是上課日（例假日／國定假日），不發送「' + r.label + '」提醒') : { ok: true, skipped: 'CLOSED' };
+  var text = buildReminderText_(r, data);
+  if (!text) return force ? linePush_('✅ ' + r.label + '的學生都已點名完成，目前沒有未點名') : { ok: true, skipped: 'ALL_MARKED' };
+  return linePush_(text);
+}
+
+// 每 5 分鐘執行：到了 13:00 / 16:30（之後 30 分鐘內）就發一次，同一天同一時段只發一次
+function lineReminderTick() {
+  if (!lineConfigured_()) return;
+  var mins = parseInt(Utilities.formatDate(new Date(), TZ, 'H'), 10) * 60 + parseInt(Utilities.formatDate(new Date(), TZ, 'm'), 10);
+  var today = today_(), p = lineProps_();
+  LINE_REMINDERS.forEach(function (r) {
+    var at = r.hour * 60 + r.minute;
+    if (mins < at || mins >= at + LINE_REMINDER_GRACE_MIN) return;
+    var key = 'LINE_SENT_' + r.slot;
+    var claimed = withLock_(function () {
+      if (p.getProperty(key) === today) return false;
+      p.setProperty(key, today);   // 先登記，避免重複發送
+      return true;
+    });
+    if (!claimed) return;
+    var res = sendReminder_(r, false);
+    if (res && res.ok === false) p.deleteProperty(key);   // 發送失敗 → 下一輪（寬限時間內）再試
+  });
+}
+
+function createLineReminderTrigger() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'lineReminderTick') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('lineReminderTick').timeBased().everyMinutes(5).create();
+}
+
+// LINE Webhook：在老師群組傳「綁定點名通知」→ 把該群組存成通知對象
+function handleLineWebhook_(body) {
+  (body.events || []).forEach(function (ev) {
+    if (!ev || ev.type !== 'message' || !ev.message || ev.message.type !== 'text') return;
+    if (String(ev.message.text).trim() !== LINE_BIND_KEYWORD) return;
+    var src = ev.source || {};
+    var id = src.groupId || src.roomId;
+    if (!id) return;   // 只綁定群組／多人聊天室，不綁定一對一聊天
+    lineProps_().setProperty('LINE_GROUP_ID', id);
+    linePush_('✅ 已綁定這個群組為「基翔點名」通知對象\n之後會在這裡通知：新增預約請假／臨時進班、13:00 中午接未點名、16:30 下午接未點名');
+  });
+}
+
+// ---------- 手動執行用（在編輯器選函式 > 執行）----------
+// 第一次使用：授權、建立每 5 分鐘的排程、傳一則測試訊息
+function setupLine() {
+  createLineReminderTrigger();
+  var r = lineConfigured_() ? linePush_('✅ 基翔點名 LINE 通知測試成功') : { ok: false, error: '尚未設定指令碼屬性 LINE_CHANNEL_TOKEN / LINE_GROUP_ID' };
+  Logger.log(JSON.stringify(r));
+  return r;
+}
+// 立刻各發一次「中午接」「下午接」的未點名提醒（不受時間與每日一次限制，測試用）
+function testLineReminders() {
+  LINE_REMINDERS.forEach(function (r) { Logger.log(r.label + ': ' + JSON.stringify(sendReminder_(r, true))); });
 }
