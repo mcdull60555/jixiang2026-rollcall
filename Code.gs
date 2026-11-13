@@ -2201,11 +2201,13 @@ function cleanupOldRecords() {
 //   LINE_CHANNEL_TOKEN  Messaging API 的 Channel access token (long-lived)
 //   LINE_GROUP_ID       老師群組的 groupId（C 開頭）；可用逗號放多個收件對象
 // 沒有 groupId 時：把官方帳號 @098stubd 邀進老師群組，Webhook URL 填這個 Web App 的 /exec 網址，
-//   然後在群組裡傳一句「綁定點名通知」，系統會自動把這個群組存成 LINE_GROUP_ID 並回覆確認。
+//   然後在群組裡傳一句「綁定點名通知」，系統會自動把這個群組加進 LINE_GROUP_ID 並回覆確認（多個群組都傳一次即可）。
+//   不想再通知某個群組：在那個群組傳「解除點名通知」。
 // 第一次使用：在編輯器執行一次 setupLine()（授權 + 建立排程 + 傳測試訊息）。
 // =====================================================================
 var LINE_NOTIFY_ADMIN_BOOKINGS = true;   // 管理員新增的預約請假／臨時進班也通知老師群組；不要的話改成 false
 var LINE_BIND_KEYWORD = '綁定點名通知';
+var LINE_UNBIND_KEYWORD = '解除點名通知';
 var LINE_REMINDER_GRACE_MIN = 30;        // 排程每 5 分鐘檢查一次；整點後 30 分鐘內補發都算，過了就不發
 var LINE_REMINDERS = [
   { slot: 'noon', label: '中午接', hour: 13, minute: 0 },
@@ -2219,8 +2221,8 @@ function lineTargets_() {
 function lineConfigured_() { return !!lineProps_().getProperty('LINE_CHANNEL_TOKEN') && lineTargets_().length > 0; }
 
 // 推播文字（超過 LINE 單則上限時自動拆成多則）。回傳 { ok, error? }；失敗只記錄，不丟錯誤，避免影響點名
-function linePush_(text) {
-  var p = lineProps_(), token = p.getProperty('LINE_CHANNEL_TOKEN'), to = lineTargets_();
+function linePush_(text, onlyTo) {
+  var p = lineProps_(), token = p.getProperty('LINE_CHANNEL_TOKEN'), to = onlyTo ? [onlyTo] : lineTargets_();
   if (!token || !to.length) return { ok: false, error: 'LINE_NOT_CONFIGURED' };
   var chunks = [], cur = '';
   String(text).split('\n').forEach(function (line) {
@@ -2244,6 +2246,8 @@ function linePush_(text) {
   p.setProperty('LINE_LAST_ERROR', err ? new Date().toISOString() + ' ' + err : '');
   return err ? { ok: false, error: err } : { ok: true };
 }
+
+function linePushTo_(target, text) { return linePush_(text, target); }   // 只發給指定的一個群組（綁定／解除的確認訊息用）
 
 function lineDateLabel_(d) {
   var w = ['', '一', '二', '三', '四', '五', '六', '日'][weekdayOf(d)];
@@ -2379,16 +2383,26 @@ function createLineReminderTrigger() {
   ScriptApp.newTrigger('lineReminderTick').timeBased().everyMinutes(5).create();
 }
 
-// LINE Webhook：在老師群組傳「綁定點名通知」→ 把該群組存成通知對象
+// LINE Webhook：在群組傳「綁定點名通知」→ 把這個群組加進通知名單（不會蓋掉其他群組）；傳「解除點名通知」→ 移出名單
 function handleLineWebhook_(body) {
   (body.events || []).forEach(function (ev) {
     if (!ev || ev.type !== 'message' || !ev.message || ev.message.type !== 'text') return;
-    if (String(ev.message.text).trim() !== LINE_BIND_KEYWORD) return;
+    var text = String(ev.message.text).trim();
+    if (text !== LINE_BIND_KEYWORD && text !== LINE_UNBIND_KEYWORD) return;
     var src = ev.source || {};
     var id = src.groupId || src.roomId;
-    if (!id) return;   // 只綁定群組／多人聊天室，不綁定一對一聊天
-    lineProps_().setProperty('LINE_GROUP_ID', id);
-    linePush_('✅ 已綁定這個群組為「基翔點名」通知對象\n之後會在這裡通知：新增預約請假／臨時進班、13:00 中午接未點名、16:30 下午接未點名');
+    if (!id) return;   // 只處理群組／多人聊天室，不處理一對一聊天
+    var list = lineTargets_(), at = list.indexOf(id);
+    if (text === LINE_BIND_KEYWORD) {
+      if (at === -1) list.push(id);
+      lineProps_().setProperty('LINE_GROUP_ID', list.join(','));
+      linePushTo_(id, (at === -1 ? '✅ 已綁定這個群組為「基翔點名」通知對象' : '✅ 這個群組已經綁定過了') +
+        '\n目前共 ' + list.length + ' 個通知群組\n之後會在這裡通知：預約請假／臨時進班的新增、修改、取消，以及 13:00 中午接、16:30 下午接未點名提醒');
+    } else {
+      if (at !== -1) list.splice(at, 1);
+      lineProps_().setProperty('LINE_GROUP_ID', list.join(','));
+      linePushTo_(id, at !== -1 ? '✅ 已解除這個群組的點名通知\n目前剩 ' + list.length + ' 個通知群組' : '這個群組本來就沒有綁定');
+    }
   });
 }
 
