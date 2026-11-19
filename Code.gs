@@ -2180,7 +2180,7 @@ function cleanupOldRecords() {
 
 // =====================================================================
 // ---------- LINE 通知（只發給老師群組，不發給家長）----------
-// 每天 13:00 推播「今天中午接、還沒點名」的學生；16:30 推播「今天下午接、還沒點名」的學生
+// 每天 13:10 推播「今天中午接、還沒點名」的學生；16:40 推播「今天下午接、還沒點名」的學生
 //
 // 設定：Apps Script「專案設定 > 指令碼屬性」新增兩個屬性（金鑰不要寫在程式裡，也不會被推到 GitHub）
 //   LINE_CHANNEL_TOKEN  Messaging API 的 Channel access token (long-lived)
@@ -2194,8 +2194,8 @@ var LINE_BIND_KEYWORD = '綁定點名通知';
 var LINE_UNBIND_KEYWORD = '解除點名通知';
 var LINE_REMINDER_GRACE_MIN = 30;        // 排程每 5 分鐘檢查一次；整點後 30 分鐘內補發都算，過了就不發
 var LINE_REMINDERS = [
-  { slot: 'noon', label: '中午接', hour: 13, minute: 0 },
-  { slot: 'pm', label: '下午接', hour: 16, minute: 30 }
+  { slot: 'noon', label: '中午接', hour: 13, minute: 10 },
+  { slot: 'pm', label: '下午接', hour: 16, minute: 40 }
 ];
 
 function lineProps_() { return PropertiesService.getScriptProperties(); }
@@ -2316,7 +2316,7 @@ function sendReminder_(r, force) {
   return linePush_(text);
 }
 
-// 每 5 分鐘執行：到了 13:00 / 16:30（之後 30 分鐘內）就發一次，同一天同一時段只發一次
+// 每 5 分鐘執行：到了 13:10 / 16:40（之後 30 分鐘內）就發一次，同一天同一時段只發一次
 function lineReminderTick() {
   if (!lineConfigured_()) return;
   var mins = parseInt(Utilities.formatDate(new Date(), TZ, 'H'), 10) * 60 + parseInt(Utilities.formatDate(new Date(), TZ, 'm'), 10);
@@ -2357,7 +2357,7 @@ function handleLineWebhook_(body) {
       if (at === -1) list.push(id);
       lineProps_().setProperty('LINE_GROUP_ID', list.join(','));
       lineReply_(ev.replyToken, (at === -1 ? '✅ 已綁定這個群組為「基翔點名」通知對象' : '✅ 這個群組已經綁定過了') +
-        '\n目前共 ' + list.length + ' 個通知群組\n之後會在這裡通知：13:00 中午接、16:30 下午接未點名提醒\n傳「指令」可以查看可用的查詢口令');
+        '\n目前共 ' + list.length + ' 個通知群組\n之後會在這裡通知：13:10 中午接、16:40 下午接未點名提醒\n傳「指令」可以查看可用的查詢口令');
     } else if (text === LINE_UNBIND_KEYWORD) {
       if (at !== -1) list.splice(at, 1);
       lineProps_().setProperty('LINE_GROUP_ID', list.join(','));
