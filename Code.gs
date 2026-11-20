@@ -2358,22 +2358,19 @@ function handleLineWebhook_(body) {
     if (!id) return;   // 只處理群組／多人聊天室，不處理一對一聊天
     var list = lineTargets_(), at = list.indexOf(id), qlist = lineQueryTargets_(), qat = qlist.indexOf(id);
     var save = function () { lineProps_().setProperty('LINE_GROUP_ID', list.join(',')); lineProps_().setProperty('LINE_QUERY_GROUP_ID', qlist.join(',')); };
-    if (text === LINE_BIND_KEYWORD) {   // 推播群組：自動提醒＋口令
-      if (qat !== -1) qlist.splice(qat, 1);
-      if (at === -1) list.push(id);
-      save();
-      lineReply_(ev.replyToken, (at === -1 ? '✅ 已綁定這個群組為「基翔點名」通知對象' : '✅ 這個群組已經綁定過了') +
-        '\n目前共 ' + list.length + ' 個通知群組\n之後會在這裡通知：13:10 中午接、16:40 下午接未點名提醒\n傳「指令」可以查看可用的查詢口令');
+    if (text === LINE_BIND_KEYWORD) {   // 推播群組只能由管理員在 Apps Script 的指令碼屬性 LINE_GROUP_ID 設定，群組內不能自行開通
+      lineReply_(ev.replyToken, at !== -1 ? '✅ 這個群組已經是自動提醒群組（13:10 中午接、16:40 下午接未點名提醒）' :
+        '⛔ 這個群組不能開通自動提醒\n如需查詢請傳「綁定查詢」，之後用口令查詢；要開通自動提醒請聯絡管理員');
     } else if (text === LINE_QUERY_KEYWORD) {   // 查詢群組：只回答口令，不推播
-      if (at !== -1) list.splice(at, 1);
+      if (at !== -1) { lineReply_(ev.replyToken, '⛔ 這個群組是自動提醒群組，不能改成只查詢；要調整請聯絡管理員'); return; }
       if (qat === -1) qlist.push(id);
       save();
       lineReply_(ev.replyToken, '✅ 已設定這個群組為「只用口令查詢」\n不會收到自動提醒；傳「指令」可以查看可用的查詢口令');
     } else if (text === LINE_UNBIND_KEYWORD) {
-      if (at !== -1) list.splice(at, 1);
+      if (at !== -1) { lineReply_(ev.replyToken, '⛔ 這個群組是自動提醒群組，不能在群組內解除；要調整請聯絡管理員'); return; }
       if (qat !== -1) qlist.splice(qat, 1);
       save();
-      lineReply_(ev.replyToken, (at !== -1 || qat !== -1) ? '✅ 已解除這個群組的點名通知與查詢\n目前剩 ' + list.length + ' 個通知群組、' + qlist.length + ' 個查詢群組' : '這個群組本來就沒有綁定');
+      lineReply_(ev.replyToken, qat !== -1 ? '✅ 已解除這個群組的口令查詢' : '這個群組本來就沒有綁定');
     } else if (at !== -1 || qat !== -1) {   // 查詢口令：只回答已綁定的群組，沒綁定的群組不會得到學生資料
       var out = null;
       try { out = lineCommandReply_(text); }
