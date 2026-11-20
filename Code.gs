@@ -411,6 +411,7 @@ function route(body) {
     setSpecialDaysBatch: actionSetSpecialDaysBatch, editSpecialDay: actionEditSpecialDay,
     listBookings: actionListBookings, saveBooking: actionSaveBooking, saveBookingsBatch: actionSaveBookingsBatch, deleteBooking: actionDeleteBooking,
     updateBookingsBatch: actionUpdateBookingsBatch, deleteBookingsBatch: actionDeleteBookingsBatch,
+    getMarquee: actionGetMarquee,
     getOverview: actionGetOverview, getSchoolDayDetail: actionGetSchoolDayDetail,
     listLeaveStreaks: actionListLeaveStreaks,
     setPickupSlot: actionSetPickupSlot, setAllNoonDay: actionSetAllNoonDay, deleteAllNoonDay: actionDeleteAllNoonDay
@@ -703,6 +704,28 @@ function todayCounts_() {
     else if (!s) c.noneUn++;   // 今天固定自走／自送、不用接但還沒點名的人（算在未點名，但不屬於中午或下午）
   });
   return out;
+}
+
+// 網頁上方跑馬燈：今天每間學校中午接、下午接要點名的學生與是否已點名（下午接含今天固定自走／自送的學生）
+// 不能點名的日子回傳 open:false；請假、今天固定不進班的不列入
+function actionGetMarquee(body) {
+  requireSession(body.token);
+  var ctx = statusCtx_(), today = ctx.today;
+  if (!ctx.isOpen(today)) return { ok: true, open: false, today: today };
+  var pk = pickupCtx_(), wd = ctx.wdOf(today), map = {};
+  activeSchools_().forEach(function (sc) { map[sc.id] = { id: sc.id, name: sc.name, noon: [], pm: [] }; });
+  sortStudents(sheetToObjects(SHEET_STUDENTS)).forEach(function (st) {
+    if (!isActive_(st.active) || !map[st.schoolId]) return;
+    var s = ctx.status(st.id, today);
+    if (s === 'fixedOff' || s === 'leave') return;
+    var item = { id: st.id, name: st.name, grade: String(st.grade || ''), marked: !!s };
+    var p = pickupSlotFor_(st, today, ctx, pk);
+    if (p) map[st.schoolId][p.slot].push(item);
+    else { item.tag = parseDays_(st.selfDropDays).indexOf(wd) !== -1 ? '自送' : '自走'; map[st.schoolId].pm.push(item); }
+  });
+  var schools = Object.keys(map).map(function (k) { return map[k]; })
+    .sort(function (a, b) { return String(a.name).localeCompare(String(b.name), 'zh-Hant'); });
+  return { ok: true, open: true, today: today, schools: schools };
 }
 
 function actionListSchools(body) {

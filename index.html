@@ -58,6 +58,16 @@
   #topbar{background:linear-gradient(90deg,#0f4fb8,#1d8cf0);border-bottom:3px solid var(--gold);color:#fff;box-shadow:0 2px 8px rgba(15,23,42,.18);position:sticky;top:0;z-index:30;padding:10px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
   body.role-admin #topbar{background:linear-gradient(90deg,#0f3f9e,#1660d6);}
   body.role-teacher #topbar{background:linear-gradient(90deg,#1660d6,#1d8cf0);}
+  /* 跑馬燈：中午接 12:30–13:10、下午接 15:50–16:30 顯示在標題列下方（跟著標題列固定在畫面上方） */
+  .marquee{flex:1 0 100%;order:99;margin:2px -20px -10px;overflow:hidden;white-space:nowrap;padding:7px 0;font-size:15px;font-weight:700;border-top:1px solid rgba(255,255,255,.35);cursor:default;}
+  .marquee.noon{background:#fef3c7;color:#78350f;}
+  .marquee.pm{background:#ede9fe;color:#4c1d95;}
+  .marquee.done{background:#dcfce7;color:#14532d;}
+  .marquee.alert{background:#ffe4e6;color:#9f1239;}
+  .marquee-track{display:inline-block;padding-left:100%;animation:mq-scroll var(--mq-dur,20s) linear infinite;}
+  .marquee:hover .marquee-track{animation-play-state:paused;}
+  @keyframes mq-scroll{from{transform:translateX(0);}to{transform:translateX(-100%);}}
+  @media (prefers-reduced-motion:reduce){.marquee{white-space:normal;padding:7px 14px;}.marquee-track{padding-left:0;animation:none;}}
   .brand{display:flex;align-items:center;gap:12px;}
   .logo-box{background:#fff;border-radius:10px;width:42px;height:42px;display:flex;align-items:center;justify-content:center;box-shadow:inset 0 1px 3px rgba(0,0,0,.12);}
   .logo-box svg{width:26px;height:26px;color:#16a34a;}
@@ -426,6 +436,7 @@
   @media (max-width:900px){
     main.content{padding:16px 12px 48px;}
     #topbar{padding:10px 14px;}
+    .marquee{margin:2px -14px -10px;}
     .hist-grid{grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:8px;}
     .day-school .stats .stat{min-width:52px;}
     .modal.wide{max-width:96vw;}
@@ -435,6 +446,7 @@
   @media (max-width:640px){
     body{font-size:15px;}
     #topbar{padding:8px 12px;gap:8px;}
+    .marquee{margin:0 -12px -8px;font-size:14px;}
     .logo-img{width:36px;height:36px;border-radius:9px;}
     .brand-en{font-size:9.5px;padding:1px 5px;margin-left:6px;}
     .login-logo{width:84px;height:84px;border-radius:19px;}
@@ -732,6 +744,7 @@ tr.bk-picked td{background:transparent !important;}
     <button class="btn-h" onclick="openPwdModal()">修改密碼</button>
     <button class="btn-h btn-h-danger" onclick="doLogout()">登出</button>
   </div>
+  <div class="marquee hidden" id="marquee" role="status" aria-live="polite"><span class="marquee-track" id="marquee-track"></span></div>
 </header>
 
 <nav class="tabs hidden" id="admin-tabs" aria-label="管理功能">
@@ -1365,7 +1378,7 @@ function clearSession(keepStorage) {
   }
   SAVE.queue.clear();
   STATE.token = null; STATE.role = null; STATE.name = null;
-  STATE.currentSchoolId = null; STATE.currentStudents = []; STATE.rollcall = null; STATE.rcMode = null;
+  STATE.currentSchoolId = null; STATE.currentStudents = []; STATE.rollcall = null; STATE.rcMode = null;  setTimeout(renderMarquee, 0);
   STATE.rcMarkSchool = null; STATE.rcMarkAt = 0;
   busyReset();
   STATE.selStudents.clear(); STATE.selTeachers.clear();
@@ -1439,6 +1452,7 @@ window.addEventListener('pagehide', () => {
 
 /* ---------------- 進入系統 ---------------- */
 async function enterApp() {
+  setTimeout(() => marqueeTick(true), 0);
   $('view-login').classList.add('hidden');
   $('header-right').classList.remove('hidden');
   $('app-main').classList.remove('hidden');
@@ -1490,7 +1504,7 @@ function renderTeacherDay() {
     $('rollcall-banner').innerHTML = '';
     $('rollcall-container').innerHTML = '';
     $('rollcall-submit-wrap').classList.add('hidden');
-    STATE.rcMode = null; STATE.rollcall = null;
+    STATE.rcMode = null; STATE.rollcall = null;  setTimeout(renderMarquee, 0);
   } else {
     $('rollcall-dayinfo').innerHTML = d && d.type === 'workday'
       ? `<div class="banner-ok">📅 今天是補班補課日，可以點名${d.reason ? '（' + esc(d.reason) + '）' : ''}</div>` : '';
@@ -2310,6 +2324,7 @@ async function openTeacherBookings(kind) {
 
 function switchTab(tab) {
   STATE.activeTab = tab;
+  renderMarquee();
   document.querySelectorAll('#admin-tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
   $('sec-' + tab).classList.add('active');
@@ -2392,6 +2407,94 @@ async function tick() {
   } finally { tickBusy = false; }
 }
 setInterval(tick, CONFIG.TICK_MS);
+
+/* ---------------- 跑馬燈（上方提醒還沒點名的學生）---------------- */
+// 上課日 12:30–13:10 顯示中午接、15:50–16:30 顯示下午接（含今天固定自走／自送）；剩 5 位以內列出姓名，全部點完就顯示已點完
+// 老師進入某間學校時只顯示那間學校；管理員在「點名總覽」篩選學校時只顯示那間學校
+const MARQUEE_SLOTS = [
+  { slot: 'noon', label: '中午接', icon: '☀️', from: 12 * 60 + 30, to: 13 * 60 + 10 },
+  { slot: 'pm', label: '下午接', icon: '🌆', from: 15 * 60 + 50, to: 16 * 60 + 30 }
+];
+const MARQUEE_NAMES_MAX = 5;
+const MARQUEE_REFRESH_MS = 30 * 1000;
+function taipeiMinutes() {
+  const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Taipei', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date());
+  const v = t => parseInt((p.find(x => x.type === t) || {}).value || '0', 10);
+  return v('hour') * 60 + v('minute');
+}
+function marqueeSlotNow() { const m = taipeiMinutes(); return MARQUEE_SLOTS.find(s => m >= s.from && m <= s.to) || null; }
+function hhmm(m) { return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); }
+function marqueeScope() {
+  if (STATE.role === 'teacher') return STATE.rollcall && STATE.rcMode ? STATE.rollcall.schoolId : null;
+  if (STATE.role === 'admin' && STATE.activeTab === 'overview' && $('overview-school-filter')) return $('overview-school-filter').value || null;
+  return null;
+}
+// 老師正在點名的學校：用畫面上剛點的狀態（不用等同步）
+function marqueeLocal(schoolId) {
+  if (STATE.role !== 'teacher' || !STATE.rollcall || STATE.rollcall.schoolId !== schoolId) return null;
+  const rows = document.querySelectorAll('#rollcall-container .rc-row');
+  if (!rows.length) return null;
+  const m = {};
+  rows.forEach(tr => { m[tr.dataset.sid] = tr.dataset.status || ''; });
+  return m;
+}
+let marqueeBusy = false;
+async function marqueeTick(force) {
+  const slot = STATE.token ? marqueeSlotNow() : null;
+  if (!slot) { STATE.marquee = null; renderMarquee(); return; }
+  if (document.hidden || marqueeBusy || STATE.pending) { renderMarquee(); return; }
+  const mq = STATE.marquee;
+  if (force || !mq || mq.slot !== slot.slot || Date.now() - mq.at >= MARQUEE_REFRESH_MS) {
+    marqueeBusy = true;
+    try {
+      const r = await api('getMarquee', {}, { pill: false, flash: false });
+      STATE.marquee = { slot: slot.slot, at: Date.now(), data: r };
+    } catch (e) { /* 連線問題由背景同步處理，跑馬燈維持上一次的內容 */ }
+    finally { marqueeBusy = false; }
+  }
+  renderMarquee();
+}
+function renderMarquee() {
+  const el = $('marquee');
+  if (!el) return;
+  const mq = STATE.marquee;
+  const def = mq && MARQUEE_SLOTS.find(s => s.slot === mq.slot);
+  if (!STATE.token || !mq || !mq.data || !mq.data.open || !def) { el.classList.add('hidden'); el.dataset.text = ''; return; }
+  const scope = marqueeScope();
+  const schools = (mq.data.schools || []).filter(sc => !scope || sc.id === scope);
+  let total = 0;
+  const left = [];
+  schools.forEach(sc => {
+    const loc = marqueeLocal(sc.id);
+    const list = sc[mq.slot] || [];
+    total += list.length;
+    const un = list.filter(x => loc && x.id in loc ? !loc[x.id] : !x.marked);
+    if (un.length) left.push({ sc, un });
+  });
+  const n = left.reduce((a, g) => a + g.un.length, 0);
+  const where = scope && schools[0] ? schools[0].name + ' ' : '';
+  const who = x => `${x.tag ? '📌' : ''}${x.name}(${x.grade || '-'})${x.tag ? '固定' + x.tag : ''}`;
+  let text, cls;
+  if (!total) { text = `${def.icon} ${where}今天沒有${def.label}要點名的學生`; cls = 'done'; }
+  else if (!n) { text = `✅ ${where}${def.label}已全部點完名，辛苦了！`; cls = 'done'; }
+  else if (n <= MARQUEE_NAMES_MAX) {
+    text = `🔔 ${where}${def.label}還沒點到名（剩 ${n} 位）：` + left.map(g => (scope ? '' : `【${g.sc.name}】`) + g.un.map(who).join('、')).join('　');
+    cls = 'alert';
+  } else {
+    text = `${def.icon} ${where}${def.label}點名時間 ${hhmm(def.from)}–${hhmm(def.to)}，還有 ${n} 位未點名` +
+      (scope ? '' : '：' + left.map(g => `${g.sc.name} ${g.un.length} 位`).join('、'));
+    cls = mq.slot;
+  }
+  el.classList.remove('hidden');
+  if (el.dataset.text === text && el.dataset.cls === cls) return;   // 內容沒變就不要重新開始捲動
+  el.dataset.text = text; el.dataset.cls = cls;
+  el.className = 'marquee ' + cls;
+  const track = $('marquee-track');
+  track.textContent = text;
+  track.style.setProperty('--mq-dur', Math.max(14, Math.round(text.length * 0.45)) + 's');
+}
+setInterval(marqueeTick, 10 * 1000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) marqueeTick(); });
 
 /* ---------------- 學校 ---------------- */
 async function loadSchools(silent) {
@@ -3110,6 +3213,7 @@ function fmtTime(iso) {
 }
 
 async function loadOverview(silent) {
+  renderMarquee();
   const container = $('overview-container');
   if (!silent && !container.dataset.loaded) container.innerHTML = '<div class="empty">載入中…</div>';
   const r = await api('getOverview', { schoolId: $('overview-school-filter').value || null }, { pill: !silent, flash: !silent });
@@ -3311,7 +3415,7 @@ async function loadRollCall(silent, opts) {
   if (!schoolId) {
     container.innerHTML = '<div class="empty">請先選擇學校</div>';
     $('rollcall-submit-wrap').classList.add('hidden'); $('rollcall-banner').innerHTML = '';
-    STATE.rollcall = null; STATE.rcMode = null;
+    STATE.rollcall = null; STATE.rcMode = null;  setTimeout(renderMarquee, 0);
     sendPresence();
     return;
   }
@@ -3324,11 +3428,11 @@ async function loadRollCall(silent, opts) {
     if (!r.day.open) { renderTeacherDay(); return; }   // 管理員剛把今天設為放假
     if (changed) renderTeacherDay();
   }
-  STATE.rollcall = { schoolId, students: r.students, submitted: r.submitted, submittedAt: r.submittedAt || '', submittedBy: r.submittedBy || '', submitters: r.submitters || [], allNoon: r.allNoon || null };
+  STATE.rollcall = { schoolId, students: r.students, submitted: r.submitted, submittedAt: r.submittedAt || '', submittedBy: r.submittedBy || '', submitters: r.submitters || [], allNoon: r.allNoon || null };  setTimeout(renderMarquee, 0);
   if (!r.students.length) {
     $('rollcall-banner').innerHTML = '';
     container.innerHTML = '<div class="empty">此校尚無學生資料</div>';
-    $('rollcall-submit-wrap').classList.add('hidden'); STATE.rcMode = null;
+    $('rollcall-submit-wrap').classList.add('hidden'); STATE.rcMode = null;  setTimeout(renderMarquee, 0);
     return;
   }
   // 還有學生未點名 → 直接進入點名（學生陸續到、陸續點）；全部點完 → 顯示明細
@@ -3385,7 +3489,7 @@ function renderRcViewBody() {
 
 function renderRcView() {
   const rc = STATE.rollcall;
-  STATE.rcMode = 'view';
+  STATE.rcMode = 'view';  setTimeout(renderMarquee, 0);
   STATE.rcMarkSchool = null; STATE.rcMarkAt = 0;   // 回到明細：不再算點名中
   const c = countStatuses(rc.students);
   $('rollcall-banner').innerHTML = allNoonBannerHtml() + `<div class="banner-ok">✔ 今日已送出點名：${submittersText(rc.submitters)}` +
@@ -3418,7 +3522,7 @@ function rcRowHtml(st) {
 // 點名 / 修改模式：未點名的放上面，已點名的放下面做區分
 function renderRcEdit() {
   const rc = STATE.rollcall;
-  STATE.rcMode = 'edit';
+  STATE.rcMode = 'edit';  setTimeout(renderMarquee, 0);
   $('rollcall-banner').innerHTML = allNoonBannerHtml() + `<div class="banner-edit">✎ 點選學生的出席狀態就會<b>自動儲存</b>，學生陸續到再陸續點即可${rc.submitted ? `（已點名：${submittersText(rc.submitters)}）` : ''}</div>`;
   const todo = rc.students.filter(st => !st.status);
   const done = sortedByStatus(rc.students.filter(st => st.status));
@@ -3484,6 +3588,7 @@ function updateRcSummary() {
     tr.classList.toggle('rc-alert', on && !tr.dataset.status);
   });
   updateRcPkTabs();
+  renderMarquee();
 }
 // 點「未點名」方塊：捲到第一位還沒點名的學生並稍微標示（只找目前分頁看得到的）
 function jumpToFirstUnmarked() {
