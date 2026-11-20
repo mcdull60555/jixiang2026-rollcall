@@ -2395,6 +2395,8 @@ function lineCommandReply_(raw) {
   if (m) return lineCmdStudent_(m[1].trim());
   switch (t) {
     case '未點名': return lineCmdUnmarked_();
+    case '中午未點名': return lineCmdUnmarked_('noon');
+    case '下午未點名': return lineCmdUnmarked_('pm');
     case '點名進度': return lineCmdProgress_();
     case '今日請假': return lineCmdLeaveToday_();
     case '臨時進班': return lineCmdAttendToday_();
@@ -2407,7 +2409,9 @@ function lineCommandReply_(raw) {
 
 function lineCmdHelp_() {
   return ['📖 小管家可用口令（在群組傳這些字就會回覆）', '',
-    '📋 未點名：現在還沒點名的學生',
+    '📋 未點名：現在還沒點名的學生（中午＋下午）',
+    '☀️ 中午未點名：只列中午接還沒點名的',
+    '🌆 下午未點名：只列下午接還沒點名的（含固定自走／自送）',
     '📊 點名進度：各校已點名／應到人數',
     '🔴 今日請假：今天請假的學生',
     '🟢 臨時進班：今天臨時進班的學生',
@@ -2442,25 +2446,29 @@ function lineBySchool_(d, items, fmt) {
 }
 function lineWho_(st) { return st.name + '（' + st.grade + '）'; }
 
-function lineCmdUnmarked_() {
+// slot：'noon' 只列中午接、'pm' 只列下午接（含固定自走／自送）、不給＝全部
+function lineCmdUnmarked_(slot) {
   var data = unmarkedBySlot_();
   if (!data) return lineClosedText_({ today: today_() });
   var lines = [], total = 0, n = 0;
   Object.keys(data.schools).map(function (k) { return data.schools[k]; })
     .sort(function (a, b) { return String(a.name).localeCompare(String(b.name), 'zh-Hant'); })
     .forEach(function (sc) {
-      var noon = sortStudents(sc.noon.slice()), pm = sortStudents(sc.pm.slice()), walk = sortStudents(sc.walk.slice());
+      var noon = slot === 'pm' ? [] : sortStudents(sc.noon.slice());
+      var pm = slot === 'noon' ? [] : sortStudents(sc.pm.slice());
+      var walk = slot === 'noon' ? [] : sortStudents(sc.walk.slice());
       var cnt = noon.length + pm.length + walk.length;
       if (!cnt) return;
       n++; total += cnt;
       var nm = function (st) { return st.name + '(' + st.grade + ')'; };
       lines.push(''); lines.push('【' + sc.name + '】' + cnt + ' 位');
-      if (noon.length) lines.push('中午接：' + noon.map(nm).join('、'));
-      if (pm.length) lines.push('下午接：' + pm.map(nm).join('、'));
+      if (noon.length) lines.push((slot ? '' : '中午接：') + noon.map(nm).join('、'));
+      if (pm.length) lines.push((slot ? '' : '下午接：') + pm.map(nm).join('、'));
       walk.forEach(function (st) { lines.push('📌 ' + nm(st) + '[固定' + st.tag + ']'); });
     });
-  var head = '📋 目前未點名（' + lineNow_() + '）\n' + lineDateLabel_(data.date);
-  if (!total) return head + '\n✅ 全部都點完了';
+  var title = slot === 'noon' ? '中午接' : slot === 'pm' ? '下午接' : '';
+  var head = '📋 目前' + title + '未點名（' + lineNow_() + '）\n' + lineDateLabel_(data.date);
+  if (!total) return head + '\n✅ ' + (title || '全部') + '都點完了';
   return head + '\n共 ' + n + ' 校、' + total + ' 位\n' + lines.join('\n');
 }
 
