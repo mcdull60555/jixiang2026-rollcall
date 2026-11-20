@@ -1066,6 +1066,29 @@ const API_WRITES = new Set(['login', 'logout', 'changePwd', 'addContactType', 'a
 const API_IDEMPOTENT = new Set(['saveMarks', 'logout', 'editSchool', 'editStudent', 'editTeacher', 'deleteStudent', 'deleteStudentsBatch', 'setPickupSlot', 'setAllNoonDay']);
 // 伺服器暫時性的錯誤（忙碌、Google 服務逾時等系統訊息）：可以自動重試
 function isTransient(code) { return code === 'BUSY' || !/^[A-Z_]+$/.test(String(code || '')); }
+
+/* ---------------- 手機切到背景 / 鎖定螢幕 ----------------
+   手機離開網頁時瀏覽器會暫停頁面，進行中的連線會被中斷；回來時網路也要 1～3 秒才恢復。
+   這種「被中斷」的失敗不算連線失敗：等回到畫面、網路恢復後自動重送。 */
+const PAGE = { hideSeq: 0, shownAt: Date.now() };
+function markHidden() { PAGE.hideSeq++; }
+function isUsable() { return !document.hidden && navigator.onLine !== false; }
+// 等到頁面在前景且有網路（離線最多等 maxOfflineMs；在背景就一直等到回來）
+function waitUsable(maxOfflineMs) {
+  return new Promise(resolve => {
+    if (isUsable()) return resolve(true);
+    let offlineSince = null;
+    const iv = setInterval(() => {
+      if (isUsable()) { clearInterval(iv); resolve(true); return; }
+      if (!document.hidden) {
+        offlineSince = offlineSince || Date.now();
+        if (Date.now() - offlineSince > maxOfflineMs) { clearInterval(iv); resolve(false); }
+      } else offlineSince = null;
+    }, 500);
+  });
+}
+// 剛回到畫面的這段時間（網路還在恢復）
+function justResumed(ms) { return Date.now() - PAGE.shownAt < (ms || 10000); }
 // opts.pill=false：不顯示頂端「同步中」小提示；opts.flash=false：不讓連線燈閃「連線中」
 async function api(action, payload, opts) {
   opts = Object.assign({ pill: true, flash: true }, opts || {});
@@ -1080,11 +1103,14 @@ async function api(action, payload, opts) {
   // 網路瞬斷、Google 伺服器暫時忙碌時自動重試，不要一失敗就跳「請重新整理」
   // 會新增資料的動作只在「伺服器確定沒執行」（BUSY）時重試，避免重複新增；讀取與自動儲存點名可放心重試
   const safeRetry = !API_WRITES.has(action) || API_IDEMPOTENT.has(action);
-  const t0 = Date.now();
-  let json, attempt = 0;
+  let t0 = Date.now();
+  let json, attempt = 0, interruptions = 0;
+  // 頁面在背景時先不要送（送了也會被手機暫停），等回到畫面再送
+  if (safeRetry && document.hidden) await waitUsable(20000);
   while (true) {
     attempt++;
     let code = null;
+    const seq = PAGE.hideSeq;
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), CONFIG.TIMEOUT_MS);
     try {
@@ -1092,6 +1118,16 @@ async function api(action, payload, opts) {
       try { json = await res.json(); } catch (e) { code = 'BAD_RESPONSE'; }
     } catch (e) { code = 'NETWORK_ERROR'; }
     clearTimeout(timer);
+    // 因為離開網頁 / 剛回來網路還沒恢復 / 暫時離線而失敗：等網路恢復後重送，不算失敗次數
+    if ((code === 'NETWORK_ERROR' || code === 'BAD_RESPONSE') && safeRetry && interruptions < 6 &&
+        (PAGE.hideSeq !== seq || document.hidden || navigator.onLine === false || justResumed(10000))) {
+      interruptions++;
+      if (await waitUsable(20000)) {
+        await new Promise(r => setTimeout(r, 1200));
+        attempt = 0; t0 = Date.now();
+        continue;
+      }
+    }
     if (!code && json && !json.ok && isTransient(json.error)) code = json.error;
     const canRetry = attempt < 3 && Date.now() - t0 < 60000 && (code === 'BUSY' || (code && safeRetry));
     if (code && canRetry) { await new Promise(r => setTimeout(r, attempt === 1 ? 1500 : 4000)); continue; }
@@ -1303,10 +1339,13 @@ function loadSessionLS() {
 }
 function clearSessionLS() { try { localStorage.removeItem(LS_SESSION); } catch (e) {} }
 function lastSchoolKey() { return 'jx_school_' + (STATE.role || '') + '_' + (STATE.name || ''); }
-function clearSession() {
-  clearSessionLS();
+// keepStorage：只是網路不通沒辦法恢復登入時，保留手機裡的登入資料與還沒存的點名，重新整理後可再恢復
+function clearSession(keepStorage) {
+  if (!keepStorage) {
+    clearSessionLS();
+    try { localStorage.removeItem(LS_PENDING); } catch (e) {}
+  }
   SAVE.queue.clear();
-  try { localStorage.removeItem(LS_PENDING); } catch (e) {}
   STATE.token = null; STATE.role = null; STATE.name = null;
   STATE.currentSchoolId = null; STATE.currentStudents = []; STATE.rollcall = null; STATE.rcMode = null;
   STATE.rcMarkSchool = null; STATE.rcMarkAt = 0;
@@ -1344,7 +1383,27 @@ function checkIdle() {
   if (STATE.token && Date.now() - STATE.lastActivity > CONFIG.IDLE_MS) forceLogout('閒置超過 60 分鐘，已自動登出');
 }
 setInterval(checkIdle, 15000);
-document.addEventListener('visibilitychange', () => { if (!document.hidden) checkIdle(); });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { markHidden(); return; }
+  PAGE.shownAt = Date.now();
+  checkIdle();
+  onResume();
+});
+// iOS Safari 從「上一頁快取」還原頁面
+window.addEventListener('pageshow', e => { if (e.persisted) { PAGE.shownAt = Date.now(); checkIdle(); onResume(); } });
+window.addEventListener('online', () => { PAGE.shownAt = Date.now(); onResume(); });
+// 回到網頁：等網路恢復一下，立刻重新同步（不用等下一次 30 秒），並把還沒存的點名送出
+let resumeTimer = null;
+function onResume() {
+  if (document.hidden) return;
+  clearTimeout(resumeTimer);
+  resumeTimer = setTimeout(async () => {
+    if (!isUsable()) return;   // 還沒網路：等 online 事件再來
+    STATE.tickFails = 0;
+    if (SAVE.queue.size && STATE.token) scheduleFlush(300);
+    await tick();
+  }, 1000);
+}
 // 關閉或重新整理頁面：不登出；把還沒存的點名送出，並清掉「點名中」狀態（重新開啟後會再回報）
 // 頁面關閉後仍會送達的請求（keepalive；不支援時改用 sendBeacon）
 function sendOnExit(payload) {
@@ -1353,6 +1412,7 @@ function sendOnExit(payload) {
   try { if (navigator.sendBeacon) navigator.sendBeacon(CONFIG.API_URL, body); } catch (e) {}
 }
 window.addEventListener('pagehide', () => {
+  markHidden();
   if (!STATE.token) return;
   saveSessionLS();
   pendingBySchool().forEach((records, schoolId) => sendOnExit({ action: 'saveMarks', token: STATE.token, schoolId, records }));
@@ -2131,8 +2191,9 @@ function switchTab(tab) {
 /* ---------------- 連線 / 同步錯誤：跳出提示，要求重新整理或重新登入 ---------------- */
 const SYNC_ERRORS = ['NETWORK_ERROR', 'BAD_RESPONSE', 'BUSY', 'UNKNOWN_ACTION', 'UNKNOWN_ERROR'];
 function isSyncError(code) { return SYNC_ERRORS.includes(code) || !/^[A-Z_]+$/.test(String(code || '')); }
-function showSyncError(code) {
-  if ($('sync-error')) return;   // 已經在顯示就不重複跳
+function showSyncError(code, fromBg) {
+  const shown = $('sync-error');
+  if (shown) { if (!fromBg) shown.dataset.bg = '0'; return; }   // 已經在顯示就不重複跳（使用者動作失敗的就不自動關）
   $('doneToast').classList.add('hidden');   // 收起可能還在顯示的「同步完成」，避免誤會
   const reason = code === 'NETWORK_ERROR' ? '無法連線到伺服器（可能是網路中斷或訊號不穩）。'
     : code === 'BUSY' ? '目前多人同時操作，伺服器忙碌中，這次同步沒有完成。'
@@ -2140,6 +2201,7 @@ function showSyncError(code) {
   const bg = document.createElement('div');
   bg.className = 'prompt-bg';
   bg.id = 'sync-error';
+  bg.dataset.bg = fromBg ? '1' : '0';
   bg.style.zIndex = 10003;
   bg.innerHTML = `<div class="modal" role="alertdialog" aria-modal="true" aria-labelledby="se-t" style="max-width:440px">
     <h3 id="se-t">⚠️ 連線或同步發生問題</h3>
@@ -2156,8 +2218,10 @@ function showSyncError(code) {
 }
 
 /* ---------------- 背景同步 / 心跳 ---------------- */
+let tickBusy = false;
 async function tick() {
-  if (document.hidden || STATE.pending) return;
+  if (document.hidden || STATE.pending || tickBusy) return;
+  tickBusy = true;
   try {
     const modalOpen = document.querySelector('.modal-bg,.prompt-bg');
     if (STATE.token && STATE.role === 'admin' && !modalOpen) {
@@ -2183,13 +2247,16 @@ async function tick() {
     }
     if (!STATE.token) loadLoginAccounts();
     STATE.tickFails = 0;
+    // 背景同步跳出的斷線提示：連線恢復後自動關閉（使用者沒有進行中的動作才關）
+    const se = $('sync-error');
+    if (se && se.dataset.bg === '1' && !STATE.pending && !busyDepth) se.remove();
   } catch (e) {
-    // 背景同步連續失敗 2 次（約 1 分鐘）就提示
-    if (isSyncError(e.message)) {
+    // 背景同步連續失敗 2 次（約 1 分鐘）就提示；剛從背景回來、或目前離線時不算
+    if (isSyncError(e.message) && !justResumed(20000) && !document.hidden) {
       STATE.tickFails = (STATE.tickFails || 0) + 1;
-      if (STATE.tickFails >= 2) showSyncError(e.message);
+      if (STATE.tickFails >= 2) showSyncError(e.message, true);
     }
-  }
+  } finally { tickBusy = false; }
 }
 setInterval(tick, CONFIG.TICK_MS);
 
@@ -3756,7 +3823,14 @@ $('login-password').addEventListener('keydown', e => { if (e.key === 'Enter') do
       await enterApp();
       ok = true;
     } catch (e) {
-      if (e.message !== 'AUTH_EXPIRED' && STATE.token) { toast('無法恢復登入，請重新登入', true); clearSession(); }
+      if (e.message !== 'AUTH_EXPIRED' && STATE.token) {
+        const netFail = e.message === 'NETWORK_ERROR' || e.message === 'BAD_RESPONSE';
+        if (netFail) {
+          // 網路還沒恢復：不登出、不清掉還沒存的點名，請使用者等網路穩定後重新整理
+          toast('網路不穩定，暫時無法恢復登入，請稍後重新整理頁面', true);
+          clearSession(true);
+        } else { toast('無法恢復登入，請重新登入', true); clearSession(); }
+      }
     } finally { busyEnd(ok, '已恢復登入'); }
     return;
   }
