@@ -2192,6 +2192,7 @@ function cleanupOldRecords() {
 // =====================================================================
 var LINE_BIND_KEYWORD = '綁定點名通知';
 var LINE_UNBIND_KEYWORD = '解除點名通知';
+var LINE_QUERY_KEYWORD = '綁定查詢';   // 只開放口令查詢、不接收自動推播（不耗免費則數）
 var LINE_REMINDER_GRACE_MIN = 30;        // 排程每 5 分鐘檢查一次；整點後 30 分鐘內補發都算，過了就不發
 var LINE_REMINDERS = [
   { slot: 'noon', label: '中午接', hour: 13, minute: 10 },
@@ -2201,6 +2202,9 @@ var LINE_REMINDERS = [
 function lineProps_() { return PropertiesService.getScriptProperties(); }
 function lineTargets_() {
   return String(lineProps_().getProperty('LINE_GROUP_ID') || '').split(',').map(function (x) { return x.trim(); }).filter(String);
+}
+function lineQueryTargets_() {   // 只用口令查詢的群組（LINE_QUERY_GROUP_ID）
+  return String(lineProps_().getProperty('LINE_QUERY_GROUP_ID') || '').split(',').map(function (x) { return x.trim(); }).filter(String);
 }
 function lineConfigured_() { return !!lineProps_().getProperty('LINE_CHANNEL_TOKEN') && lineTargets_().length > 0; }
 
@@ -2352,17 +2356,25 @@ function handleLineWebhook_(body) {
     var src = ev.source || {};
     var id = src.groupId || src.roomId;
     if (!id) return;   // 只處理群組／多人聊天室，不處理一對一聊天
-    var list = lineTargets_(), at = list.indexOf(id);
-    if (text === LINE_BIND_KEYWORD) {
+    var list = lineTargets_(), at = list.indexOf(id), qlist = lineQueryTargets_(), qat = qlist.indexOf(id);
+    var save = function () { lineProps_().setProperty('LINE_GROUP_ID', list.join(',')); lineProps_().setProperty('LINE_QUERY_GROUP_ID', qlist.join(',')); };
+    if (text === LINE_BIND_KEYWORD) {   // 推播群組：自動提醒＋口令
+      if (qat !== -1) qlist.splice(qat, 1);
       if (at === -1) list.push(id);
-      lineProps_().setProperty('LINE_GROUP_ID', list.join(','));
+      save();
       lineReply_(ev.replyToken, (at === -1 ? '✅ 已綁定這個群組為「基翔點名」通知對象' : '✅ 這個群組已經綁定過了') +
         '\n目前共 ' + list.length + ' 個通知群組\n之後會在這裡通知：13:10 中午接、16:40 下午接未點名提醒\n傳「指令」可以查看可用的查詢口令');
+    } else if (text === LINE_QUERY_KEYWORD) {   // 查詢群組：只回答口令，不推播
+      if (at !== -1) list.splice(at, 1);
+      if (qat === -1) qlist.push(id);
+      save();
+      lineReply_(ev.replyToken, '✅ 已設定這個群組為「只用口令查詢」\n不會收到自動提醒；傳「指令」可以查看可用的查詢口令');
     } else if (text === LINE_UNBIND_KEYWORD) {
       if (at !== -1) list.splice(at, 1);
-      lineProps_().setProperty('LINE_GROUP_ID', list.join(','));
-      lineReply_(ev.replyToken, at !== -1 ? '✅ 已解除這個群組的點名通知\n目前剩 ' + list.length + ' 個通知群組' : '這個群組本來就沒有綁定');
-    } else if (at !== -1) {   // 查詢口令：只回答已綁定的群組，沒綁定的群組不會得到學生資料
+      if (qat !== -1) qlist.splice(qat, 1);
+      save();
+      lineReply_(ev.replyToken, (at !== -1 || qat !== -1) ? '✅ 已解除這個群組的點名通知與查詢\n目前剩 ' + list.length + ' 個通知群組、' + qlist.length + ' 個查詢群組' : '這個群組本來就沒有綁定');
+    } else if (at !== -1 || qat !== -1) {   // 查詢口令：只回答已綁定的群組，沒綁定的群組不會得到學生資料
       var out = null;
       try { out = lineCommandReply_(text); }
       catch (e) { lineProps_().setProperty('LINE_LAST_ERROR', new Date().toISOString() + ' 口令「' + text + '」失敗：' + String(e && e.message || e)); out = '查詢失敗，請稍後再試，或到點名系統查看'; }
