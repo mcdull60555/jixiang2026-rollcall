@@ -2208,22 +2208,32 @@ function lineQueryTargets_() {   // 只用口令查詢的群組（LINE_QUERY_GRO
 }
 function lineConfigured_() { return !!lineProps_().getProperty('LINE_CHANNEL_TOKEN') && lineTargets_().length > 0; }
 
-// 推播文字（超過 LINE 單則上限時自動拆成多則）。回傳 { ok, error? }；失敗只記錄，不丟錯誤，避免影響點名
-function linePush_(text, onlyTo) {
+// 推播：msg 可以是文字，或 lineCard_() 做的卡片（Flex Message）。回傳 { ok, error? }；失敗只記錄，不丟錯誤，避免影響點名
+// 卡片送不出去（例如格式被 LINE 拒絕）時，會自動改用文字版再送一次
+function linePush_(msg, onlyTo) {
   var p = lineProps_(), token = p.getProperty('LINE_CHANNEL_TOKEN'), to = onlyTo ? [onlyTo] : lineTargets_();
   if (!token || !to.length) return { ok: false, error: 'LINE_NOT_CONFIGURED' };
-  var chunks = lineChunks_(text);
   var err = '';
+  var post = function (target, messages) {
+    try {
+      var res = UrlFetchApp.fetch('https://api.line.me/v2/bot/message/push', {
+        method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+        headers: { Authorization: 'Bearer ' + token },
+        payload: JSON.stringify({ to: target, messages: messages })
+      });
+      return res.getResponseCode() === 200 ? '' : res.getResponseCode() + ' ' + res.getContentText().slice(0, 300);
+    } catch (e) { return String(e && e.message || e); }
+  };
   to.forEach(function (target) {
-    chunks.forEach(function (chunk) {
-      try {
-        var res = UrlFetchApp.fetch('https://api.line.me/v2/bot/message/push', {
-          method: 'post', contentType: 'application/json', muteHttpExceptions: true,
-          headers: { Authorization: 'Bearer ' + token },
-          payload: JSON.stringify({ to: target, messages: [{ type: 'text', text: chunk }] })
-        });
-        if (res.getResponseCode() !== 200) err = res.getResponseCode() + ' ' + res.getContentText().slice(0, 300);
-      } catch (e) { err = String(e && e.message || e); }
+    var flex = lineFlexMessage_(msg);
+    if (flex) {
+      var e1 = post(target, [flex]);
+      if (!e1) return;
+      p.setProperty('LINE_LAST_FLEX_ERROR', new Date().toISOString() + ' ' + e1);
+    }
+    lineChunks_(lineCardText_(msg)).forEach(function (chunk) {   // 文字版（或卡片失敗時的備援）
+      var e2 = post(target, [{ type: 'text', text: chunk }]);
+      if (e2) err = e2;
     });
   });
   p.setProperty('LINE_LAST_ERROR', err ? new Date().toISOString() + ' ' + err : '');
@@ -2241,23 +2251,147 @@ function lineChunks_(text) {
   return chunks;
 }
 
-// 用「回覆」回答群組裡的口令（reply 訊息通常不計入每月推播則數）；一次最多 5 則，超過的截掉
-function lineReply_(replyToken, text) {
+// 用「回覆」回答群組裡的口令（reply 訊息不計入每月推播則數）；msg 可以是文字或卡片
+function lineReply_(replyToken, msg) {
   var p = lineProps_(), token = p.getProperty('LINE_CHANNEL_TOKEN');
   if (!token || !replyToken) return { ok: false, error: 'LINE_NOT_CONFIGURED' };
-  var chunks = lineChunks_(text);
+  var post = function (messages) {
+    try {
+      var res = UrlFetchApp.fetch('https://api.line.me/v2/bot/message/reply', {
+        method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+        headers: { Authorization: 'Bearer ' + token },
+        payload: JSON.stringify({ replyToken: replyToken, messages: messages })
+      });
+      return res.getResponseCode() === 200 ? '' : res.getResponseCode() + ' ' + res.getContentText().slice(0, 300);
+    } catch (e) { return String(e && e.message || e); }
+  };
+  var err = '', flex = lineFlexMessage_(msg);
+  if (flex) {
+    err = post([flex]);
+    if (!err) { p.setProperty('LINE_LAST_ERROR', ''); return { ok: true }; }
+    p.setProperty('LINE_LAST_FLEX_ERROR', new Date().toISOString() + ' ' + err);
+  }
+  var chunks = lineChunks_(lineCardText_(msg));   // 一次最多 5 則，超過的截掉
   if (chunks.length > 5) { chunks = chunks.slice(0, 5); chunks[4] += '\n…（名單太長，請到點名系統查看完整內容）'; }
-  var err = '';
-  try {
-    var res = UrlFetchApp.fetch('https://api.line.me/v2/bot/message/reply', {
-      method: 'post', contentType: 'application/json', muteHttpExceptions: true,
-      headers: { Authorization: 'Bearer ' + token },
-      payload: JSON.stringify({ replyToken: replyToken, messages: chunks.map(function (c) { return { type: 'text', text: c }; }) })
-    });
-    if (res.getResponseCode() !== 200) err = res.getResponseCode() + ' ' + res.getContentText().slice(0, 300);
-  } catch (e) { err = String(e && e.message || e); }
+  err = post(chunks.map(function (c) { return { type: 'text', text: c }; }));
   p.setProperty('LINE_LAST_ERROR', err ? new Date().toISOString() + ' ' + err : '');
   return err ? { ok: false, error: err } : { ok: true };
+}
+
+// =====================================================================
+// ---------- 卡片（Flex Message）----------
+// lineCard_({ theme, title, sub, alt, intro: [列], sections: [{ head, right, rc, rows: [列] }], note, button })
+//   列可以是：'文字'（灰字）｜{ t, c }（有顏色的字，c：pin/red/green/label）
+//            ｜{ t, r, c }（左邊文字、右邊數字，c 決定右邊顏色）｜{ k, v }（口令說明：左粗體、右說明）
+//   button：false＝不放「開啟雲點名」按鈕；預設會放（網址可用指令碼屬性 APP_URL 改）
+// 卡片太長會自動分成多張左右滑（最多 12 張）；再長就改送文字版
+// =====================================================================
+var LINE_APP_URL_DEFAULT = 'https://mcdull60555.github.io/jixiang2026-rollcall/';
+var LINE_THEMES_ = {
+  noon:  { bg: '#FAEEDA', fg: '#633806', sub: '#854F0B' },   // 中午接：橘
+  pm:    { bg: '#EEEDFE', fg: '#3C3489', sub: '#534AB7' },   // 下午接：紫
+  blue:  { bg: '#E6F1FB', fg: '#0C447C', sub: '#185FA5' },   // 一般查詢：藍
+  red:   { bg: '#FCEBEB', fg: '#791F1F', sub: '#A32D2D' },   // 請假：紅
+  green: { bg: '#EAF3DE', fg: '#27500A', sub: '#3B6D11' },   // 臨時進班：綠
+  teal:  { bg: '#E1F5EE', fg: '#085041', sub: '#0F6E56' },   // 接送：青
+  gray:  { bg: '#F1EFE8', fg: '#444441', sub: '#5F5E5A' }    // 說明：灰
+};
+var LINE_ROW_COLORS_ = { pin: '#854F0B', red: '#A32D2D', green: '#3B6D11', label: '#111111', gray: '#888780' };
+
+function lineCard_(o) { o.card = true; return o; }
+function lineAppUrl_() { return String(lineProps_().getProperty('APP_URL') || LINE_APP_URL_DEFAULT).trim(); }
+function lineBytes_(obj) { return Utilities.newBlob(JSON.stringify(obj)).getBytes().length; }
+
+// 卡片 → 文字版（備援，也用在卡片太長時）
+function lineCardText_(msg) {
+  if (!msg || !msg.card) return String(msg || '');
+  var out = [msg.title];
+  if (msg.sub) out.push(msg.sub);
+  (msg.intro || []).forEach(function (r) { out.push(lineRowText_(r)); });
+  (msg.sections || []).forEach(function (s) {
+    out.push('');
+    if (s.head) out.push(s.head + (s.right ? '　' + s.right : ''));
+    (s.rows || []).forEach(function (r) { out.push(lineRowText_(r)); });
+  });
+  if (msg.note) { out.push(''); out.push(msg.note); }
+  return out.join('\n');
+}
+function lineRowText_(r) {
+  if (typeof r === 'string') return r;
+  if (r.k) return r.k + '：' + r.v;
+  return r.t + (r.r !== undefined ? '　' + r.r : '');
+}
+
+// 一列 → Flex 元件
+function lineRowFlex_(r) {
+  if (typeof r === 'string') r = { t: r };
+  if (r.k) return { type: 'box', layout: 'horizontal', spacing: 'md', contents: [
+    { type: 'text', text: r.k, size: 'sm', weight: 'bold', color: '#111111', flex: 4, wrap: true },
+    { type: 'text', text: String(r.v), size: 'sm', color: '#666666', flex: 7, wrap: true }] };
+  if (r.r !== undefined) return { type: 'box', layout: 'horizontal', spacing: 'md', contents: [
+    { type: 'text', text: String(r.t), size: 'sm', color: '#333333', flex: 1, wrap: true },
+    { type: 'text', text: String(r.r), size: 'sm', weight: 'bold', color: LINE_ROW_COLORS_[r.c] || '#333333', flex: 0, align: 'end' }] };
+  var t = { type: 'text', text: String(r.t || ' '), size: 'sm', color: LINE_ROW_COLORS_[r.c] || '#555555', wrap: true };
+  if (r.c === 'label') { t.weight = 'bold'; t.margin = 'sm'; }
+  return t;
+}
+
+function lineSectionFlex_(s) {
+  var c = [];
+  if (s.head) c.push({ type: 'box', layout: 'horizontal', spacing: 'md', contents: [
+    { type: 'text', text: s.head, size: 'md', weight: 'bold', color: '#111111', flex: 1, wrap: true },
+    { type: 'text', text: String(s.right || ' '), size: 'sm', weight: 'bold', color: LINE_ROW_COLORS_[s.rc] || '#A32D2D', flex: 0, align: 'end', gravity: 'center' }] });
+  if ((s.rows || []).length) c.push({ type: 'box', layout: 'vertical', spacing: 'xs', margin: s.head ? 'sm' : 'none',
+    paddingStart: s.head ? '8px' : '0px', contents: s.rows.map(lineRowFlex_) });
+  return { type: 'box', layout: 'vertical', contents: c };
+}
+
+function lineBubble_(o, th, sections, part) {
+  var body = [];
+  (o.intro && part.first ? o.intro : []).forEach(function (r) { body.push(lineRowFlex_(r)); });
+  sections.forEach(function (s, i) {
+    if (body.length) body.push({ type: 'separator', margin: 'md', color: '#E5E5E5' });
+    var f = lineSectionFlex_(s);
+    if (body.length) f.margin = 'md';
+    body.push(f);
+  });
+  if (o.note && part.last) {
+    body.push({ type: 'text', text: o.note, size: 'xs', color: '#888888', wrap: true, margin: 'lg' });
+  }
+  if (!body.length) body.push({ type: 'text', text: ' ', size: 'sm' });
+  var bubble = {
+    type: 'bubble', size: 'mega',
+    header: { type: 'box', layout: 'vertical', backgroundColor: th.bg, paddingAll: '14px', contents: [
+      { type: 'text', text: o.title + (part.total > 1 ? '（' + part.n + '/' + part.total + '）' : ''), size: 'md', weight: 'bold', color: th.fg, wrap: true }
+    ].concat(o.sub ? [{ type: 'text', text: o.sub, size: 'xs', color: th.sub, wrap: true, margin: 'xs' }] : []) },
+    body: { type: 'box', layout: 'vertical', paddingAll: '14px', contents: body }
+  };
+  var url = o.button === false ? '' : lineAppUrl_();
+  if (url && /^https:\/\//.test(url) && part.last) {
+    bubble.footer = { type: 'box', layout: 'vertical', paddingAll: '12px', paddingTop: '0px', contents: [
+      { type: 'button', style: 'secondary', height: 'sm', color: th.bg, action: { type: 'uri', label: '開啟雲點名', uri: url } }] };
+  }
+  return bubble;
+}
+
+// 卡片 → Flex 訊息物件；文字或太長時回傳 null（改送文字）
+function lineFlexMessage_(msg) {
+  if (!msg || !msg.card) return null;
+  var th = LINE_THEMES_[msg.theme] || LINE_THEMES_.blue;
+  var secs = msg.sections || [], groups = [[]], LIMIT = 22000;
+  secs.forEach(function (s) {   // 依大小把學校分到多張卡片
+    var cur = groups[groups.length - 1];
+    if (cur.length && lineBytes_(lineBubble_(msg, th, cur.concat([s]), { first: groups.length === 1, last: true, n: 1, total: 1 })) > LIMIT) groups.push([s]);
+    else cur.push(s);
+  });
+  if (groups.length > 12) return null;
+  var bubbles = groups.map(function (g, i) {
+    return lineBubble_(msg, th, g, { first: i === 0, last: i === groups.length - 1, n: i + 1, total: groups.length });
+  });
+  var contents = bubbles.length === 1 ? bubbles[0] : { type: 'carousel', contents: bubbles };
+  if (bubbles.some(function (b) { return lineBytes_(b) > 29000; }) || lineBytes_(contents) > 49000) return null;
+  var alt = String(msg.alt || msg.title + (msg.sub ? ' ' + msg.sub : ''));
+  return { type: 'flex', altText: alt.slice(0, 390), contents: contents };
 }
 
 function lineDateLabel_(d) {
@@ -2288,9 +2422,9 @@ function unmarkedBySlot_() {
   return { date: today, schools: schools };
 }
 
-// 組出提醒文字；沒有未點名的學生回傳空字串
-function buildReminderText_(r, data) {
-  var lines = [], schools = 0, total = 0;
+// 組出提醒卡片；沒有未點名的學生回傳 null
+function buildReminderCard_(r, data) {
+  var sections = [], schools = 0, total = 0;
   Object.keys(data.schools).map(function (k) { return data.schools[k]; })
     .sort(function (a, b) { return String(a.name).localeCompare(String(b.name), 'zh-Hant'); })
     .forEach(function (sc) {
@@ -2298,16 +2432,17 @@ function buildReminderText_(r, data) {
       var walk = r.slot === 'pm' ? sortStudents(sc.walk.slice()) : [];   // 固定自走／自送的只加在下午接提醒，放在該校名單最後面
       if (!list.length && !walk.length) return;
       schools++; total += list.length + walk.length;
-      var nm = function (st) { return st.name + '(' + st.grade + ')'; };
-      lines.push('');
-      lines.push('【' + sc.name + '】' + (list.length + walk.length) + ' 位');
-      if (list.length) lines.push(list.map(nm).join('、'));
-      walk.forEach(function (st) { lines.push('📌 ' + nm(st) + '[固定' + st.tag + ']'); });   // 固定自走／自送：每人一行，前面加 📌（和點名畫面的提示一致）
+      sections.push({ head: '🏫 ' + sc.name, right: (list.length + walk.length) + ' 人',
+        rows: list.map(lineWho_).concat(walk.map(function (st) { return { t: '📌 ' + lineWho_(st) + ' 固定' + st.tag, c: 'pin' }; })) });
     });
-  if (!total) return '';
+  if (!total) return null;
   var hm = ('0' + r.hour).slice(-2) + ':' + ('0' + r.minute).slice(-2);
-  return '🔔 ' + r.label + ' 還沒點名（' + hm + '）\n' + lineDateLabel_(data.date) + '\n共 ' + schools + ' 校、' + total + ' 位' +
-    lines.join('\n') + '\n\n請負責的老師盡快點名';
+  return lineCard_({
+    theme: r.slot, title: (r.slot === 'noon' ? '☀️ ' : '🌆 ') + r.label + ' 未點名提醒',
+    sub: lineDateLabel_(data.date) + ' ' + hm + ' · 共 ' + schools + ' 校 ' + total + ' 人',
+    alt: '🔔 ' + hm + ' ' + r.label + '未點名：' + schools + ' 校 ' + total + ' 人',
+    sections: sections, note: '請負責的老師盡快點名'
+  });
 }
 
 // 送出一個時段的提醒；force=true（手動測試）時沒有未點名也會回覆一則說明
@@ -2315,9 +2450,9 @@ function sendReminder_(r, force) {
   _memo = {};
   var data = unmarkedBySlot_();
   if (!data) return force ? linePush_('今天不是上課日（例假日／國定假日），不發送「' + r.label + '」提醒') : { ok: true, skipped: 'CLOSED' };
-  var text = buildReminderText_(r, data);
-  if (!text) return force ? linePush_('✅ ' + r.label + '的學生都已點名完成，目前沒有未點名') : { ok: true, skipped: 'ALL_MARKED' };
-  return linePush_(text);
+  var card = buildReminderCard_(r, data);
+  if (!card) return force ? linePush_('✅ ' + r.label + '的學生都已點名完成，目前沒有未點名') : { ok: true, skipped: 'ALL_MARKED' };
+  return linePush_(card);
 }
 
 // 每 5 分鐘執行：到了 13:10 / 16:40（之後 30 分鐘內）就發一次，同一天同一時段只發一次
@@ -2405,18 +2540,22 @@ function lineCommandReply_(raw) {
 }
 
 function lineCmdHelp_() {
-  return ['📖 小管家可用口令（在群組傳這些字就會回覆）', '',
-    '📋 未點名：現在還沒點名的學生（中午＋下午）',
-    '☀️ 中午未點名：只列中午接還沒點名的',
-    '🌆 下午未點名：只列下午接還沒點名的（含固定自走／自送）',
-    '📊 點名進度：各校已點名／應到人數',
-    '🔴 今日請假：今天請假的學生',
-    '🟢 臨時進班：今天臨時進班的學生',
-    '🚌 今日接送：各校今天中午接、下午接、自走、自送人數',
-    '📅 明日請假：下個上課日的預約請假與臨時進班',
-    '👤 查 王小明：查一位學生今天的狀態與預約',
-    '🏫 查 國光國小：查一間學校今天所有學生的狀態',
-    '📖 指令：顯示這份說明'].join('\n');
+  return lineCard_({
+    theme: 'gray', title: '📖 小管家可用口令', sub: '在群組傳這些字就會回覆', button: false,
+    sections: [{ rows: [
+      { k: '📋 未點名', v: '現在還沒點名的學生（中午＋下午）' },
+      { k: '☀️ 中午未點名', v: '只列中午接還沒點名的' },
+      { k: '🌆 下午未點名', v: '只列下午接還沒點名的（含固定自走／自送）' },
+      { k: '📊 點名進度', v: '各校已點名／應到人數' },
+      { k: '🔴 今日請假', v: '今天請假的學生' },
+      { k: '🟢 臨時進班', v: '今天臨時進班的學生' },
+      { k: '🚌 今日接送', v: '各校今天中午接、下午接、自走、自送人數' },
+      { k: '📅 明日請假', v: '下個上課日的預約請假與臨時進班' },
+      { k: '👤 查 王小明', v: '查一位學生今天的狀態與預約' },
+      { k: '🏫 查 國光國小', v: '查一間學校今天所有學生的狀態' },
+      { k: '📖 指令', v: '顯示這份說明' }
+    ] }]
+  });
 }
 
 function lineDayCtx_() {
@@ -2428,26 +2567,25 @@ function lineDayCtx_() {
 function lineClosedText_(d, date) { return lineDateLabel_(date || d.today) + ' 不是上課日（例假日／國定假日）'; }
 function lineSpan_(a, b) { return a === b ? lineDateLabel_(a) : lineDateLabel_(a) + '～' + lineDateLabel_(b); }
 function lineNow_() { return Utilities.formatDate(new Date(), TZ, 'HH:mm'); }
+function lineSchoolOrder_(d) { return Object.keys(d.schools).sort(function (a, b) { return String(d.schools[a]).localeCompare(String(d.schools[b]), 'zh-Hant'); }); }
 
-// 依學校分組輸出；items 是學生資料列（附帶欄位），fmt 決定每人一行的內容
-function lineBySchool_(d, items, fmt) {
+// 依學校分組成卡片的區塊；items 是學生資料列（附帶欄位），fmt 決定每人一列的內容
+function lineSchoolSections_(d, items, fmt, rc) {
   var by = {}, ids = [];
   items.forEach(function (it) { if (!by[it.schoolId]) { by[it.schoolId] = []; ids.push(it.schoolId); } by[it.schoolId].push(it); });
   ids.sort(function (a, b) { return String(d.schools[a]).localeCompare(String(d.schools[b]), 'zh-Hant'); });
-  var lines = [];
-  ids.forEach(function (sid) {
-    lines.push(''); lines.push('【' + d.schools[sid] + '】' + by[sid].length + ' 位');
-    sortStudents(by[sid]).forEach(function (it) { lines.push(fmt(it)); });
+  return ids.map(function (sid) {
+    return { head: '🏫 ' + d.schools[sid], right: by[sid].length + ' 人', rc: rc, rows: sortStudents(by[sid]).map(fmt) };
   });
-  return lines;
 }
 function lineWho_(st) { return st.name + '（' + st.grade + '）'; }
+function lineBk_(b) { return lineSpan_(b.startDate, b.endDate) + (b.reason ? '｜' + b.reason : ''); }
 
 // slot：'noon' 只列中午接、'pm' 只列下午接（含固定自走／自送）、不給＝全部
 function lineCmdUnmarked_(slot) {
   var data = unmarkedBySlot_();
   if (!data) return lineClosedText_({ today: today_() });
-  var lines = [], total = 0, n = 0;
+  var sections = [], total = 0, n = 0;
   Object.keys(data.schools).map(function (k) { return data.schools[k]; })
     .sort(function (a, b) { return String(a.name).localeCompare(String(b.name), 'zh-Hant'); })
     .forEach(function (sc) {
@@ -2457,30 +2595,39 @@ function lineCmdUnmarked_(slot) {
       var cnt = noon.length + pm.length + walk.length;
       if (!cnt) return;
       n++; total += cnt;
-      var nm = function (st) { return st.name + '(' + st.grade + ')'; };
-      lines.push(''); lines.push('【' + sc.name + '】' + cnt + ' 位');
-      if (noon.length) lines.push((slot ? '' : '中午接：') + noon.map(nm).join('、'));
-      if (pm.length) lines.push((slot ? '' : '下午接：') + pm.map(nm).join('、'));
-      walk.forEach(function (st) { lines.push('📌 ' + nm(st) + '[固定' + st.tag + ']'); });
+      var rows = [];
+      if (noon.length) { if (!slot) rows.push({ t: '☀️ 中午接', c: 'label' }); rows = rows.concat(noon.map(lineWho_)); }
+      if (pm.length || walk.length) {
+        if (!slot) rows.push({ t: '🌆 下午接', c: 'label' });
+        rows = rows.concat(pm.map(lineWho_), walk.map(function (st) { return { t: '📌 ' + lineWho_(st) + ' 固定' + st.tag, c: 'pin' }; }));
+      }
+      sections.push({ head: '🏫 ' + sc.name, right: cnt + ' 人', rows: rows });
     });
   var title = slot === 'noon' ? '中午接' : slot === 'pm' ? '下午接' : '';
-  var head = '📋 目前' + title + '未點名（' + lineNow_() + '）\n' + lineDateLabel_(data.date);
-  if (!total) return head + '\n✅ ' + (title || '全部') + '都點完了';
-  return head + '\n共 ' + n + ' 校、' + total + ' 位\n' + lines.join('\n');
+  return lineCard_({
+    theme: slot || 'blue', title: (slot === 'noon' ? '☀️ ' : slot === 'pm' ? '🌆 ' : '📋 ') + '目前' + title + '未點名',
+    sub: lineDateLabel_(data.date) + ' ' + lineNow_() + (total ? ' · 共 ' + n + ' 校 ' + total + ' 人' : ''),
+    intro: total ? [] : [{ t: '✅ ' + (title || '全部') + '都點完了', c: 'green' }],
+    sections: sections
+  });
 }
 
 function lineCmdProgress_() {
   var d = lineDayCtx_();
   if (!d.ctx.isOpen(d.today)) return lineClosedText_(d);
-  var counts = todayCounts_() || {}, lines = [], need = 0, un = 0;
-  Object.keys(d.schools).sort(function (a, b) { return String(d.schools[a]).localeCompare(String(d.schools[b]), 'zh-Hant'); }).forEach(function (sid) {
+  var counts = todayCounts_() || {}, rows = [], need = 0, un = 0;
+  lineSchoolOrder_(d).forEach(function (sid) {
     var c = counts[sid];
     if (!c || !c.need) return;
     need += c.need; un += c.unmarked;
-    lines.push('【' + d.schools[sid] + '】已點 ' + (c.need - c.unmarked) + '/' + c.need + (c.unmarked ? '，未點 ' + c.unmarked : ' ✅'));
+    rows.push({ t: '🏫 ' + d.schools[sid], r: (c.need - c.unmarked) + '/' + c.need + (c.unmarked ? '（未點 ' + c.unmarked + '）' : ' ✅'), c: c.unmarked ? 'red' : 'green' });
   });
-  if (!lines.length) return lineDateLabel_(d.today) + ' 今天沒有需要點名的學生';
-  return '📊 點名進度（' + lineNow_() + '）\n' + lineDateLabel_(d.today) + '　全部已點 ' + (need - un) + '/' + need + '\n（應到＝扣除請假與固定不進班）\n\n' + lines.join('\n');
+  if (!rows.length) return lineDateLabel_(d.today) + ' 今天沒有需要點名的學生';
+  return lineCard_({
+    theme: 'blue', title: '📊 點名進度', sub: lineDateLabel_(d.today) + ' ' + lineNow_(),
+    intro: [{ t: '全部已點', r: (need - un) + '/' + need, c: un ? 'red' : 'green' }],
+    sections: [{ rows: rows }], note: '應到＝扣除請假與固定不進班'
+  });
 }
 
 function lineCmdLeaveToday_() {
@@ -2492,9 +2639,10 @@ function lineCmdLeaveToday_() {
     items.push(Object.assign({}, st, { b: d.ctx.bookingOn(st.id, d.today) }));
   });
   if (!items.length) return '🔴 ' + lineDateLabel_(d.today) + ' 今天沒有人請假';
-  return '🔴 今日請假\n' + lineDateLabel_(d.today) + '，共 ' + items.length + ' 位\n' + lineBySchool_(d, items, function (it) {
-    return '🔴 ' + lineWho_(it) + ' ' + (it.b ? lineSpan_(it.b.startDate, it.b.endDate) + (it.b.reason ? '｜' + it.b.reason : '') : '（當天點名請假）');
-  }).join('\n');
+  return lineCard_({
+    theme: 'red', title: '🔴 今日請假', sub: lineDateLabel_(d.today) + ' · 共 ' + items.length + ' 人',
+    sections: lineSchoolSections_(d, items, function (it) { return lineWho_(it) + ' ' + (it.b ? lineBk_(it.b) : '（當天點名請假）'); }, 'red')
+  });
 }
 
 function lineCmdAttendToday_() {
@@ -2506,9 +2654,10 @@ function lineCmdAttendToday_() {
     if (b) items.push(Object.assign({}, st, { b: b }));
   });
   if (!items.length) return '🟢 ' + lineDateLabel_(d.today) + ' 今天沒有臨時進班';
-  return '🟢 今日臨時進班\n' + lineDateLabel_(d.today) + '，共 ' + items.length + ' 位\n' + lineBySchool_(d, items, function (it) {
-    return '🟢 ' + lineWho_(it) + ' ' + lineSpan_(it.b.startDate, it.b.endDate) + (it.b.reason ? '｜' + it.b.reason : '');
-  }).join('\n');
+  return lineCard_({
+    theme: 'green', title: '🟢 今日臨時進班', sub: lineDateLabel_(d.today) + ' · 共 ' + items.length + ' 人',
+    sections: lineSchoolSections_(d, items, function (it) { return lineWho_(it) + ' ' + lineBk_(it.b); }, 'green')
+  });
 }
 
 function lineCmdPickup_() {
@@ -2524,12 +2673,17 @@ function lineCmdPickup_() {
     var k = p ? p.slot : (parseDays_(st.selfDropDays).indexOf(wd) !== -1 ? 'drop' : 'walk');
     c[k]++; tot[k]++;
   });
-  var line = function (c) { return '中午接 ' + c.noon + '｜下午接 ' + c.pm + '｜自走 ' + c.walk + '｜自送 ' + c.drop + (c.leave ? '（請假 ' + c.leave + '）' : ''); };
-  var lines = Object.keys(d.schools).sort(function (a, b) { return String(d.schools[a]).localeCompare(String(d.schools[b]), 'zh-Hant'); })
+  var line = function (c) { return '中午接 ' + c.noon + '｜下午接 ' + c.pm + '｜自走 ' + c.walk + '｜自送 ' + c.drop + (c.leave ? '｜請假 ' + c.leave : ''); };
+  var sections = lineSchoolOrder_(d)
     .filter(function (sid) { var c = by[sid]; return c && (c.noon + c.pm + c.walk + c.drop + c.leave); })
-    .map(function (sid) { return '【' + d.schools[sid] + '】' + line(by[sid]); });
-  if (!lines.length) return lineDateLabel_(d.today) + ' 今天沒有學生需要接送';
-  return '🚌 今日接送\n' + lineDateLabel_(d.today) + '\n\n' + lines.join('\n') + '\n\n全部：' + line(tot);
+    .map(function (sid) { var c = by[sid]; return { head: '🏫 ' + d.schools[sid], right: (c.noon + c.pm + c.walk + c.drop) + ' 人', rc: 'label', rows: [line(c)] }; });
+  if (!sections.length) return lineDateLabel_(d.today) + ' 今天沒有學生需要接送';
+  return lineCard_({
+    theme: 'teal', title: '🚌 今日接送', sub: lineDateLabel_(d.today),
+    intro: [{ t: '☀️ 中午接', r: tot.noon }, { t: '🌆 下午接', r: tot.pm }, { t: '🚶 自走', r: tot.walk }, { t: '🏠 自送', r: tot.drop }]
+      .concat(tot.leave ? [{ t: '🔴 請假', r: tot.leave, c: 'red' }] : []),
+    sections: sections
+  });
 }
 
 function lineCmdNextDay_() {
@@ -2544,29 +2698,38 @@ function lineCmdNextDay_() {
   });
   var label = (day === nextDate_(d.today) ? '明日 ' : '下個上課日 ') + lineDateLabel_(day);
   if (!items.length) return '📅 ' + label + ' 沒有預約請假或臨時進班';
-  return '📅 ' + label + ' 預約\n共 ' + items.length + ' 筆\n' + lineBySchool_(d, items, function (it) {
-    return (it.kind === 'attend' ? '🟢 ' : '🔴 ') + lineWho_(it) + ' [' + (it.kind === 'attend' ? '進班' : '請假') + '] ' + lineSpan_(it.b.startDate, it.b.endDate) + (it.b.reason ? '｜' + it.b.reason : '');
-  }).join('\n');
+  return lineCard_({
+    theme: 'blue', title: '📅 ' + label + ' 預約', sub: '共 ' + items.length + ' 筆',
+    sections: lineSchoolSections_(d, items, function (it) {
+      var att = it.kind === 'attend';
+      return { t: (att ? '🟢 ' : '🔴 ') + lineWho_(it) + ' ' + (att ? '進班' : '請假') + ' ' + lineBk_(it.b), c: att ? 'green' : 'red' };
+    }, 'label')
+  });
 }
 
 // 查一間學校：今天每位學生的狀態與接送方式，依狀態分組
 function lineCmdSchool_(d, sid) {
   var list = sortStudents(d.students.filter(function (st) { return st.schoolId === sid; }));
-  var head = '🏫 ' + d.schools[sid] + '　' + lineDateLabel_(d.today);
-  if (!list.length) return head + '\n目前沒有學生';
-  if (!d.ctx.isOpen(d.today)) return head + '\n今天不是上課日（例假日／國定假日），共 ' + list.length + ' 位學生';
+  var head = '🏫 ' + d.schools[sid];
+  if (!list.length) return head + '　' + lineDateLabel_(d.today) + '\n目前沒有學生';
+  if (!d.ctx.isOpen(d.today)) return head + '　' + lineDateLabel_(d.today) + '\n今天不是上課日（例假日／國定假日），共 ' + list.length + ' 位學生';
   var wd = d.ctx.wdOf(d.today), g = { '': [], present: [], selfDrop: [], selfWalk: [], leave: [], fixedOff: [] };
   list.forEach(function (st) {
     var s = d.ctx.status(st.id, d.today), p = pickupSlotFor_(st, d.today, d.ctx, d.pk), how = '';
     if (s !== 'fixedOff') how = p ? (p.slot === 'noon' ? '中午接' : '下午接') : (parseDays_(st.selfDropDays).indexOf(wd) !== -1 ? '固定自送' : '固定自走');
-    (g[s] || g['']).push(st.name + '(' + st.grade + ')' + (how && s !== 'leave' ? '｜' + how : ''));
+    (g[s] || g['']).push(lineWho_(st) + (how && s !== 'leave' ? '｜' + how : ''));
   });
   var need = list.length - g.fixedOff.length - g.leave.length, un = g[''].length;
-  var out = [head, '應到 ' + need + '，已點 ' + (need - un) + '，未點 ' + un + (g.leave.length ? '（請假 ' + g.leave.length + '）' : '')];
-  [['', '⚪ 未點名'], ['present', '✅ 已到班'], ['selfDrop', '🏠 自送'], ['selfWalk', '🚶 自走'], ['leave', '🔴 請假'], ['fixedOff', '⏸ 今天固定不進班']].forEach(function (k) {
-    if (g[k[0]].length) { out.push(''); out.push(k[1] + '（' + g[k[0]].length + '）'); g[k[0]].forEach(function (x) { out.push(x); }); }
+  var sections = [];
+  [['', '⚪ 未點名', 'red'], ['present', '✅ 已到班', 'green'], ['selfDrop', '🏠 自送', 'label'], ['selfWalk', '🚶 自走', 'label'], ['leave', '🔴 請假', 'red'], ['fixedOff', '⏸ 今天固定不進班', 'gray']].forEach(function (k) {
+    if (g[k[0]].length) sections.push({ head: k[1], right: g[k[0]].length + ' 人', rc: k[2], rows: g[k[0]] });
   });
-  return out.join('\n');
+  return lineCard_({
+    theme: 'blue', title: head, sub: lineDateLabel_(d.today) + ' ' + lineNow_(),
+    intro: [{ t: '應到', r: need }, { t: '已點', r: need - un, c: 'green' }, { t: '未點', r: un, c: un ? 'red' : 'green' }]
+      .concat(g.leave.length ? [{ t: '請假', r: g.leave.length, c: 'red' }] : []),
+    sections: sections
+  });
 }
 
 function lineCmdStudent_(name) {
@@ -2582,21 +2745,25 @@ function lineCmdStudent_(name) {
     return '符合「' + name + '」的有 ' + hit.length + ' 位，請輸入完整姓名：\n' + hit.slice(0, 10).map(function (st) { return st.name + '（' + d.schools[st.schoolId] + ' ' + st.grade + '）'; }).join('\n');
   }
   var open = d.ctx.isOpen(d.today), wd = d.ctx.wdOf(d.today);
-  return hit.map(function (st) {
-    var lines = ['👤 ' + lineWho_(st) + '　' + d.schools[st.schoolId]];
-    if (!open) lines.push('今天：不是上課日');
+  var sections = hit.map(function (st) {
+    var rows = [];
+    if (!open) rows.push('今天：不是上課日');
     else {
       var s = d.ctx.status(st.id, d.today), p = pickupSlotFor_(st, d.today, d.ctx, d.pk), how;
       if (s === 'fixedOff') how = '';
       else if (p) how = p.slot === 'noon' ? '中午接' : '下午接';
       else how = parseDays_(st.selfDropDays).indexOf(wd) !== -1 ? '固定自送' : '固定自走';
-      lines.push('今天：' + LINE_STATUS_LABEL_[s] + (how ? '｜' + how : ''));
+      rows.push({ t: '今天', r: LINE_STATUS_LABEL_[s] + (how ? '｜' + how : ''), c: s === '' ? 'red' : s === 'leave' ? 'red' : 'green' });
     }
     var upcoming = function (list) { return (list || []).filter(function (b) { return b.endDate >= d.today; }).sort(function (a, b) { return a.startDate < b.startDate ? -1 : 1; }).slice(0, 5); };
-    upcoming(d.ctx.bookings[st.id]).forEach(function (b) { lines.push('🔴 預約請假：' + lineSpan_(b.startDate, b.endDate) + (b.reason ? '｜' + b.reason : '')); });
-    upcoming(d.ctx.extras[st.id]).forEach(function (b) { lines.push('🟢 臨時進班：' + lineSpan_(b.startDate, b.endDate) + (b.reason ? '｜' + b.reason : '')); });
-    return lines.join('\n');
-  }).join('\n\n');
+    upcoming(d.ctx.bookings[st.id]).forEach(function (b) { rows.push({ t: '🔴 預約請假 ' + lineBk_(b), c: 'red' }); });
+    upcoming(d.ctx.extras[st.id]).forEach(function (b) { rows.push({ t: '🟢 臨時進班 ' + lineBk_(b), c: 'green' }); });
+    return { head: '👤 ' + lineWho_(st), right: d.schools[st.schoolId], rc: 'gray', rows: rows };
+  });
+  return lineCard_({
+    theme: 'blue', title: '👤 查詢「' + name + '」', sub: lineDateLabel_(d.today) + ' ' + lineNow_() + (hit.length > 1 ? ' · 符合 ' + hit.length + ' 位' : ''),
+    sections: sections
+  });
 }
 
 // ---------- 手動執行用（在編輯器選函式 > 執行）----------
