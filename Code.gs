@@ -410,6 +410,7 @@ function route(body) {
     setSpecialDay: actionSetSpecialDay, deleteSpecialDay: actionDeleteSpecialDay,
     setSpecialDaysBatch: actionSetSpecialDaysBatch, editSpecialDay: actionEditSpecialDay,
     listBookings: actionListBookings, saveBooking: actionSaveBooking, saveBookingsBatch: actionSaveBookingsBatch, deleteBooking: actionDeleteBooking,
+    updateBookingsBatch: actionUpdateBookingsBatch, deleteBookingsBatch: actionDeleteBookingsBatch,
     getOverview: actionGetOverview, getSchoolDayDetail: actionGetSchoolDayDetail,
     listLeaveStreaks: actionListLeaveStreaks,
     setPickupSlot: actionSetPickupSlot, setAllNoonDay: actionSetAllNoonDay, deleteAllNoonDay: actionDeleteAllNoonDay
@@ -418,7 +419,7 @@ function route(body) {
   var WRITES = ['login', 'logout', 'changePwd', 'addContactType', 'addSchool', 'addSchoolsBatch', 'editSchool', 'deleteSchool',
     'addStudent', 'addStudentsBatch', 'editStudent', 'deleteStudent', 'deleteStudentsBatch',
     'addTeacher', 'editTeacher', 'deleteTeacher', 'deleteTeachersBatch', 'submitAttendance', 'saveMarks', 'saveMakeup', 'setSpecialDay', 'deleteSpecialDay',
-    'setSpecialDaysBatch', 'editSpecialDay', 'saveBooking', 'saveBookingsBatch', 'deleteBooking',
+    'setSpecialDaysBatch', 'editSpecialDay', 'saveBooking', 'saveBookingsBatch', 'deleteBooking', 'updateBookingsBatch', 'deleteBookingsBatch',
     'setPickupSlot', 'setAllNoonDay', 'deleteAllNoonDay'];
   var fn = ACTIONS[action];
   if (!fn) return { ok: false, error: 'UNKNOWN_ACTION' };
@@ -1389,6 +1390,73 @@ function actionDeleteBooking(body) {
   }
   deleteRows_(bkSheet_(kind), [b]);
   return { ok: true };
+}
+
+function bkIds_(body) {
+  var seen = {};
+  return (Array.isArray(body.ids) ? body.ids : []).map(String).filter(function (id) { if (!id || seen[id]) return false; seen[id] = true; return true; });
+}
+
+// 批次修改：勾選的多筆套用同樣的變更；body: { kind?, ids: [], schoolId?(老師端), startDate?, endDate?, reason? }
+// 沒帶的欄位維持每筆原本的內容；規則和單筆修改相同；全部檢查通過才一起寫入，有問題的回傳 bad: [{ id, error, clash? }]
+function actionUpdateBookingsBatch(body) {
+  var s = requireSession(body.token);
+  var kind = bkKind_(body.kind);
+  var ids = bkIds_(body);
+  if (!ids.length) return { ok: false, error: 'BATCH_EMPTY' };
+  if (ids.length > BOOKING_BATCH_MAX) return { ok: false, error: 'BATCH_TOO_MANY' };
+  var has = function (k) { return body[k] !== undefined && body[k] !== null; };
+  if (!has('startDate') && !has('endDate') && !has('reason')) return { ok: false, error: 'BATCH_NOTHING' };
+  var ctx = statusCtx_(), all = bookings_(kind), now = new Date().toISOString();
+  var bad = [], ups = [], totalDays = 0;
+  ids.forEach(function (id) {
+    var old = all.filter(function (b) { return b.id === id; })[0];
+    if (!old) { bad.push({ id: id, error: 'BOOKING_NOT_FOUND' }); return; }
+    if (s.role !== 'admin' && body.schoolId && old.schoolId !== String(body.schoolId)) { bad.push({ id: id, error: 'STUDENT_NOT_FOUND' }); return; }
+    var input = { id: id, studentId: old.studentId, schoolId: body.schoolId,
+      startDate: has('startDate') ? body.startDate : old.startDate,
+      endDate: has('endDate') ? body.endDate : old.endDate,
+      reason: has('reason') ? body.reason : old.reason };
+    var c = checkBooking_(s, ctx, kind, input, all);
+    if (c.error) { bad.push({ id: id, error: c.error, clash: c.clash || null }); return; }
+    var row = bookingRow_(s, kind, c, now);
+    ups.push({ _row: old._row, row: row });
+    all = all.map(function (b) { return b.id === id ? Object.assign({}, row, { _row: old._row }) : b; });   // 之後的檢查用修改後的期間
+    totalDays += c.days;
+  });
+  if (bad.length) return { ok: false, error: 'INVALID_BOOKINGS', bad: bad };
+  ups.forEach(function (u) { updateObjectByRow(bkSheet_(kind), u._row, u.row); });
+  return { ok: true, updated: ups.length, days: totalDays };
+}
+
+// 批次取消；body: { kind?, ids: [], schoolId?(老師端) }。規則和單筆取消相同（老師取消已開始的：從今天起取消）
+// 已經不存在的略過；有不能取消的就整批不動，回傳 bad
+function actionDeleteBookingsBatch(body) {
+  var s = requireSession(body.token);
+  var kind = bkKind_(body.kind);
+  var ids = bkIds_(body);
+  if (!ids.length) return { ok: false, error: 'BATCH_EMPTY' };
+  var today = today_(), now = new Date().toISOString();
+  var byId = {};
+  bookings_(kind).forEach(function (b) { byId[b.id] = b; });
+  var bad = [], dels = [], truncs = [];
+  ids.forEach(function (id) {
+    var b = byId[id];
+    if (!b) return;
+    if (s.role !== 'admin') {
+      if (body.schoolId && b.schoolId !== String(body.schoolId)) { bad.push({ id: id, error: 'STUDENT_NOT_FOUND' }); return; }
+      if (b.startDate < today) {
+        if (b.endDate < today) { bad.push({ id: id, error: 'BOOKING_STARTED' }); return; }
+        truncs.push({ _row: b._row, row: bookingRow_(s, kind, { old: b, st: { id: b.studentId, schoolId: b.schoolId }, start: b.startDate, end: prevDate_(today), reason: b.reason }, now) });
+        return;
+      }
+    }
+    dels.push(b);
+  });
+  if (bad.length) return { ok: false, error: 'INVALID_BOOKINGS', bad: bad };
+  truncs.forEach(function (u) { updateObjectByRow(bkSheet_(kind), u._row, u.row); });   // 先更新再刪除，避免列號位移
+  deleteRows_(bkSheet_(kind), dels);
+  return { ok: true, deleted: dels.length, truncated: truncs.length };
 }
 
 // ---------- 點名 ----------

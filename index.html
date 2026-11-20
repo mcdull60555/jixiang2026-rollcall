@@ -619,6 +619,22 @@ tr.bk-past td:last-child{opacity:1;}
 .chk-inline input{width:18px;height:18px;margin:0;}
 .bk-tools{align-items:center;}
 .bk-tools .chk-inline{margin-left:auto;}
+.bk-sel{display:inline-flex;align-items:center;gap:8px;cursor:pointer;}
+.bk-sel input{width:18px;height:18px;margin:0;flex:0 0 auto;cursor:pointer;}
+.bk-sel input:disabled{cursor:not-allowed;opacity:.4;}
+tr.bk-picked{background:#fff7d6 !important;}
+tr.bk-picked td{background:transparent !important;}
+.bk-selbar{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;margin:10px 0 0;padding:8px 12px;border:1px dashed var(--border);border-radius:10px;font-size:14px;color:var(--muted);}
+.bk-selbar.on{border-style:solid;border-color:#facc15;background:#fffbeb;color:var(--text);font-weight:700;}
+.bk-sel-acts{display:inline-flex;align-items:center;flex-wrap:wrap;gap:8px;margin-left:auto;}
+.bk-selbar .link-btn{background:none;border:none;padding:0;color:var(--accent);font-weight:600;font-size:14px;cursor:pointer;text-decoration:underline;}
+.bk-pick-list{max-height:180px;overflow:auto;margin:0 0 12px;padding:8px 10px;border:1px solid var(--border);border-radius:10px;font-size:14px;line-height:1.8;}
+.bk-pick-list span{margin-left:8px;color:var(--muted);}
+.bk-pick-list .bad{color:var(--rose);font-weight:700;}
+.bk-pick-list .bad span{color:var(--rose);}
+.be-grid{display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px 12px;align-items:center;}
+.be-grid input:disabled{opacity:.45;}
+.bk-batch-err{margin-top:10px;padding:8px 12px;border-radius:10px;background:var(--rose-l);color:#9f1239;font-size:13.5px;line-height:1.7;}
 .rc-bk-field{flex:0 0 auto;justify-content:flex-end;}
 .rc-bk-field .btn{margin-top:auto;white-space:nowrap;}
 @media (max-width:640px){
@@ -851,8 +867,9 @@ tr.bk-past td:last-child{opacity:1;}
         <button type="button" class="btn btn-secondary btn-sm" id="bk-batch" onclick="openBookingBatch('leave')">批次登記</button>
         <label class="chk-inline" for="bk-past"><input type="checkbox" id="bk-past" onchange="loadBookings()">顯示已結束的預約</label>
       </div>
-      <div class="table-wrap"><table class="bk-table">
-        <thead><tr><th>學校</th><th>年級班級</th><th>學生姓名</th><th>請假期間</th><th>天數</th><th>原因</th><th>登記者</th><th>狀態</th><th></th></tr></thead>
+      <div class="bk-selbar hidden" id="bk-selbar"></div>
+      <div class="table-wrap"><table class="bk-table" id="bk-table">
+        <thead><tr><th><label class="bk-sel"><input type="checkbox" class="bk-chk-all" aria-label="全選">學校</label></th><th>年級班級</th><th>學生姓名</th><th>請假期間</th><th>天數</th><th>原因</th><th>登記者</th><th>狀態</th><th></th></tr></thead>
         <tbody id="bk-tbody"></tbody></table></div>
     </div>
     <div class="card accent-teal">
@@ -862,8 +879,9 @@ tr.bk-past td:last-child{opacity:1;}
         <button type="button" class="btn btn-teal btn-sm" id="ex-add" onclick="openBookingForm(null,{kind:'attend'})">+ 新增臨時進班</button>
         <button type="button" class="btn btn-secondary btn-sm" id="ex-batch" onclick="openBookingBatch('attend')">批次登記</button>
       </div>
-      <div class="table-wrap"><table class="bk-table">
-        <thead><tr><th>學校</th><th>年級班級</th><th>學生姓名</th><th>進班期間</th><th>天數</th><th>原因</th><th>登記者</th><th>狀態</th><th></th></tr></thead>
+      <div class="bk-selbar hidden" id="ex-selbar"></div>
+      <div class="table-wrap"><table class="bk-table" id="ex-table">
+        <thead><tr><th><label class="bk-sel"><input type="checkbox" class="bk-chk-all" aria-label="全選">學校</label></th><th>年級班級</th><th>學生姓名</th><th>進班期間</th><th>天數</th><th>原因</th><th>登記者</th><th>狀態</th><th></th></tr></thead>
         <tbody id="ex-tbody"></tbody></table></div>
     </div>
   </section>
@@ -1050,7 +1068,7 @@ function errMsg(code) {
     USERNAME_TAKEN: '此帳號已被使用', WRONG_OLD_PASSWORD: '原密碼不正確', PASSWORD_REQUIRED: '請輸入新密碼',
     NAME_REQUIRED: '請輸入名稱', NAME_TOO_LONG: '名稱太長（最多 12 字）', SCHOOL_EXISTS: '已有同名學校',
     STUDENT_NOT_FOUND: '找不到該學生', TEACHER_NOT_FOUND: '找不到該老師', UNKNOWN_ACTION: '後端版本過舊，請重新部署 Code.gs',
-    BUSY: '目前多人同時操作中，請稍後再試一次', DATE_REQUIRED: '請選擇日期', DATE_PAST: '不能設定已經過去的日期', NOT_WEEKEND: '補班補課只能設定在星期六或星期日', NOT_WEEKDAY: '星期六、日本來就放假，不需要設定國定假日', DAY_NOT_FOUND: '這天沒有特別設定（可能已被取消）', DAY_EXISTS: '新的日期已經有設定了，請先取消那天的設定或改選其他日期', INVALID_DAYS: '有日期設定不正確，請檢查後再送出', DAY_CLOSED: '今天不能點名', BOOKING_PAST: '老師只能登記今天（含）以後的預約請假，結束日期不能早於今天', BOOKING_STARTED: '這筆預約已經結束（或要更改開始日期），請聯絡管理員處理', BOOKING_OVERLAP: '這位學生在這段期間已經有預約請假', BOOKING_NO_DAYS: '這段期間沒有上課日（都是例假日、國定假日或學生固定不進班的日子）', BOOKING_RANGE: '結束日期不能早於開始日期', BOOKING_TOO_OLD: '只能補登 40 天內的預約請假', BOOKING_TOO_LONG: '一次最多登記 120 天', BOOKING_NOT_FOUND: '找不到這筆預約（可能已被取消）', EXTRA_NOT_FIXED: '這位學生沒有設定固定不進班，不需要登記臨時進班', EXTRA_OVERLAP: '這位學生在這段期間已經有臨時進班登記', EXTRA_NO_DAYS: '這段期間沒有這位學生固定不進班的上課日，不需要登記', BATCH_EMPTY: '請至少填寫一列', BATCH_TOO_MANY: '一次最多登記 100 列', SCHOOL_NOT_FOUND: '找不到這間學校（可能已被刪除）', GRADE_REQUIRED: '請填寫年級班級', CONTACT_REQUIRED: '請至少填寫一組聯絡人與聯絡電話', INVALID_ROWS: '有學生資料不完整（姓名、年級班級、聯絡人與聯絡電話為必填）', USERNAME_REQUIRED: '請填寫登入帳號', CONFLICT: '這間學校的點名剛被其他老師更新', INCOMPLETE: '還有學生尚未點名', MAKEUP_RANGE: '只能補最近幾天（昨天以前、不含今天）的點名，這天已超過範圍'
+    BUSY: '目前多人同時操作中，請稍後再試一次', DATE_REQUIRED: '請選擇日期', DATE_PAST: '不能設定已經過去的日期', NOT_WEEKEND: '補班補課只能設定在星期六或星期日', NOT_WEEKDAY: '星期六、日本來就放假，不需要設定國定假日', DAY_NOT_FOUND: '這天沒有特別設定（可能已被取消）', DAY_EXISTS: '新的日期已經有設定了，請先取消那天的設定或改選其他日期', INVALID_DAYS: '有日期設定不正確，請檢查後再送出', DAY_CLOSED: '今天不能點名', BOOKING_PAST: '老師只能登記今天（含）以後的預約請假，結束日期不能早於今天', BOOKING_STARTED: '這筆預約已經結束（或要更改開始日期），請聯絡管理員處理', BOOKING_OVERLAP: '這位學生在這段期間已經有預約請假', BOOKING_NO_DAYS: '這段期間沒有上課日（都是例假日、國定假日或學生固定不進班的日子）', BOOKING_RANGE: '結束日期不能早於開始日期', BOOKING_TOO_OLD: '只能補登 40 天內的預約請假', BOOKING_TOO_LONG: '一次最多登記 120 天', BOOKING_NOT_FOUND: '找不到這筆預約（可能已被取消）', EXTRA_NOT_FIXED: '這位學生沒有設定固定不進班，不需要登記臨時進班', EXTRA_OVERLAP: '這位學生在這段期間已經有臨時進班登記', EXTRA_NO_DAYS: '這段期間沒有這位學生固定不進班的上課日，不需要登記', BATCH_EMPTY: '請至少填寫一列', BATCH_NOTHING: '請至少勾選一個要修改的項目', BATCH_TOO_MANY: '一次最多登記 100 列', SCHOOL_NOT_FOUND: '找不到這間學校（可能已被刪除）', GRADE_REQUIRED: '請填寫年級班級', CONTACT_REQUIRED: '請至少填寫一組聯絡人與聯絡電話', INVALID_ROWS: '有學生資料不完整（姓名、年級班級、聯絡人與聯絡電話為必填）', USERNAME_REQUIRED: '請填寫登入帳號', CONFLICT: '這間學校的點名剛被其他老師更新', INCOMPLETE: '還有學生尚未點名', MAKEUP_RANGE: '只能補最近幾天（昨天以前、不含今天）的點名，這天已超過範圍'
   };
   return map[code] || ('發生錯誤（' + code + '）');
 }
@@ -1060,7 +1078,7 @@ function errMsg(code) {
 const API_WRITES = new Set(['login', 'logout', 'changePwd', 'addContactType', 'addSchool', 'addSchoolsBatch', 'editSchool', 'deleteSchool',
   'addStudent', 'addStudentsBatch', 'editStudent', 'deleteStudent', 'deleteStudentsBatch',
   'addTeacher', 'editTeacher', 'deleteTeacher', 'deleteTeachersBatch', 'submitAttendance', 'saveMarks', 'setSpecialDay', 'deleteSpecialDay',
-  'setSpecialDaysBatch', 'editSpecialDay', 'saveBooking', 'saveBookingsBatch', 'deleteBooking',
+  'setSpecialDaysBatch', 'editSpecialDay', 'saveBooking', 'saveBookingsBatch', 'deleteBooking', 'updateBookingsBatch', 'deleteBookingsBatch',
   'setPickupSlot', 'setAllNoonDay', 'deleteAllNoonDay']);
 // 重送也不會造成重複資料的寫入動作
 const API_IDEMPOTENT = new Set(['saveMarks', 'logout', 'editSchool', 'editStudent', 'editTeacher', 'deleteStudent', 'deleteStudentsBatch', 'setPickupSlot', 'setAllNoonDay']);
@@ -1787,9 +1805,9 @@ function downloadLeaveCsv() {
 
 // ---- 預約請假 / 臨時進班（管理員與老師共用；kind = 'leave' | 'attend'）----
 const BK_KIND = {
-  leave: { name: '預約請假', icon: '📅', tag: 'bk-tag', range: '請假期間', store: 'bookings', tbody: 'bk-tbody', cancel: '取消預約',
+  leave: { name: '預約請假', icon: '📅', tag: 'bk-tag', range: '請假期間', store: 'bookings', tbody: 'bk-tbody', table: 'bk-table', selbar: 'bk-selbar', cancel: '取消預約',
     empty: '目前沒有進行中或即將開始的預約請假', emptyAll: '沒有預約請假', placeholder: '例如：出國、住院、回老家', unit: '個上課日' },
-  attend: { name: '臨時進班', icon: '📌', tag: 'ex-tag', range: '進班期間', store: 'extras', tbody: 'ex-tbody', cancel: '取消登記',
+  attend: { name: '臨時進班', icon: '📌', tag: 'ex-tag', range: '進班期間', store: 'extras', tbody: 'ex-tbody', table: 'ex-table', selbar: 'ex-selbar', cancel: '取消登記',
     empty: '目前沒有進行中或即將開始的臨時進班', emptyAll: '沒有臨時進班登記', placeholder: '例如：考前加強、臨時補課', unit: '天固定不進班改為進班' }
 };
 function bkK(kind) { return BK_KIND[kind === 'attend' ? 'attend' : 'leave']; }
@@ -1822,8 +1840,8 @@ function bookingRowsHtml(items, isAdmin, today, kind) {
     const st = BK_STATE[x.state];
     const canEdit = isAdmin || x.endDate >= today;   // 老師：尚未結束的都能改（已開始的只能調整結束日期）
     const oc = (fn) => isAdmin ? ` onclick="${fn}"` : '';   // 老師端的按鈕由 openTeacherBookings 統一綁定
-    return `<tr class="bk-${x.state}">
-      <td>${esc(x.schoolName)}</td><td><b>${esc(x.grade) || '-'}</b></td><td class="p-name">${esc(x.name)}</td>
+    return `<tr class="bk-${x.state}" data-bk-id="${esc(x.id)}">
+      <td><label class="bk-sel"><input type="checkbox" class="bk-chk" data-id="${esc(x.id)}" aria-label="選取 ${esc(x.name)}"${canEdit ? '' : ' disabled'}>${esc(x.schoolName)}</label></td><td><b>${esc(x.grade) || '-'}</b></td><td class="p-name">${esc(x.name)}</td>
       <td><b>${esc(shortRange(x.startDate, x.endDate))}</b></td><td><span class="lv-days" style="color:${kind === 'attend' ? 'var(--teal)' : 'var(--sky)'}">${x.days}</span> 天</td>
       <td>${esc(x.reason) || '-'}</td><td class="bk-by">${esc(x.createdBy || '-')}${x.createdRole === 'teacher' ? '（老師）' : ''}${x.updatedBy ? `<div class="marked-by">修改：${esc(x.updatedBy)}</div>` : ''}</td>
       <td><span class="pill ${st[1]}">${st[0]}</span></td>
@@ -1845,6 +1863,7 @@ async function loadBookings(silent) {
     const k = bkK(kind);
     $(k.tbody).innerHTML = res.items.length ? bookingRowsHtml(res.items, true, res.today, kind)
       : `<tr><td colspan="9" class="empty">${$('bk-past').checked ? k.emptyAll : k.empty}</td></tr>`;
+    wireBookingSelect($(k.table), $(k.selbar), kind, res.items, {});
   });
 }
 // 新增 / 修改：管理員可選任何學校；老師固定為目前點名的學校
@@ -1940,6 +1959,118 @@ async function deleteBooking(id, opts) {
     : `確定取消 <b>${esc(bk.name)}</b> 在 <b>${esc(shortRange(bk.startDate, bk.endDate))}</b> 的${k.name}${bk.reason ? '（' + esc(bk.reason) + '）' : ''}嗎？<br><span style="color:var(--muted);font-size:13px">${note}</span>`, k.cancel, true);
   if (!ok) return;
   await doWrite('deleteBooking', { kind, id }, async () => { if (opts.afterSave) await opts.afterSave(bk.studentId); else await loadBookings(true); }, `同步成功（已取消${k.name}）`);
+}
+// ---- 勾選多筆預約 → 批次修改 / 批次取消（管理端兩張表與老師端視窗共用）----
+function wireBookingSelect(table, bar, kind, list, opts) {
+  if (!table || !bar) return;
+  const k = bkK(kind);
+  const all = table.querySelector('.bk-chk-all');
+  const boxes = () => [...table.querySelectorAll('.bk-chk:not(:disabled)')];
+  const ids = () => boxes().filter(b => b.checked).map(b => b.dataset.id);
+  bar.innerHTML = `<button type="button" class="link-btn bk-sel-all">全選</button><span class="bk-seln"></span>
+    <span class="bk-sel-acts"><button type="button" class="btn btn-secondary btn-sm bk-sel-edit">批次修改</button>
+    <button type="button" class="btn btn-secondary btn-sm bk-cancel bk-sel-del">批次${k.cancel}</button>
+    <button type="button" class="link-btn bk-sel-clear">清除選取</button></span>`;
+  const sync = () => {
+    const n = ids().length, t = boxes().length;
+    bar.classList.toggle('hidden', !t);
+    bar.classList.toggle('on', n > 0);
+    bar.querySelector('.bk-seln').textContent = n ? `已選 ${n} 筆` : '勾選多筆可以一起修改或取消';
+    bar.querySelector('.bk-sel-acts').classList.toggle('hidden', !n);
+    bar.querySelector('.bk-sel-all').textContent = n && n === t ? '全不選' : '全選';
+    if (all) { all.checked = !!t && n === t; all.indeterminate = n > 0 && n < t; all.disabled = !t; }
+    table.querySelectorAll('tr[data-bk-id]').forEach(tr => tr.classList.toggle('bk-picked', !!tr.querySelector('.bk-chk:checked')));
+  };
+  const setAll = on => { boxes().forEach(b => { b.checked = on; }); sync(); };
+  table.onchange = e => {
+    if (e.target === all) setAll(all.checked);
+    else if (e.target.classList.contains('bk-chk')) sync();
+  };
+  bar.querySelector('.bk-sel-all').onclick = () => { const n = ids().length; setAll(!(n && n === boxes().length)); };
+  bar.querySelector('.bk-sel-clear').onclick = () => setAll(false);
+  bar.querySelector('.bk-sel-edit').onclick = () => openBookingBatchEdit(ids(), Object.assign({ kind, list }, opts));
+  bar.querySelector('.bk-sel-del').onclick = () => deleteBookingsBatch(ids(), Object.assign({ kind, list }, opts));
+  sync();
+}
+function bkPickedList(items) {
+  return `<div class="bk-pick-list">${items.map(x => `<div data-bkl="${esc(x.id)}"><b>${esc(x.grade) || '-'}</b> ${esc(x.name)}<span>${esc(shortRange(x.startDate, x.endDate))}${x.reason ? '｜' + esc(x.reason) : ''}</span></div>`).join('')}</div>`;
+}
+// 伺服器回報有問題的筆數：標紅並列出原因
+function bkBatchBad(e, items, box) {
+  if (e.message !== 'INVALID_BOOKINGS' || !e.data || !e.data.bad) return false;
+  const lines = e.data.bad.map(b => {
+    const x = items.find(i => i.id === b.id) || {};
+    const msg = b.clash ? `和 ${shortRange(b.clash.startDate, b.clash.endDate)} 的登記重疊` : errMsg(b.error);
+    if (box) { const el = box.querySelector(`[data-bkl="${CSS.escape(b.id)}"]`); if (el) el.classList.add('bad'); }
+    return `${esc(x.name || '')}：${esc(msg)}`;
+  });
+  if (box) {
+    const err = box.querySelector('.bk-batch-err');
+    if (err) { err.innerHTML = `<b>有 ${lines.length} 筆不能修改，這次沒有任何一筆被更改：</b><br>${lines.join('<br>')}`; err.classList.remove('hidden'); }
+  }
+  toast(`有 ${lines.length} 筆不能處理（${lines[0].replace(/<[^>]+>/g, '')}${lines.length > 1 ? '…' : ''}），這次沒有任何一筆被更改`, true);
+  return true;
+}
+async function openBookingBatchEdit(ids, opts) {
+  const kind = opts.kind === 'attend' ? 'attend' : 'leave';
+  const k = bkK(kind);
+  const isAdmin = STATE.role === 'admin';
+  const today = STATE.today;
+  const items = ids.map(id => (opts.list || []).find(x => x.id === id)).filter(Boolean);
+  if (!items.length) return;
+  const started = isAdmin ? 0 : items.filter(x => x.startDate < today).length;
+  const minAttr = isAdmin ? '' : ` min="${esc(today)}"`;
+  const modal = buildModal(`批次修改${k.name}（${items.length} 筆）`, `
+    <p class="hint" style="margin-top:0">勾選要改的項目，選取的每一筆都會改成一樣的內容；<b>沒勾的項目維持每筆原本的設定</b>。全部檢查通過才會一起儲存。</p>
+    ${bkPickedList(items)}
+    <div class="be-grid">
+      <label class="chk-inline"><input type="checkbox" id="be-s-on">改開始日期</label><input type="date" id="be-s" disabled${minAttr}>
+      <label class="chk-inline"><input type="checkbox" id="be-e-on">改結束日期</label><input type="date" id="be-e" disabled${minAttr}>
+      <label class="chk-inline"><input type="checkbox" id="be-r-on">改原因</label><input id="be-r" maxlength="30" disabled placeholder="留空＝清除原因">
+    </div>
+    ${started ? `<p class="hint" style="margin:8px 0 0">其中 <b>${started}</b> 筆已經開始，老師不能改開始日期（只能改結束日期與原因）；要改請聯絡管理員。</p>` : ''}
+    <div class="bk-batch-err hidden"></div>
+  `, async () => {
+    const payload = { kind, ids: items.map(x => x.id) };
+    if (!isAdmin) payload.schoolId = STATE.rollcall && STATE.rollcall.schoolId;
+    if ($('be-s-on').checked) { if (!$('be-s').value) { toast('請選擇開始日期', true); return false; } payload.startDate = $('be-s').value; }
+    if ($('be-e-on').checked) { if (!$('be-e').value) { toast('請選擇結束日期', true); return false; } payload.endDate = $('be-e').value; }
+    if ($('be-r-on').checked) payload.reason = $('be-r').value.trim();
+    if (!('startDate' in payload) && !('endDate' in payload) && !('reason' in payload)) { toast(errMsg('BATCH_NOTHING'), true); return false; }
+    if (payload.startDate && payload.endDate && payload.endDate < payload.startDate) { toast(errMsg('BOOKING_RANGE'), true); return false; }
+    modal.querySelectorAll('.bk-pick-list .bad').forEach(el => el.classList.remove('bad'));
+    modal.querySelector('.bk-batch-err').classList.add('hidden');
+    const r = await doWrite('updateBookingsBatch', payload,
+      async () => { if (opts.afterSave) await opts.afterSave(items.map(x => x.studentId)); else await loadBookings(true); },
+      res => `同步成功（已修改 ${res.updated} 筆${k.name}）`,
+      { onError: e => bkBatchBad(e, items, modal) });
+    return !!r;
+  }, { confirmText: '儲存修改' });
+  [['be-s-on', 'be-s'], ['be-e-on', 'be-e'], ['be-r-on', 'be-r']].forEach(([c, f]) => {
+    $(c).addEventListener('change', () => { $(f).disabled = !$(c).checked; if ($(c).checked) $(f).focus(); });
+  });
+  $('be-s').addEventListener('change', () => {   // 開始日期晚於要改的結束日期：結束日期跟著調整
+    if ($('be-e-on').checked && $('be-e').value && $('be-e').value < $('be-s').value) $('be-e').value = $('be-s').value;
+  });
+}
+async function deleteBookingsBatch(ids, opts) {
+  const kind = opts.kind === 'attend' ? 'attend' : 'leave';
+  const k = bkK(kind);
+  const items = ids.map(id => (opts.list || []).find(x => x.id === id)).filter(Boolean);
+  if (!items.length) return;
+  const partial = STATE.role === 'admin' ? 0 : items.filter(x => x.startDate < STATE.today).length;
+  const note = kind === 'attend' ? '取消後這幾天恢復為固定不進班；老師已親自點名的狀態不受影響。' : '取消後這幾天不再自動算請假；老師已親自點名的狀態不受影響。';
+  const ok = await confirmBox(`批次${k.cancel}`, `確定取消以下 <b>${items.length}</b> 筆${k.name}嗎？
+    <div style="margin-top:8px;font-size:13px;max-height:220px;overflow:auto">${items.map(x => `${esc(x.grade) || '-'} ${esc(x.name)}：${esc(shortRange(x.startDate, x.endDate))}${x.reason ? '（' + esc(x.reason) + '）' : ''}`).join('<br>')}</div>
+    ${partial ? `<div style="margin-top:8px;font-size:13px">其中 <b>${partial}</b> 筆已經開始，會<b>從今天起</b>取消，之前已過去的日子保持不變。</div>` : ''}
+    <span style="color:var(--muted);font-size:13px">${note}</span>`, `確定取消 ${items.length} 筆`, true);
+  if (!ok) return;
+  const payload = { kind, ids: items.map(x => x.id) };
+  if (STATE.role !== 'admin') payload.schoolId = STATE.rollcall && STATE.rollcall.schoolId;
+  await doWrite('deleteBookingsBatch', payload,
+    async () => { if (opts.afterSave) await opts.afterSave(items.map(x => x.studentId)); else await loadBookings(true); },
+    res => `同步成功（已取消 ${res.deleted + res.truncated} 筆${k.name}）`,
+    { onError: e => bkBatchBad(e, items, null) });
 }
 // 批次登記：每一列各自選學生、期間與原因（可用上方「快速填入」一次套用相同期間）
 async function openBookingBatch(kind, opts) {
@@ -2164,8 +2295,9 @@ async function openTeacherBookings(kind) {
       : '家長事先告知請假時在這裡登記，到了那幾天學生會自動算「請假」。'}</p>
     <button type="button" class="btn ${kind === 'attend' ? 'btn-teal' : 'btn-primary'} btn-sm" id="t-bk-add">+ 新增${k.name}</button>
     <button type="button" class="btn btn-secondary btn-sm" id="t-bk-batch">批次登記</button>
+    <div class="bk-selbar hidden" style="margin-top:12px"></div>
     <div class="table-wrap" style="margin-top:12px"><table class="bk-table">
-      <thead><tr><th>學校</th><th>年級班級</th><th>學生姓名</th><th>${k.range}</th><th>天數</th><th>原因</th><th>登記者</th><th>狀態</th><th></th></tr></thead>
+      <thead><tr><th><label class="bk-sel"><input type="checkbox" class="bk-chk-all" aria-label="全選">學校</label></th><th>年級班級</th><th>學生姓名</th><th>${k.range}</th><th>天數</th><th>原因</th><th>登記者</th><th>狀態</th><th></th></tr></thead>
       <tbody>${list.length ? bookingRowsHtml(list, false, r.today, kind) : `<tr><td colspan="9" class="empty">這間學校目前沒有${k.name}</td></tr>`}</tbody></table></div>
   `, null, { hideConfirm: true, wide: true });
   // 清單內的按鈕改成老師端版本
@@ -2173,6 +2305,7 @@ async function openTeacherBookings(kind) {
   modal.querySelectorAll('button[data-bk-del]').forEach(b => { const id = b.dataset.bkDel; b.addEventListener('click', () => deleteBooking(id, { kind, list, afterSave: after })); });
   modal.querySelector('#t-bk-add').onclick = () => openBookingForm(null, { kind, list, afterSave: after });
   modal.querySelector('#t-bk-batch').onclick = () => openBookingBatch(kind, { afterSave: after });
+  wireBookingSelect(modal.querySelector('.bk-table'), modal.querySelector('.bk-selbar'), kind, list, { afterSave: after });
 }
 
 function switchTab(tab) {
