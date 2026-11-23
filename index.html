@@ -2433,10 +2433,12 @@ function marqueeScope() {
 function marqueeLocal(schoolId) {
   if (STATE.role !== 'teacher' || !STATE.rollcall || STATE.rollcall.schoolId !== schoolId) return null;
   const rows = document.querySelectorAll('#rollcall-container .rc-row');
-  if (!rows.length) return null;
   const m = {};
-  rows.forEach(tr => { m[tr.dataset.sid] = tr.dataset.status || ''; });
-  return m;
+  if (rows.length) { rows.forEach(tr => { m[tr.dataset.sid] = tr.dataset.status || ''; }); return m; }
+  // 送出後切到「明細」畫面時沒有點名列：改用剛從伺服器載入的名單，避免跑馬燈退回最多 30 秒前的舊快取而短暫顯示「還有幾位未點名」
+  const list = STATE.rollcall.students;
+  if (STATE.rcMode === 'view' && Array.isArray(list) && list.length) { list.forEach(st => { m[st.id] = st.status || ''; }); return m; }
+  return null;
 }
 let marqueeBusy = false;
 async function marqueeTick(force) {
@@ -3642,7 +3644,7 @@ async function submitAttendance(force) {
   const rows = [...document.querySelectorAll('#rollcall-container .rc-row')];
   const records = rows.map(tr => ({ studentId: tr.dataset.sid, status: tr.dataset.status || '' }));
   const unmarked = records.filter(r => !r.status).length;
-  await doWrite('submitAttendance',
+  const res = await doWrite('submitAttendance',
     { schoolId: rc.schoolId, records, baseSubmittedAt: rc.submittedAt || '', force: force === true },
     () => loadRollCall(true),
     '點名已送出，同步成功' + (unmarked ? `（尚有 ${unmarked} 位未點名，可稍後再補）` : ''),
@@ -3656,6 +3658,7 @@ async function submitAttendance(force) {
       }
       return false;
     } });
+  if (res) marqueeTick(true);
 }
 
 // 兩位老師同時點同一校：後送出的人會看到提示，自行決定要覆蓋或改看對方的版本
@@ -3873,6 +3876,7 @@ async function finishRollCall() {
   }
   const unmarked = [...document.querySelectorAll('#rollcall-container .rc-row')].filter(tr => !tr.dataset.status).length;
   try { await loadRollCall(true, { view: true }); } catch (e) {}
+  marqueeTick(true);
   busyEnd(true, '點名已儲存' + (unmarked ? `（尚有 ${unmarked} 位未點名，可再按「修改點名單」補點）` : ''));
 }
 // 點名中：每 30 秒同步其他老師點的狀態（自己還沒存好的不會被覆蓋）
