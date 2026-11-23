@@ -2692,7 +2692,18 @@ function lineCmdUnmarked_(slot) {
         if (!slot) rows.push({ t: '🌆 下午接', c: 'label' });
         rows = rows.concat(pm.map(lineWho_), walk.map(function (st) { return { t: '📌 ' + lineWho_(st) + ' 固定' + st.tag, c: 'pin' }; }));
       }
-      sections.push({ head: '🏫 ' + sc.name, right: cnt + ' 人', rows: rows });
+      // 有固定自送／自走的學生時，人數拆開顯示：要接＋自送＋自走＝總共
+      var need = noon.length + pm.length;
+      var drop = walk.filter(function (st) { return st.tag === '自送'; }).length, wk = walk.length - drop;
+      var right = cnt + ' 人';
+      if (walk.length) {
+        var parts = [];
+        if (need) parts.push('要接 ' + need);
+        if (drop) parts.push('自送 ' + drop);
+        if (wk) parts.push('自走 ' + wk);
+        right = parts.join('＋') + '＝' + cnt + ' 人';
+      }
+      sections.push({ head: '🏫 ' + sc.name, right: right, rows: rows });
     });
   var title = slot === 'noon' ? '中午接' : slot === 'pm' ? '下午接' : '';
   return lineCard_({
