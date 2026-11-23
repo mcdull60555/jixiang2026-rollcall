@@ -2492,16 +2492,23 @@ function lineDateLabel_(d) {
 
 // 今天「還沒點名、而且要接」的學生，依學校與接送時段分組；今天不能點名（例假日／國定假日）回傳 null
 // 排除：已點名（到班、自送、自走、請假）、預約請假、今天固定不進班、固定自走／自送（不用接，不屬於中午／下午）
-function unmarkedBySlot_() {
-  var ctx = statusCtx_(), today = ctx.today;
+function unmarkedBySlot_(date) {
+  var ctx = statusCtx_(), today = date || ctx.today;   // date 不給＝今天；給過去的日子可查當天最後還有誰沒點名
   if (!ctx.isOpen(today)) return null;
   var pk = pickupCtx_();
   var schools = {};
-  activeSchools_().forEach(function (sc) { schools[sc.id] = { name: sc.name, noon: [], pm: [], walk: [] }; });
+  activeSchools_().forEach(function (sc) { schools[sc.id] = { name: sc.name, noon: [], pm: [], walk: [], leaveNoon: [], leavePm: [] }; });
   var wd = ctx.wdOf(today);
   sheetToObjects(SHEET_STUDENTS).forEach(function (st) {
     if (!isActive_(st.active) || !schools[st.schoolId]) return;
-    if (ctx.status(st.id, today)) return;
+    var stt = ctx.status(st.id, today);
+    if (stt === 'leave') {   // 請假的另外記下來，只給查詢指令顯示（不算未點名）
+      var bk = ctx.bookingOn(st.id, today), lv = Object.assign({}, st, { reason: bk ? String(bk.reason || '') : '' });
+      schools[st.schoolId][pickupInfo_(st, today, pk).slot === 'noon' ? 'leaveNoon' : 'leavePm'].push(lv);
+      return;
+    }
+    if (stt) return;
+    if (ctx.isFixed(st.id, today)) return;   // 其他日子沒有紀錄的固定不進班不算未點名
     var p = pickupSlotFor_(st, today, ctx, pk);
     if (!p) {   // 今天固定自走／自送、不用接但老師還沒點：下午接的提醒一起列出（標註自走或自送）
       var tag = parseDays_(st.selfDropDays).indexOf(wd) !== -1 ? '自送' : '自走';
@@ -2616,6 +2623,19 @@ function lineCommandReply_(raw) {
   var t = String(raw).replace(/　/g, ' ').trim();
   var m = t.match(/^查\s+(.+)$/);
   if (m) return lineCmdStudent_(m[1].trim());
+  // 未點名：「未點名」「中午未點名」「下午未點名」，後面或前面可加日期：「未點名 12/5」「昨天 中午未點名」
+  var ui = t.indexOf('未點名');
+  if (ui !== -1) {
+    var before = t.slice(0, ui), after = t.slice(ui + 3).trim(), sm = before.match(/(中午|下午)/);
+    var uslot = sm ? (sm[1] === '中午' ? 'noon' : 'pm') : '';
+    var rest = before.replace(/(中午|下午)/, '').trim();
+    var uarg = (rest || after).trim();
+    if (rest && after) return null;
+    if (!uarg) return lineCmdUnmarked_(uslot);
+    var uday = lineParseDate_(uarg);
+    if (uday) return lineCmdUnmarked_(uslot, uday);
+    return (!rest && after) ? '看不懂日期「' + uarg + '」\n可以這樣問：未點名 昨天、中午未點名 12/5、下午未點名 週三' : null;
+  }
   // 接送：「今日接送」「明日接送」「接送 12/5」「12/5 接送」「接送 週三」「接送 下週三」
   var pm = t.match(/^(?:(.+?)\s*)?接送(?:\s*(.+))?$/);
   if (pm) {
@@ -2624,9 +2644,6 @@ function lineCommandReply_(raw) {
     return (!pm[1] && pm[2]) ? '看不懂日期「' + arg + '」\n可以這樣問：接送 12/5、接送 明天、接送 週三、接送 下週三' : null;
   }
   switch (t) {
-    case '未點名': return lineCmdUnmarked_();
-    case '中午未點名': return lineCmdUnmarked_('noon');
-    case '下午未點名': return lineCmdUnmarked_('pm');
     case '點名進度': return lineCmdProgress_();
     case '今日請假': return lineCmdLeaveToday_();
     case '臨時進班': return lineCmdAttendToday_();
@@ -2641,6 +2658,7 @@ function lineCmdHelp_() {
     theme: 'gray', title: '📖 小管家可用口令', sub: '在群組傳這些字就會回覆', button: false,
     sections: [{ rows: [
       { k: '📋 未點名', v: '現在還沒點名的學生（中午＋下午）' },
+      { k: '📋 未點名 12/5', v: '查某一天的未點名（也可打：昨天未點名、中午未點名 12/5、下午未點名 週三）' },
       { k: '☀️ 中午未點名', v: '只列中午接還沒點名的' },
       { k: '🌆 下午未點名', v: '只列下午接還沒點名的（含固定自走／自送）' },
       { k: '📊 點名進度', v: '各校已點名／應到人數' },
@@ -2680,9 +2698,11 @@ function lineWho_(st) { return st.name + '（' + st.grade + '）'; }
 function lineBk_(b) { return lineSpan_(b.startDate, b.endDate) + (b.reason ? '｜' + b.reason : ''); }
 
 // slot：'noon' 只列中午接、'pm' 只列下午接（含固定自走／自送）、不給＝全部
-function lineCmdUnmarked_(slot) {
-  var data = unmarkedBySlot_();
-  if (!data) return lineClosedText_({ today: today_() });
+function lineCmdUnmarked_(slot, date) {
+  var todayStr = today_(), day = date || todayStr, isToday = day === todayStr;
+  if (day > todayStr) return '📋 ' + lineDateLabel_(day) + ' 還沒到，只能查今天和過去的未點名';
+  var data = unmarkedBySlot_(isToday ? '' : day);
+  if (!data) return lineClosedText_({ today: todayStr }, day);
   var sections = [], total = 0, n = 0;
   Object.keys(data.schools).map(function (k) { return data.schools[k]; })
     .sort(function (a, b) { return String(a.name).localeCompare(String(b.name), 'zh-Hant'); })
@@ -2691,8 +2711,10 @@ function lineCmdUnmarked_(slot) {
       var pm = slot === 'noon' ? [] : sortStudents(sc.pm.slice());
       var walk = slot === 'noon' ? [] : sortStudents(sc.walk.slice());
       var cnt = noon.length + pm.length + walk.length;
-      if (!cnt) return;
-      n++; total += cnt;
+      // 請假的一起列出，但放在最下面獨立一區，不算進人數
+      var leave = sortStudents((slot === 'pm' ? [] : sc.leaveNoon).concat(slot === 'noon' ? [] : sc.leavePm));
+      if (!cnt && !leave.length) return;
+      if (cnt) { n++; total += cnt; }
       var rows = [];
       if (noon.length) { if (!slot) rows.push({ t: '☀️ 中午接', c: 'label' }); rows = rows.concat(noon.map(lineWho_)); }
       if (pm.length || walk.length) {
@@ -2703,6 +2725,10 @@ function lineCmdUnmarked_(slot) {
       var need = noon.length + pm.length;
       var drop = walk.filter(function (st) { return st.tag === '自送'; }).length, wk = walk.length - drop;
       var right = cnt + ' 人';
+      if (leave.length) {
+        rows.push({ t: '🔴 請假（不計入人數）', c: 'label' });
+        rows = rows.concat(leave.map(function (st) { return { t: lineWho_(st) + (st.reason ? '｜' + st.reason : ''), c: 'red' }; }));
+      }
       if (walk.length) {
         var parts = [];
         if (need) parts.push('要接 ' + need);
@@ -2714,8 +2740,8 @@ function lineCmdUnmarked_(slot) {
     });
   var title = slot === 'noon' ? '中午接' : slot === 'pm' ? '下午接' : '';
   return lineCard_({
-    theme: slot || 'blue', title: (slot === 'noon' ? '☀️ ' : slot === 'pm' ? '🌆 ' : '📋 ') + '目前' + title + '未點名',
-    sub: lineDateLabel_(data.date) + ' ' + lineNow_() + (total ? ' · 共 ' + n + ' 校 ' + total + ' 人' : ''),
+    theme: slot || 'blue', title: (slot === 'noon' ? '☀️ ' : slot === 'pm' ? '🌆 ' : '📋 ') + (isToday ? '目前' : lineDateLabel_(day) + ' ') + title + '未點名',
+    sub: lineDateLabel_(data.date) + (isToday ? ' ' + lineNow_() : '') + (total ? ' · 共 ' + n + ' 校 ' + total + ' 人' : ''),
     intro: total ? [] : [{ t: '✅ ' + (title || '全部') + '都點完了', c: 'green' }],
     sections: sections
   });
