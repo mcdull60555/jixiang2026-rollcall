@@ -2634,7 +2634,7 @@ function lineCommandReply_(raw) {
     if (!uarg) return lineCmdUnmarked_(uslot);
     var uday = lineParseDate_(uarg);
     if (uday) return lineCmdUnmarked_(uslot, uday);
-    return (!rest && after) ? '看不懂日期「' + uarg + '」\n可以這樣問：未點名 昨天、中午未點名 12/5、下午未點名 週三' : null;
+    return (!rest && after) ? '看不懂日期「' + uarg + '」\n可以這樣問：未點名 昨天、中午未點名 12/5、下午未點名 下週三' : null;
   }
   // 接送：「今日接送」「明日接送」「接送 12/5」「12/5 接送」「接送 週三」「接送 下週三」
   var pm = t.match(/^(?:(.+?)\s*)?接送(?:\s*(.+))?$/);
@@ -2700,7 +2700,6 @@ function lineBk_(b) { return lineSpan_(b.startDate, b.endDate) + (b.reason ? '�
 // slot：'noon' 只列中午接、'pm' 只列下午接（含固定自走／自送）、不給＝全部
 function lineCmdUnmarked_(slot, date) {
   var todayStr = today_(), day = date || todayStr, isToday = day === todayStr;
-  if (day > todayStr) return '📋 ' + lineDateLabel_(day) + ' 還沒到，只能查今天和過去的未點名';
   var data = unmarkedBySlot_(isToday ? '' : day);
   if (!data) return lineClosedText_({ today: todayStr }, day);
   var sections = [], total = 0, n = 0;
@@ -2743,7 +2742,8 @@ function lineCmdUnmarked_(slot, date) {
     theme: slot || 'blue', title: (slot === 'noon' ? '☀️ ' : slot === 'pm' ? '🌆 ' : '📋 ') + (isToday ? '目前' : lineDateLabel_(day) + ' ') + title + '未點名',
     sub: lineDateLabel_(data.date) + (isToday ? ' ' + lineNow_() : '') + (total ? ' · 共 ' + n + ' 校 ' + total + ' 人' : ''),
     intro: total ? [] : [{ t: '✅ ' + (title || '全部') + '都點完了', c: 'green' }],
-    sections: sections
+    sections: sections,
+    note: day > todayStr ? '這天還沒開始點名，列出的是預計要來的學生（已扣除預約請假與固定不進班）' : ''
   });
 }
 
