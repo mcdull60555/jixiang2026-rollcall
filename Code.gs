@@ -2608,7 +2608,7 @@ function handleLineWebhook_(body) {
 
 // =====================================================================
 // ---------- 群組查詢口令（用回覆的方式回答，只有被問到才回覆）----------
-// 未點名／點名進度／今日請假／臨時進班／今日接送／明日請假／查 姓名／指令
+// 未點名／點名進度／今日請假／臨時進班／今日接送／接送 日期／明日請假／查 姓名／指令
 // =====================================================================
 var LINE_STATUS_LABEL_ = { '': '未點名', present: '已到班', selfDrop: '自送', selfWalk: '自走', leave: '請假', fixedOff: '今天固定不進班' };
 
@@ -2616,6 +2616,13 @@ function lineCommandReply_(raw) {
   var t = String(raw).replace(/　/g, ' ').trim();
   var m = t.match(/^查\s+(.+)$/);
   if (m) return lineCmdStudent_(m[1].trim());
+  // 接送：「今日接送」「明日接送」「接送 12/5」「12/5 接送」「接送 週三」「接送 下週三」
+  var pm = t.match(/^(?:(.+?)\s*)?接送(?:\s*(.+))?$/);
+  if (pm) {
+    var arg = (pm[2] || pm[1] || '今日').trim(), day = lineParseDate_(arg);
+    if (day) return lineCmdPickup_(day);
+    return (!pm[1] && pm[2]) ? '看不懂日期「' + arg + '」\n可以這樣問：接送 12/5、接送 明天、接送 週三、接送 下週三' : null;
+  }
   switch (t) {
     case '未點名': return lineCmdUnmarked_();
     case '中午未點名': return lineCmdUnmarked_('noon');
@@ -2623,7 +2630,6 @@ function lineCommandReply_(raw) {
     case '點名進度': return lineCmdProgress_();
     case '今日請假': return lineCmdLeaveToday_();
     case '臨時進班': return lineCmdAttendToday_();
-    case '今日接送': return lineCmdPickup_();
     case '明日請假': return lineCmdNextDay_();
     case '指令': return lineCmdHelp_();
   }
@@ -2640,7 +2646,8 @@ function lineCmdHelp_() {
       { k: '📊 點名進度', v: '各校已點名／應到人數' },
       { k: '🔴 今日請假', v: '今天請假的學生' },
       { k: '🟢 臨時進班', v: '今天臨時進班的學生' },
-      { k: '🚌 今日接送', v: '各校今天中午接、下午接、自走、自送人數' },
+      { k: '🚌 今日接送', v: '各校今天中午／下午的接、自走、自送人數' },
+      { k: '🚌 接送 12/5', v: '查某一天的接送（也可打：明日接送、接送 週三、接送 下週三、接送 2026-12-05）' },
       { k: '📅 明日請假', v: '下個上課日的預約請假與臨時進班' },
       { k: '👤 查 王小明', v: '查一位學生今天的狀態與預約' },
       { k: '🏫 查 國光國小', v: '查一間學校今天所有學生的狀態' },
@@ -2762,29 +2769,70 @@ function lineCmdAttendToday_() {
   });
 }
 
-function lineCmdPickup_() {
-  var d = lineDayCtx_();
-  if (!d.ctx.isOpen(d.today)) return lineClosedText_(d);
-  var wd = d.ctx.wdOf(d.today), by = {}, tot = { noon: 0, pm: 0, walk: 0, drop: 0, leave: 0 };
+// 把「今日／明天／後天／昨天／12/5／12月5日／2026-12-05／週三／下週三」轉成 yyyy-MM-dd；看不懂回傳 ''
+function lineParseDate_(raw) {
+  var t = String(raw || '').replace(/\s+/g, ''), today = today_(), m;
+  var addDays = function (d, n) { return Utilities.formatDate(new Date(Date.parse(d + 'T12:00:00+08:00') + n * 86400000), TZ, 'yyyy-MM-dd'); };
+  var ok = function (d) { return isDateStr_(d) && nextDate_(addDays(d, -1)) === d ? d : ''; };   // 排除 2/30 這種不存在的日期
+  var pad = function (n) { return ('0' + n).slice(-2); };
+  if (/^(今日|今天)$/.test(t)) return today;
+  if (/^(明日|明天)$/.test(t)) return addDays(today, 1);
+  if (/^後天$/.test(t)) return addDays(today, 2);
+  if (/^(昨日|昨天)$/.test(t)) return addDays(today, -1);
+  if ((m = t.match(/^(\d{4})[-\/.年](\d{1,2})[-\/.月](\d{1,2})[日號号]?$/))) return ok(m[1] + '-' + pad(m[2]) + '-' + pad(m[3]));
+  if ((m = t.match(/^(\d{1,2})[-\/.月](\d{1,2})[日號号]?$/))) {
+    var y = parseInt(today.slice(0, 4), 10), d = ok(y + '-' + pad(m[1]) + '-' + pad(m[2]));
+    if (d && d < addDays(today, -180)) d = ok((y + 1) + '-' + pad(m[1]) + '-' + pad(m[2]));   // 已經過了很久的月日 → 當作明年
+    return d;
+  }
+  if ((m = t.match(/^(下)?(?:週|周|星期|禮拜)([一二三四五六日天])$/))) {
+    var want = '一二三四五六日'.indexOf(m[2] === '天' ? '日' : m[2]) + 1, cur = weekdayOf(today);
+    if (m[1]) return addDays(today, (8 - cur) + (want - 1));   // 下週：下個星期一起算
+    return addDays(today, (want - cur + 7) % 7);               // 本週（今天起算最近的那一天）
+  }
+  return '';
+}
+
+// date 不給＝今天
+function lineCmdPickup_(date) {
+  var d = lineDayCtx_(), day = date || d.today, isToday = day === d.today;
+  if (!d.ctx.isOpen(day)) return lineClosedText_(d, day);
+  var wd = d.ctx.wdOf(day), by = {};
+  var blank = function () { return { noon: 0, pm: 0, walkNoon: 0, walkPm: 0, dropNoon: 0, dropPm: 0, leave: 0 }; };
+  var tot = blank();
   d.students.forEach(function (st) {
-    var c = by[st.schoolId] = by[st.schoolId] || { noon: 0, pm: 0, walk: 0, drop: 0, leave: 0 };
-    var s = d.ctx.status(st.id, d.today);
+    var c = by[st.schoolId] = by[st.schoolId] || blank();
+    var s = d.ctx.status(st.id, day);
+    if (!s && d.ctx.isFixed(st.id, day)) s = 'fixedOff';   // 其他日子沒有紀錄時，固定不進班也要排除
     if (s === 'fixedOff') return;
     if (s === 'leave') { c.leave++; tot.leave++; return; }
-    var p = pickupSlotFor_(st, d.today, d.ctx, d.pk);
-    var k = p ? p.slot : (parseDays_(st.selfDropDays).indexOf(wd) !== -1 ? 'drop' : 'walk');
+    var p = pickupSlotFor_(st, day, d.ctx, d.pk), k;
+    if (p) k = p.slot;
+    else {   // 固定自走／自送：照這位學生當天的接送時段（中午／下午）分開算
+      var slot = pickupInfo_(st, day, d.pk).slot === 'noon' ? 'Noon' : 'Pm';
+      k = (parseDays_(st.selfDropDays).indexOf(wd) !== -1 ? 'drop' : 'walk') + slot;
+    }
     c[k]++; tot[k]++;
   });
-  var line = function (c) { return '中午接 ' + c.noon + '｜下午接 ' + c.pm + '｜自走 ' + c.walk + '｜自送 ' + c.drop + (c.leave ? '｜請假 ' + c.leave : ''); };
+  var sum = function (c) { return c.noon + c.pm + c.walkNoon + c.walkPm + c.dropNoon + c.dropPm; };
+  var rowsOf = function (c) {
+    var rows = ['☀️ 中午：接 ' + c.noon + '｜自走 ' + c.walkNoon + '｜自送 ' + c.dropNoon,
+                '🌆 下午：接 ' + c.pm + '｜自走 ' + c.walkPm + '｜自送 ' + c.dropPm];
+    if (c.leave) rows.push('🔴 請假 ' + c.leave);
+    return rows;
+  };
   var sections = lineSchoolOrder_(d)
-    .filter(function (sid) { var c = by[sid]; return c && (c.noon + c.pm + c.walk + c.drop + c.leave); })
-    .map(function (sid) { var c = by[sid]; return { head: '🏫 ' + d.schools[sid], right: (c.noon + c.pm + c.walk + c.drop) + ' 人', rc: 'label', rows: [line(c)] }; });
-  if (!sections.length) return lineDateLabel_(d.today) + ' 今天沒有學生需要接送';
+    .filter(function (sid) { var c = by[sid]; return c && (sum(c) + c.leave); })
+    .map(function (sid) { var c = by[sid]; return { head: '🏫 ' + d.schools[sid], right: sum(c) + ' 人', rc: 'label', rows: rowsOf(c) }; });
+  if (!sections.length) return lineDateLabel_(day) + (isToday ? ' 今天' : '') + ' 沒有學生需要接送';
   return lineCard_({
-    theme: 'teal', title: '🚌 今日接送', sub: lineDateLabel_(d.today),
-    intro: [{ t: '☀️ 中午接', r: tot.noon }, { t: '🌆 下午接', r: tot.pm }, { t: '🚶 自走', r: tot.walk }, { t: '🏠 自送', r: tot.drop }]
+    theme: 'teal', title: '🚌 ' + (isToday ? '今日接送' : lineDateLabel_(day) + ' 接送'), sub: lineDateLabel_(day),
+    intro: [{ t: '☀️ 中午接', r: tot.noon }, { t: '🌆 下午接', r: tot.pm },
+            { t: '🚶 中午自走', r: tot.walkNoon }, { t: '🚶 下午自走', r: tot.walkPm },
+            { t: '🏠 中午自送', r: tot.dropNoon }, { t: '🏠 下午自送', r: tot.dropPm }]
       .concat(tot.leave ? [{ t: '🔴 請假', r: tot.leave, c: 'red' }] : []),
-    sections: sections
+    sections: sections,
+    note: isToday ? '' : '預約請假已扣除；當天老師另外點的請假不在內'
   });
 }
 
