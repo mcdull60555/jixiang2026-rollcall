@@ -2497,7 +2497,7 @@ function unmarkedBySlot_(date) {
   if (!ctx.isOpen(today)) return null;
   var pk = pickupCtx_();
   var schools = {};
-  activeSchools_().forEach(function (sc) { schools[sc.id] = { name: sc.name, noon: [], pm: [], walk: [], leaveNoon: [], leavePm: [] }; });
+  activeSchools_().forEach(function (sc) { schools[sc.id] = { name: sc.name, noon: [], pm: [], walk: [], selfAll: [], leaveNoon: [], leavePm: [] }; });
   var wd = ctx.wdOf(today);
   sheetToObjects(SHEET_STUDENTS).forEach(function (st) {
     if (!isActive_(st.active) || !schools[st.schoolId]) return;
@@ -2507,6 +2507,9 @@ function unmarkedBySlot_(date) {
       schools[st.schoolId][pickupInfo_(st, today, pk).slot === 'noon' ? 'leaveNoon' : 'leavePm'].push(lv);
       return;
     }
+    // 今天固定自走／自送的人（不管點了沒）都記下來，通知最下面固定列出，不計入人數
+    var selfTag = (wd >= 1 && wd <= 5 && stt !== 'fixedOff') ? (parseDays_(st.selfDropDays).indexOf(wd) !== -1 ? '自送' : (parseDays_(st.selfWalkDays).indexOf(wd) !== -1 ? '自走' : '')) : '';
+    if (selfTag) schools[st.schoolId].selfAll.push(Object.assign({}, st, { tag: selfTag, marked: !!stt, slot: pickupInfo_(st, today, pk).slot }));
     if (stt) return;
     if (ctx.isFixed(st.id, today)) return;   // 其他日子沒有紀錄的固定不進班不算未點名
     var p = pickupSlotFor_(st, today, ctx, pk);
@@ -2520,6 +2523,15 @@ function unmarkedBySlot_(date) {
   return { date: today, schools: schools };
 }
 
+// 固定自走／自送的名單（不計入人數）：slot 篩中午／下午，shownIds＝已經列在上面的人（不重複列）
+function lineSelfRows_(sc, slot, shownIds) {
+  var list = sortStudents(sc.selfAll.filter(function (st) { return (!slot || st.slot === slot) && !shownIds[st.id]; }));
+  if (!list.length) return [];
+  return [{ t: '🚶 自走／自送（不計入人數）', c: 'label' }].concat(list.map(function (st) {
+    return { t: lineWho_(st) + ' ' + st.tag + (st.marked ? ' ✅' : ' 未點名'), c: st.marked ? 'gray' : 'pin' };
+  }));
+}
+
 // 組出提醒卡片；沒有未點名的學生回傳 null
 function buildReminderCard_(r, data) {
   var sections = [], schools = 0, total = 0;
@@ -2530,8 +2542,9 @@ function buildReminderCard_(r, data) {
       var walk = r.slot === 'pm' ? sortStudents(sc.walk.slice()) : [];   // 固定自走／自送的只加在下午接提醒，放在該校名單最後面
       if (!list.length && !walk.length) return;
       schools++; total += list.length + walk.length;
+      var shown = {}; walk.forEach(function (st) { shown[st.id] = 1; });
       sections.push({ head: '🏫 ' + sc.name, right: (list.length + walk.length) + ' 人',
-        rows: list.map(lineWho_).concat(walk.map(function (st) { return { t: '📌 ' + lineWho_(st) + ' 固定' + st.tag, c: 'pin' }; })) });
+        rows: list.map(lineWho_).concat(walk.map(function (st) { return { t: '📌 ' + lineWho_(st) + ' 固定' + st.tag, c: 'pin' }; }), lineSelfRows_(sc, r.slot, shown)) });
     });
   if (!total) return null;
   var hm = ('0' + r.hour).slice(-2) + ':' + ('0' + r.minute).slice(-2);
@@ -2712,7 +2725,9 @@ function lineCmdUnmarked_(slot, date) {
       var cnt = noon.length + pm.length + walk.length;
       // 請假的一起列出，但放在最下面獨立一區，不算進人數
       var leave = sortStudents((slot === 'pm' ? [] : sc.leaveNoon).concat(slot === 'noon' ? [] : sc.leavePm));
-      if (!cnt && !leave.length) return;
+      var shown = {}; walk.forEach(function (st) { shown[st.id] = 1; });
+      var selfRows = lineSelfRows_(sc, slot, shown);   // 固定自走／自送（含已點完的），放在最下面
+      if (!cnt && !leave.length && !selfRows.length) return;
       if (cnt) { n++; total += cnt; }
       var rows = [];
       if (noon.length) { if (!slot) rows.push({ t: '☀️ 中午接', c: 'label' }); rows = rows.concat(noon.map(lineWho_)); }
@@ -2735,7 +2750,8 @@ function lineCmdUnmarked_(slot, date) {
         if (wk) parts.push('自走 ' + wk);
         right = parts.join('＋') + '＝' + cnt + ' 人';
       }
-      sections.push({ head: '🏫 ' + sc.name, right: right, rows: rows });
+      rows = rows.concat(selfRows);
+      sections.push({ head: '🏫 ' + sc.name, right: cnt ? right : '', rows: rows });
     });
   var title = slot === 'noon' ? '中午接' : slot === 'pm' ? '下午接' : '';
   return lineCard_({
