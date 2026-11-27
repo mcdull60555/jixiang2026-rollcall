@@ -3577,6 +3577,7 @@ $('rollcall-container').addEventListener('click', async e => {
       `<b>${esc(tr.dataset.name)}</b> 今天（${weekdayLabel(STATE.today)}）是<b>固定不進班</b>的日子。<br>確定要改為「<b>${STATUS[target].label}</b>」嗎？`, '確定更改');
     if (!ok) return;
   }
+  if (tr.dataset.pk === 'noon' || tr.dataset.pk === 'pm') STATE.rcLastPk = { school: STATE.rollcall.schoolId, pk: tr.dataset.pk };   // 懸浮按鈕跟著最後點名的時段
   setRowStatus(tr, target);
   queueMark(STATE.rollcall.schoolId, tr.dataset.sid, target);   // 點一下就自動儲存
   STATE.rcMarkSchool = STATE.rollcall.schoolId; STATE.rcMarkAt = Date.now();   // 真的點了學生才算「點名中」
@@ -3617,25 +3618,49 @@ function jumpToFirstUnmarked() {
 }
 $('rollcall-container').addEventListener('click', e => { if (e.target.closest('#rc-summary .stat-jump')) jumpToFirstUnmarked(); });
 
-/* 懸浮按鈕：依序跳到未點名的學生（第一次→第一位，再按→第二位…，最後一位之後回到第一位） */
-var rcFabLastSid = '';
+/* 懸浮按鈕：只在「目前時段」的未點名學生之間依序跳（第一次→第一位，再按→第二位…，最後一位之後回到第一位）
+   目前時段：有選接送分頁就用該分頁；沒選就看老師最後點名的那位學生是中午接還是下午接；還沒點過就看現在幾點。
+   中午的點完了不會自動跳去下午（下午接的學生歸在「下午」，包含今天固定自走／自送的）。 */
+var rcFabLastSid = '', rcFabSlotPrev = '';
 function rcFabRows() { return [...document.querySelectorAll('#rollcall-container .rc-row')].filter(r => !r.dataset.status); }
+function rcFabInSlot(tr, slot) {
+  const pk = tr.dataset.pk || '';
+  return slot === 'noon' ? pk === 'noon' : slot === 'pm' ? pk !== 'noon' : pk !== 'noon' && pk !== 'pm';
+}
+function rcFabSlot(all) {
+  const f = STATE.rcPk || '';
+  if (f === 'noon' || f === 'pm' || f === 'none') return f;
+  const lp = STATE.rcLastPk;
+  if (lp && STATE.rollcall && lp.school === STATE.rollcall.schoolId) return lp.pk;
+  const dflt = STATE.rollcall && STATE.rollcall.allNoon ? 'noon' : (taipeiMinutes() < 14 * 60 ? 'noon' : 'pm');
+  // 還沒點過任何人：預設時段如果已經沒人要點，就改看另一個時段
+  return all.some(r => rcFabInSlot(r, dflt)) ? dflt : (dflt === 'noon' ? 'pm' : 'noon');
+}
 function updateRcFab() {
   const fab = $('rc-fab');
   if (!fab) return;
   const sec = $('sec-rollcall');
-  const rows = STATE.rcMode === 'edit' && sec && sec.classList.contains('active') ? rcFabRows() : [];
-  fab.classList.toggle('hidden', !rows.length);
-  if (!rows.length) { rcFabLastSid = ''; return; }
-  $('rc-fab-n').textContent = rows.length;
+  const all = STATE.rcMode === 'edit' && sec && sec.classList.contains('active') ? rcFabRows() : [];
+  fab.classList.toggle('hidden', !all.length);
+  if (!all.length) { rcFabLastSid = ''; rcFabSlotPrev = ''; return; }
+  const slot = rcFabSlot(all);
+  if (slot !== rcFabSlotPrev) { rcFabSlotPrev = slot; rcFabLastSid = ''; }   // 換時段就從那個時段的第一位開始
+  const n = all.filter(r => rcFabInSlot(r, slot)).length;
+  const label = slot === 'noon' ? '中午' : slot === 'pm' ? '下午' : '不用接';
+  $('rc-fab').firstChild.nodeValue = n ? `⬇ ${label}未點名` : `✔ ${label}已點完`;
+  $('rc-fab-n').textContent = n;
   const bar = $('topbar');
   fab.style.top = ((bar ? bar.offsetHeight : 60) + 10) + 'px';   // 頂部列（含跑馬燈）下方
 }
 function jumpToNextUnmarked() {
   const all = rcFabRows();
-  const rows = all.filter(r => !r.classList.contains('hidden'));   // 只跳目前分類看得到的
+  const slot = rcFabSlot(all);
+  const label = slot === 'noon' ? '中午' : slot === 'pm' ? '下午' : '不用接';
+  const mine = all.filter(r => rcFabInSlot(r, slot));
+  const rows = mine.filter(r => !r.classList.contains('hidden'));   // 只跳目前分頁看得到的
   if (!rows.length) {
-    if (all.length) toast(`這個分類都點完了，其他分類還有 ${all.length} 位未點名`);
+    toast(mine.length ? `${label}還有 ${mine.length} 位未點名，但在別的分頁，請切到「全部」`
+      : `${label}的學生都點完了`);
     return;
   }
   const last = rcFabLastSid && [...document.querySelectorAll('#rollcall-container .rc-row')].find(r => r.dataset.sid === rcFabLastSid);
@@ -3648,7 +3673,7 @@ function jumpToNextUnmarked() {
   tr.scrollIntoView({ block: 'center', behavior: reduce ? 'auto' : 'smooth' });
   tr.classList.remove('rc-flash'); void tr.offsetWidth; tr.classList.add('rc-flash');
   setTimeout(() => tr.classList.remove('rc-flash'), 1700);
-  if (wrapped && rows.length > 1) toast('已回到第一位未點名的學生');
+  if (wrapped && rows.length > 1) toast(`已回到第一位${label}未點名的學生`);
 }
 $('rc-fab').addEventListener('click', jumpToNextUnmarked);
 window.addEventListener('resize', updateRcFab);
