@@ -3845,9 +3845,10 @@ async function openMakeupSchool(schoolId, date) {
 
 /* ---------------- 點名自動儲存 ---------------- */
 // 每點一位學生就排進佇列；0.6 秒內連續點的合併成一次送出；失敗會自動重試，不會擋住畫面
-const SAVE = { queue: new Map(), sending: new Map(), inflight: null, timer: null, lastOk: 0, failed: false, error: '' };
+const SAVE = { queue: new Map(), sending: new Map(), touched: new Map(), inflight: null, timer: null, lastOk: 0, failed: false, error: '' };
 function queueMark(schoolId, studentId, status) {
   SAVE.queue.set(schoolId + '|' + studentId, { schoolId, studentId, status: status || '' });
+  SAVE.touched.set(studentId, Date.now());   // 記下最後一次親手點這位的時間：同步回來的舊資料不能蓋掉比它新的點選
   persistPending();
   scheduleFlush(600);
   renderSaveState();
@@ -3965,12 +3966,15 @@ async function finishRollCall() {
 async function syncRollCallEdit() {
   const rc = STATE.rollcall;
   if (!rc || STATE.rcMode !== 'edit') return;
+  const t0 = Date.now();   // 這次同步開始的時間：之後才點的學生，伺服器傳回來的可能是點之前的舊資料
   if (SAVE.queue.size) { try { await flushMarks(); } catch (e) {} }
   const r = await api('getRollCall', { schoolId: rc.schoolId }, { pill: false, flash: false });
   if (STATE.rcMode !== 'edit' || !STATE.rollcall || STATE.rollcall.schoolId !== rc.schoolId) return;
   if (r.day && !r.day.open) { STATE.dayInfo = r.day; renderTeacherDay(); return; }
   const rows = new Map([...document.querySelectorAll('#rollcall-container .rc-row')].map(tr => [tr.dataset.sid, tr]));
+  // 還沒存好的，加上「等待伺服器回應的這幾秒內才點的」（那時已存好也一樣，否則剛點的到班會被舊資料改回未點名）都以畫面為準
   const pend = pendingIds(rc.schoolId);
+  rows.forEach((tr, id) => { if ((SAVE.touched.get(id) || 0) >= t0) pend.add(id); });
   const sameSet = r.students.length === rows.size && r.students.every(st => rows.has(st.id));
   if (!sameSet) {   // 管理員新增/刪除了學生：重畫，保留自己還沒存的
     const keep = {}; rows.forEach((tr, id) => { if (pend.has(id)) keep[id] = tr.dataset.status || ''; });
