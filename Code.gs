@@ -694,19 +694,19 @@ function todayCounts_() {
   var out = {};
   sheetToObjects(SHEET_STUDENTS).forEach(function (st) {
     if (!isActive_(st.active)) return;
-    var c = out[st.schoolId] = out[st.schoolId] || { need: 0, unmarked: 0, noon: 0, pm: 0, noonUn: 0, pmUn: 0, noneUn: 0 };
+    var c = out[st.schoolId] = out[st.schoolId] || { need: 0, unmarked: 0, noon: 0, pm: 0, noonUn: 0, pmUn: 0, noneUn: 0, noneNoonUn: 0, nonePmUn: 0 };
     var s = ctx.status(st.id, today);
     if (s === 'fixedOff' || s === 'leave') return;
     c.need++;
     if (!s) c.unmarked++;
     var p = pickupSlotFor_(st, today, ctx, pk);   // 需要接的人數：中午接、下午接各幾位（自走、自送的不算）
     if (p) { c[p.slot]++; if (!s) c[p.slot + 'Un']++; }   // 中午接、下午接各自還沒點名的人數
-    else if (!s) c.noneUn++;   // 今天固定自走／自送、不用接但還沒點名的人（算在未點名，但不屬於中午或下午）
+    else if (!s) { c.noneUn++; c[pickupInfo_(st, today, pk).slot === 'noon' ? 'noneNoonUn' : 'nonePmUn']++; }   // 今天固定自走／自送、不用接但還沒點名的人：依他們選的時段（中午／下午）分開算，不屬於「要接」的人數
   });
   return out;
 }
 
-// 網頁上方跑馬燈：今天每間學校中午接、下午接要點名的學生與是否已點名（下午接含今天固定自走／自送的學生）
+// 網頁上方跑馬燈：今天每間學校中午接、下午接要點名的學生與是否已點名（今天固定自走／自送的學生依他們選的時段列在中午或下午）
 // 不能點名的日子回傳 open:false；請假、今天固定不進班的不列入
 function actionGetMarquee(body) {
   requireSession(body.token);
@@ -721,7 +721,7 @@ function actionGetMarquee(body) {
     var item = { id: st.id, name: st.name, grade: String(st.grade || ''), marked: !!s };
     var p = pickupSlotFor_(st, today, ctx, pk);
     if (p) map[st.schoolId][p.slot].push(item);
-    else { item.tag = parseDays_(st.selfDropDays).indexOf(wd) !== -1 ? '自送' : '自走'; map[st.schoolId].pm.push(item); }
+    else { item.tag = parseDays_(st.selfDropDays).indexOf(wd) !== -1 ? '自送' : '自走'; map[st.schoolId][pickupInfo_(st, today, pk).slot === 'noon' ? 'noon' : 'pm'].push(item); }
   });
   var schools = Object.keys(map).map(function (k) { return map[k]; })
     .sort(function (a, b) { return String(a.name).localeCompare(String(b.name), 'zh-Hant'); });
@@ -736,10 +736,10 @@ function actionListSchools(body) {
   });
   var today = todayCounts_();
   var out = activeSchools_().map(function (sc) {
-    var t = today ? (today[sc.id] || { need: 0, unmarked: 0, noon: 0, pm: 0, noonUn: 0, pmUn: 0, noneUn: 0 }) : null;
+    var t = today ? (today[sc.id] || { need: 0, unmarked: 0, noon: 0, pm: 0, noonUn: 0, pmUn: 0, noneUn: 0, noneNoonUn: 0, nonePmUn: 0 }) : null;
     return {
       id: sc.id, name: sc.name, studentCount: counts[sc.id] || 0, todayNeed: t ? t.need : null, todayUnmarked: t ? t.unmarked : null,
-      todayNoon: t ? t.noon : null, todayPm: t ? t.pm : null, todayNoonUn: t ? t.noonUn : null, todayPmUn: t ? t.pmUn : null, todayNoneUn: t ? t.noneUn : null
+      todayNoon: t ? t.noon : null, todayPm: t ? t.pm : null, todayNoonUn: t ? t.noonUn : null, todayPmUn: t ? t.pmUn : null, todayNoneUn: t ? t.noneUn : null, todayNoneNoonUn: t ? t.noneNoonUn : null, todayNonePmUn: t ? t.nonePmUn : null
     };
   });
   out.sort(function (a, b) { return String(a.name).localeCompare(String(b.name), 'zh-Hant'); });
@@ -1805,6 +1805,7 @@ function actionGetRollCall(body) {
     return {
       id: so.id, name: so.name, grade: so.grade, isFixedOff: isFixedOff, primaryContact: primary,
       pickup: pick ? pick.slot : '', pickupSrc: pick ? pick.src : '', pickupReason: pick ? pick.reason : '',
+      slot: pick ? pick.slot : (so.selfDropDays.indexOf(wd) !== -1 || so.selfWalkDays.indexOf(wd) !== -1 ? pickupInfo_(st, date, pk).slot : ''),   // 分頁、未點名人數用：自走／自送的學生依他們選的時段歸中午或下午
       contacts: so.contacts, note: so.note, status: status, defaultStatus: ctx.defaultOf(st.id, date), fixedOffDays: so.fixedOffDays,
       // 今天是這位學生固定的自送／自走日：只當提示，不自動預填狀態（要老師確認到班後再點）
       fixedMode: so.selfDropDays.indexOf(wd) !== -1 ? 'selfDrop' : (so.selfWalkDays.indexOf(wd) !== -1 ? 'selfWalk' : ''),
@@ -2091,8 +2092,8 @@ function actionGetOverview(body) {
   if (tc) d.dates.forEach(function (day) {
     if (day.date !== d.today) return;
     day.schools.forEach(function (sc) {
-      var c = tc[sc.schoolId] || { noon: 0, pm: 0, noonUn: 0, pmUn: 0, noneUn: 0 };
-      sc.noon = c.noon; sc.pm = c.pm; sc.noonUn = c.noonUn; sc.pmUn = c.pmUn; sc.noneUn = c.noneUn;
+      var c = tc[sc.schoolId] || { noon: 0, pm: 0, noonUn: 0, pmUn: 0, noneUn: 0, noneNoonUn: 0, nonePmUn: 0 };
+      sc.noon = c.noon; sc.pm = c.pm; sc.noonUn = c.noonUn; sc.pmUn = c.pmUn; sc.noneUn = c.noneUn; sc.noneNoonUn = c.noneNoonUn; sc.nonePmUn = c.nonePmUn;
     });
   });
   // 過去每天各校還沒點名的人數（含整天都沒人點的學校）→ 管理端標示「有老師未點名」
@@ -2513,9 +2514,9 @@ function unmarkedBySlot_(date) {
     if (stt) return;
     if (ctx.isFixed(st.id, today)) return;   // 其他日子沒有紀錄的固定不進班不算未點名
     var p = pickupSlotFor_(st, today, ctx, pk);
-    if (!p) {   // 今天固定自走／自送、不用接但老師還沒點：下午接的提醒一起列出（標註自走或自送）
+    if (!p) {   // 今天固定自走／自送、不用接但老師還沒點：依他們選的時段，跟著中午或下午的提醒一起列出（標註自走或自送）
       var tag = parseDays_(st.selfDropDays).indexOf(wd) !== -1 ? '自送' : '自走';
-      schools[st.schoolId].walk.push(Object.assign({}, st, { tag: tag }));
+      schools[st.schoolId].walk.push(Object.assign({}, st, { tag: tag, slot: pickupInfo_(st, today, pk).slot }));
       return;
     }
     schools[st.schoolId][p.slot].push(st);
@@ -2539,7 +2540,7 @@ function buildReminderCard_(r, data) {
     .sort(function (a, b) { return String(a.name).localeCompare(String(b.name), 'zh-Hant'); })
     .forEach(function (sc) {
       var list = sortStudents(sc[r.slot].slice());
-      var walk = r.slot === 'pm' ? sortStudents(sc.walk.slice()) : [];   // 固定自走／自送的只加在下午接提醒，放在該校名單最後面
+      var walk = sortStudents(sc.walk.filter(function (st) { return st.slot === r.slot; }));   // 固定自走／自送的依選的時段加在中午或下午提醒，放在該校名單最後面
       if (!list.length && !walk.length) return;
       schools++; total += list.length + walk.length;
       var shown = {}; walk.forEach(function (st) { shown[st.id] = 1; });
@@ -2710,7 +2711,7 @@ function lineSchoolSections_(d, items, fmt, rc) {
 function lineWho_(st) { return st.name + '（' + st.grade + '）'; }
 function lineBk_(b) { return lineSpan_(b.startDate, b.endDate) + (b.reason ? '｜' + b.reason : ''); }
 
-// slot：'noon' 只列中午接、'pm' 只列下午接（含固定自走／自送）、不給＝全部
+// slot：'noon' 只列中午、'pm' 只列下午（固定自走／自送依他們選的時段列在中午或下午）、不給＝全部
 function lineCmdUnmarked_(slot, date) {
   var todayStr = today_(), day = date || todayStr, isToday = day === todayStr;
   var data = unmarkedBySlot_(isToday ? '' : day);
@@ -2721,7 +2722,9 @@ function lineCmdUnmarked_(slot, date) {
     .forEach(function (sc) {
       var noon = slot === 'pm' ? [] : sortStudents(sc.noon.slice());
       var pm = slot === 'noon' ? [] : sortStudents(sc.pm.slice());
-      var walk = slot === 'noon' ? [] : sortStudents(sc.walk.slice());
+      var walkN = slot === 'pm' ? [] : sortStudents(sc.walk.filter(function (st) { return st.slot === 'noon'; }));
+      var walkP = slot === 'noon' ? [] : sortStudents(sc.walk.filter(function (st) { return st.slot !== 'noon'; }));
+      var walk = walkN.concat(walkP);
       var cnt = noon.length + pm.length + walk.length;
       // 請假的一起列出，但放在最下面獨立一區，不算進人數
       var leave = sortStudents((slot === 'pm' ? [] : sc.leaveNoon).concat(slot === 'noon' ? [] : sc.leavePm));
@@ -2730,10 +2733,11 @@ function lineCmdUnmarked_(slot, date) {
       if (!cnt && !leave.length && !selfRows.length) return;
       if (cnt) { n++; total += cnt; }
       var rows = [];
-      if (noon.length) { if (!slot) rows.push({ t: '☀️ 中午接', c: 'label' }); rows = rows.concat(noon.map(lineWho_)); }
-      if (pm.length || walk.length) {
+      var pinRow = function (st) { return { t: '📌 ' + lineWho_(st) + ' 固定' + st.tag, c: 'pin' }; };
+      if (noon.length || walkN.length) { if (!slot) rows.push({ t: '☀️ 中午接', c: 'label' }); rows = rows.concat(noon.map(lineWho_), walkN.map(pinRow)); }
+      if (pm.length || walkP.length) {
         if (!slot) rows.push({ t: '🌆 下午接', c: 'label' });
-        rows = rows.concat(pm.map(lineWho_), walk.map(function (st) { return { t: '📌 ' + lineWho_(st) + ' 固定' + st.tag, c: 'pin' }; }));
+        rows = rows.concat(pm.map(lineWho_), walkP.map(pinRow));
       }
       // 有固定自送／自走的學生時，人數拆開顯示：要接＋自送＋自走＝總共
       var need = noon.length + pm.length;

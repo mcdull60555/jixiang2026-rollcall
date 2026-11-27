@@ -2824,7 +2824,12 @@ function pickupTagHtml(st, button) {
     : `<span class="pk-tag pk-${st.pickup}">${label}</span>`;
   return `<div class="pk-wrap">${tag}${why ? `<span class="pk-why">${esc(why)}</span>` : ''}</div>`;
 }
-// 單筆新增／編輯視窗：每個星期一排四個選項；選「進班(接)」時再選中午接或下午接（預設依年級）
+// 時段選單的選項文字：進班(接)＝中午接／下午接；自走、自送＝中午／下午
+function slotOptionsHtml(mode, slot) {
+  const t = mode === 'in' ? ['中午接', '下午接'] : ['中午', '下午'];
+  return `<option value="noon"${slot === 'noon' ? ' selected' : ''}>${t[0]}</option><option value="pm"${slot === 'pm' ? ' selected' : ''}>${t[1]}</option>`;
+}
+// 單筆新增／編輯視窗：每個星期一排四個選項；進班(接)、自走、自送都要再選中午或下午（預設依年級），不進班不用選
 function weekPickerHtml(st, name) {
   return '<div class="wkp">' + [1, 2, 3, 4, 5].map(d => {
     const cur = st ? studentWeekMode(st, d) : 'in';
@@ -2832,8 +2837,8 @@ function weekPickerHtml(st, name) {
     const slot = st ? studentPickup(st, d) : pickupBase('', d);
     return `<div class="wkp-row" role="radiogroup" aria-label="週${DOW[d - 1]}"><span class="wkp-day">週${DOW[d - 1]}</span><span class="wkp-opts">` +
       WK_MODES.map(m => `<label class="wkp-opt o-${m.k}" title="${m.desc}"><input type="radio" name="${name}-${d}" class="m-wk" data-day="${d}" value="${m.k}"${cur === m.k ? ' checked' : ''}><span>${m.label}</span></label>`).join('') +
-      `</span><span class="wkp-slot${cur === 'in' ? '' : ' hidden'}"><select class="m-pk is-${slot}" data-day="${d}" data-touched="${mine ? 1 : 0}" aria-label="週${DOW[d - 1]}接送時段">` +
-      `<option value="noon"${slot === 'noon' ? ' selected' : ''}>中午接</option><option value="pm"${slot === 'pm' ? ' selected' : ''}>下午接</option></select></span></div>`;
+      `</span><span class="wkp-slot${cur === 'fixedOff' ? ' hidden' : ''}"><select class="m-pk is-${slot}" data-day="${d}" data-touched="${mine ? 1 : 0}" aria-label="週${DOW[d - 1]}時段">` +
+      slotOptionsHtml(cur, slot) + `</select></span></div>`;
   }).join('') + '</div>';
 }
 // 學生視窗內的互動：改年級 → 沒手動改過的時段跟著新年級；改成非「進班(接)」就隱藏時段選單
@@ -2847,18 +2852,22 @@ function bindPickupControls(modal) {
   modal.addEventListener('change', e => {
     const t = e.target;
     if (t.matches('.m-pk')) { t.dataset.touched = '1'; setCls(t); }
-    else if (t.matches('.m-wk')) t.closest('.wkp-row').querySelector('.wkp-slot').classList.toggle('hidden', t.value !== 'in');
+    else if (t.matches('.m-wk')) {
+      const box = t.closest('.wkp-row').querySelector('.wkp-slot'), sel = box.querySelector('.m-pk');
+      box.classList.toggle('hidden', t.value === 'fixedOff');
+      sel.innerHTML = slotOptionsHtml(t.value, sel.value);   // 換選項文字（接 ↔ 自走／自送），保留已選的時段
+    }
   });
   refresh();
 }
-// 只收和年級規則不同、而且當天是「進班(接)」的星期
+// 只收和年級規則不同、而且當天有進班（進班(接)、自走、自送）的星期
 function collectPickupOverride(modal, grade) {
   const out = {};
   modal.querySelectorAll('.wkp-row').forEach(row => {
     const d = Number(row.querySelector('.m-wk').dataset.day);
     const mode = row.querySelector('.m-wk:checked').value;
     const v = row.querySelector('.m-pk').value;
-    if (mode === 'in' && v !== pickupBase(grade, d)) out[d] = v;
+    if (mode !== 'fixedOff' && v !== pickupBase(grade, d)) out[d] = v;
   });
   return out;
 }
@@ -2880,7 +2889,10 @@ function weekChipsHtml(st) {
       const slot = studentPickup(st, d), adj = slot !== pickupBase(st.grade, d);
       return `<span class="wk-d wk-in pk-${slot}${adj ? ' adj' : ''}" title="週${DOW[d - 1]}：進班（${PK[slot].label}）${adj ? '・個別調整' : ''}">週${DOW[d - 1]}<small>${PK[slot].short}</small></span>`;
     }
-    return `<span class="wk-d wk-${m.k}" title="週${DOW[d - 1]}：${m.desc}">週${DOW[d - 1]}<small>${m.short}</small></span>`;
+    if (m.k === 'fixedOff') return `<span class="wk-d wk-${m.k}" title="週${DOW[d - 1]}：${m.desc}">週${DOW[d - 1]}<small>${m.short}</small></span>`;
+    // 自走、自送：顯示「走／送」加上中午或下午；和年級規則不同的（社團等）加外框
+    const slot = studentPickup(st, d), adj = slot !== pickupBase(st.grade, d);
+    return `<span class="wk-d wk-${m.k}${adj ? ' adj' : ''}" title="週${DOW[d - 1]}：${m.desc}（${slot === 'noon' ? '中午' : '下午'}）${adj ? '・個別調整' : ''}">週${DOW[d - 1]}<small>${m.short}・${PK[slot].short}</small></span>`;
   }).join('') + '</span>';
 }
 
@@ -2934,7 +2946,7 @@ function openStudentModal(studentId) {
       <button type="button" class="btn btn-secondary btn-sm" id="m-st-addgroup" onclick="addContactGroup()">+ 新增第二組聯絡人</button>
     </div>
     <div class="field"><span class="field-label-text" id="m-st-off-label">每週固定接送（週一到週五各選一種）</span>
-      <p class="hint" style="margin:2px 0 4px">進班(接)＝要去學校接，再選中午接或下午接（預設依年級，因社團等原因要調整就直接改）；自走、自送＝老師點名時會提示；不進班＝當天不用點名</p>
+      <p class="hint" style="margin:2px 0 4px">進班(接)＝要去學校接，再選中午接或下午接；自走、自送＝老師點名時會提示，也要選中午或下午（時段預設都依年級，因社團等原因要調整就直接改）；不進班＝當天不用點名</p>
       <div role="group" aria-labelledby="m-st-off-label">${weekPickerHtml(student, 'm-wk')}</div></div>
     ${isEdit ? `<div class="field"><span class="field-label-text">單日例外（只調整某一天的接送時段）</span>
       <p class="hint" style="margin:2px 0 4px">例如休業式、結業式這天要下午接，或某一天臨時改時段。設定後只影響那一天，過了就自動失效。</p>
@@ -3213,7 +3225,7 @@ function ovPickupHtml(s) {
   if (s.noon == null || !(s.noon || s.pm || s.noneUn)) return '';
   const tag = (cls, txt) => `<span class="pk-tag ${cls}">${txt}</span>`;
   const col = (cls, name, n, un) => n ? `<span class="ov-pk-col">${tag(cls, name + '接 ' + n)}${un ? tag(cls + ' un', name + '未點 ' + un) : ''}</span>` : '';
-  const none = s.noneUn ? `<span class="ov-pk-col">${tag('pk-none un', '自走／自送未點 ' + s.noneUn)}</span>` : '';   // 未點名 = 中午未點 + 下午未點 + 這裡
+  const none = s.noneUn ? `<span class="ov-pk-col">${s.noneNoonUn ? tag('pk-noon un', '中午自走／自送未點 ' + s.noneNoonUn) : ''}${s.nonePmUn ? tag('pk-pm un', '下午自走／自送未點 ' + s.nonePmUn) : ''}</span>` : '';   // 未點名 = 中午未點 + 下午未點 + 這裡（自走／自送依選的時段分開）
   return `<div class="ov-pk">${col('pk-noon', '中午', s.noon, s.noonUn)}${col('pk-pm', '下午', s.pm, s.pmUn)}${none}</div>`;
 }
 function weekdayLabel(dateStr) { return '週' + DOW[(new Date(dateStr + 'T12:00:00').getDay() + 6) % 7]; }
@@ -3454,11 +3466,11 @@ async function loadRollCall(silent, opts) {
 
 // 已送出：唯讀明細（未點名 → 請假 → 自走 → 自送 → … → 到班），含聯絡人與備註
 /* ---- 接送時段分頁：全部／中午接／下午接／不用接（自走、自送、固定不進班）---- */
-const RC_TABS = [['', '全部', ''], ['noon', '中午接', '今天要去接的：中午'], ['pm', '下午接', '今天要去接的：下午'], ['none', '不用接', '自走、自送、固定不進班']];
+const RC_TABS = [['', '全部', ''], ['noon', '中午', '中午接、中午自走／自送'], ['pm', '下午', '下午接、下午自走／自送'], ['none', '不用接', '今天固定不進班']];
 function rcTabsHtml(students) {
   const cur = STATE.rcPk || '';
   return '<div class="pk-tabs" id="rc-pk-tabs" role="tablist" aria-label="接送時段">' + RC_TABS.map(([k, label, tip]) => {
-    const list = students.filter(st => !k || (st.pickup || 'none') === k);
+    const list = students.filter(st => !k || (st.pickup || st.slot || 'none') === k);
     const un = list.filter(st => !st.status).length;
     return `<button type="button" role="tab" class="pk-tab${cur === k ? ' on' : ''}" data-pk="${k}" aria-selected="${cur === k}"${tip ? ` title="${tip}"` : ''}>${label}<span class="pk-n">${list.length}</span>${un ? `<span class="pk-un" title="未點名 ${un} 位">未點 ${un}</span>` : ''}</button>`;
   }).join('') + '</div>';
@@ -3493,7 +3505,7 @@ function setRcPk(k) {
 }
 function renderRcViewBody() {
   const rc = STATE.rollcall, f = STATE.rcPk || '';
-  const list = f ? rc.students.filter(st => (st.pickup || 'none') === f) : rc.students;
+  const list = f ? rc.students.filter(st => (st.pickup || st.slot || 'none') === f) : rc.students;
   $('rollcall-container').innerHTML = rcTabsHtml(rc.students) + `<h3 style="margin:4px 0 8px;font-size:16px">已送出的點名明細</h3>
     <div class="rc-summary">${statsHtml(countStatuses(list), true)}</div>${list.length ? statusTableHtml(list, true) : '<div class="empty">這個分類目前沒有學生</div>'}`;
 }
@@ -3521,7 +3533,7 @@ function fixedModeTagHtml(mode) {
 function rcRowHtml(st) {
   const s = st.status || '';
   return `
-      <tr class="rc-row${st.isFixedOff ? ' fixed' : ''}${st.booking ? ' booked' : ''}${st.extra && !st.booking ? ' extra' : ''}" data-sid="${esc(st.id)}" data-name="${esc(st.name)}" data-fixed="${st.isFixedOff ? 1 : 0}" data-default="${esc(st.defaultStatus || (st.isFixedOff ? 'fixedOff' : ''))}" data-booked="${st.booking ? 1 : 0}" data-bkreason="${esc(st.booking ? st.booking.reason : '')}" data-status="${esc(s)}" data-pk="${esc(st.pickup || '')}" data-pks="${esc([st.pickup, st.pickupSrc, st.pickupReason].join('|'))}">
+      <tr class="rc-row${st.isFixedOff ? ' fixed' : ''}${st.booking ? ' booked' : ''}${st.extra && !st.booking ? ' extra' : ''}" data-sid="${esc(st.id)}" data-name="${esc(st.name)}" data-fixed="${st.isFixedOff ? 1 : 0}" data-default="${esc(st.defaultStatus || (st.isFixedOff ? 'fixedOff' : ''))}" data-booked="${st.booking ? 1 : 0}" data-bkreason="${esc(st.booking ? st.booking.reason : '')}" data-status="${esc(s)}" data-pk="${esc(st.pickup || st.slot || '')}" data-pks="${esc([st.pickup, st.pickupSrc, st.pickupReason].join('|'))}">
         <td><b>${esc(st.grade) || '-'}</b></td>
         <td>${personCellHtml(st, st.isFixedOff, true, true)}<div class="pk-slot">${pickupTagHtml(st, true)}</div>${fixedModeTagHtml(st.fixedMode)}${st.extra ? bookingTagHtml(st.extra, true, 'attend') : ''}${st.booking ? bookingTagHtml(st.booking, true) : ''}</td>
         <td><div class="st-group" role="group" aria-label="${esc(st.name)} 出席狀態">
@@ -3699,7 +3711,7 @@ $('rollcall-container').addEventListener('click', async e => {
 });
 // 只更新這一列的時段標籤，不重畫整張名單（避免蓋掉還沒存好的點名）
 function setRowPickup(tr, st) {
-  tr.dataset.pk = st.pickup || '';
+  tr.dataset.pk = st.pickup || st.slot || tr.dataset.pk || '';
   tr.dataset.pks = [st.pickup, st.pickupSrc, st.pickupReason].join('|');
   tr.querySelector('.pk-slot').innerHTML = pickupTagHtml(Object.assign({ id: tr.dataset.sid }, st), true);
 }
@@ -3972,6 +3984,8 @@ async function syncRollCallEdit() {
     const tr = rows.get(st.id);
     // 其他老師或管理員調整了接送時段：這一列的標籤跟著更新
     if (tr.dataset.pks !== [st.pickup, st.pickupSrc, st.pickupReason].join('|')) { setRowPickup(tr, st); pkChanged = true; }
+    const slotNow = st.pickup || st.slot || '';
+    if ((tr.dataset.pk || '') !== slotNow) { tr.dataset.pk = slotNow; pkChanged = true; }   // 自走／自送學生的時段被改了
     if (pend.has(st.id)) return;
     if ((tr.dataset.status || '') !== (st.status || '')) setRowStatus(tr, st.status || '');
   });
@@ -4001,6 +4015,8 @@ async function sendPresence(throwErr) {
         s.todayNoonUn = r.counts ? (c ? c.noonUn : 0) : null;
         s.todayPmUn = r.counts ? (c ? c.pmUn : 0) : null;
         s.todayNoneUn = r.counts ? (c ? c.noneUn : 0) : null;
+        s.todayNoneNoonUn = r.counts ? (c ? c.noneNoonUn : 0) : null;
+        s.todayNonePmUn = r.counts ? (c ? c.nonePmUn : 0) : null;
       });
     }
     renderPresence();
@@ -4032,7 +4048,8 @@ function schoolCountsHtml(s) {
   const tag = (cls, txt) => `<span class="pk-tag ${cls}">${txt}</span>`;
   const col = (cls, n, un2, name) => `<span class="sc-col">${n ? tag(cls, name + '接 ' + n) : ''}${un > 0 && un2 ? tag(cls + ' un', name + '未點 ' + un2) : ''}</span>`;
   const cols = (s.todayNoon || s.todayPm) ? `<span class="sc-cols">${col('pk-noon', s.todayNoon, s.todayNoonUn, '中午')}${col('pk-pm', s.todayPm, s.todayPmUn, '下午')}</span>` : '';
-  const none = un > 0 && s.todayNoneUn ? `<span class="sc-cols sc-cols-1"><span class="sc-col">${tag('pk-none un', '自走／自送未點 ' + s.todayNoneUn)}</span></span>` : '';
+  // 自走／自送還沒點名的：依他們選的時段放在中午欄或下午欄底下
+  const none = un > 0 && s.todayNoneUn ? `<span class="sc-cols"><span class="sc-col">${s.todayNoneNoonUn ? tag('pk-noon un', '中午自走／自送未點 ' + s.todayNoneNoonUn) : ''}</span><span class="sc-col">${s.todayNonePmUn ? tag('pk-pm un', '下午自走／自送未點 ' + s.todayNonePmUn) : ''}</span></span>` : '';
   return `<span class="sc-meta">今日需進班 <b>${s.todayNeed}</b> 位</span>` + cols + none +
     (s.todayNeed === 0 ? '<span class="sc-un zero">今天沒有人需進班</span>'
       : un > 0 ? `<span class="sc-un">未點名 ${un} 位</span>`
