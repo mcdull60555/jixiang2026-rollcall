@@ -343,6 +343,13 @@
   .stat.stat-jump{cursor:pointer;user-select:none;}
   .stat.stat-jump:hover{filter:brightness(.96);}
   .stat.stat-jump:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+  /* 懸浮「下一位未點名」按鈕：右上角（頂部列下方），每按一次跳到下一位還沒點名的學生 */
+  #rc-fab{position:fixed;right:14px;top:80px;z-index:25;display:flex;align-items:center;gap:7px;padding:10px 16px;border:0;border-radius:99px;background:var(--rose,#e11d48);color:#fff;font-weight:800;font-size:15px;box-shadow:0 6px 18px rgba(15,23,42,.3);cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent;}
+  #rc-fab:hover{filter:brightness(1.06);}
+  #rc-fab:active{transform:scale(.96);}
+  #rc-fab:focus-visible{outline:3px solid var(--accent,#1d8cf0);outline-offset:2px;}
+  #rc-fab .fab-n{background:#fff;color:var(--rose,#e11d48);border-radius:99px;min-width:24px;padding:1px 7px;font-size:14px;text-align:center;}
+  @media (max-width:640px){#rc-fab{right:10px;padding:9px 13px;font-size:14px;}}
   /* 只剩 5 位以內沒點名：姓名前面的鈴鐺閃爍提醒 */
   @keyframes bell-blink{0%,100%{opacity:1;transform:rotate(0);}25%{transform:rotate(-14deg);}50%{opacity:.2;transform:rotate(0);}75%{transform:rotate(14deg);}}
   .rc-row.rc-alert .p-name::before{content:"🔔";display:inline-block;margin-right:4px;animation:bell-blink 1.1s ease-in-out infinite;}
@@ -986,6 +993,7 @@ tr.bk-picked td{background:transparent !important;}
 <div id="doneToast" class="hidden" role="status"></div>
 <div id="toast" class="hidden" role="status"></div>
 
+<button type="button" id="rc-fab" class="hidden" aria-label="跳到下一位未點名的學生" title="跳到下一位未點名的學生">⬇ 下一位未點名<span class="fab-n" id="rc-fab-n">0</span></button>
 <script>
 /* ============================================================
    設定：把 API_URL 換成 Apps Script 部署後的 /exec 網址
@@ -2457,6 +2465,7 @@ async function marqueeTick(force) {
   renderMarquee();
 }
 function renderMarquee() {
+  updateRcFab();
   const el = $('marquee');
   if (!el) return;
   const mq = STATE.marquee;
@@ -3607,6 +3616,42 @@ function jumpToFirstUnmarked() {
   setTimeout(() => tr.classList.remove('rc-flash'), 1700);
 }
 $('rollcall-container').addEventListener('click', e => { if (e.target.closest('#rc-summary .stat-jump')) jumpToFirstUnmarked(); });
+
+/* 懸浮按鈕：依序跳到未點名的學生（第一次→第一位，再按→第二位…，最後一位之後回到第一位） */
+var rcFabLastSid = '';
+function rcFabRows() { return [...document.querySelectorAll('#rollcall-container .rc-row')].filter(r => !r.dataset.status); }
+function updateRcFab() {
+  const fab = $('rc-fab');
+  if (!fab) return;
+  const sec = $('sec-rollcall');
+  const rows = STATE.rcMode === 'edit' && sec && sec.classList.contains('active') ? rcFabRows() : [];
+  fab.classList.toggle('hidden', !rows.length);
+  if (!rows.length) { rcFabLastSid = ''; return; }
+  $('rc-fab-n').textContent = rows.length;
+  const bar = $('topbar');
+  fab.style.top = ((bar ? bar.offsetHeight : 60) + 10) + 'px';   // 頂部列（含跑馬燈）下方
+}
+function jumpToNextUnmarked() {
+  const all = rcFabRows();
+  const rows = all.filter(r => !r.classList.contains('hidden'));   // 只跳目前分類看得到的
+  if (!rows.length) {
+    if (all.length) toast(`這個分類都點完了，其他分類還有 ${all.length} 位未點名`);
+    return;
+  }
+  const last = rcFabLastSid && [...document.querySelectorAll('#rollcall-container .rc-row')].find(r => r.dataset.sid === rcFabLastSid);
+  // 在上一次跳到的學生「後面」找下一位未點名；沒有就回到第一位
+  let tr = last && rows.find(r => last.compareDocumentPosition(r) & Node.DOCUMENT_POSITION_FOLLOWING);
+  const wrapped = !!last && !tr;
+  tr = tr || rows[0];
+  rcFabLastSid = tr.dataset.sid;
+  const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  tr.scrollIntoView({ block: 'center', behavior: reduce ? 'auto' : 'smooth' });
+  tr.classList.remove('rc-flash'); void tr.offsetWidth; tr.classList.add('rc-flash');
+  setTimeout(() => tr.classList.remove('rc-flash'), 1700);
+  if (wrapped && rows.length > 1) toast('已回到第一位未點名的學生');
+}
+$('rc-fab').addEventListener('click', jumpToNextUnmarked);
+window.addEventListener('resize', updateRcFab);
 // 接送時段：點分頁切換；點學生名下的時段標籤 → 只調整今天（單日例外）
 $('rollcall-container').addEventListener('click', async e => {
   const tab = e.target.closest('.pk-tab');
